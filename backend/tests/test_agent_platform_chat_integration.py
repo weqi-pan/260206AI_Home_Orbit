@@ -12,7 +12,7 @@ def test_builtin_tool_module_no_longer_reads_raw_session_factory():
 
 def test_chat_builds_typed_platform_context_without_breaking_sse(client, app):
     from backend.agent.platform.context import RunContext
-    from backend.app.db.models import AgentDefinition, AgentDeployment, AgentRun, AgentVersion, ChatSession, HouseholdMember
+    from backend.app.db.models import AgentDefinition, AgentDeployment, AgentInstallation, AgentRun, AgentVersion, ChatSession, HouseholdMember
 
     login = client.post("/api/auth/login", json={"username": "demo", "password": "DemoTest@123"})
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
@@ -27,6 +27,8 @@ def test_chat_builds_typed_platform_context_without_breaking_sse(client, app):
         db.add(version); db.flush()
         deployment = AgentDeployment(household_id=member.household_id, agent_version_id=version.id)
         db.add(deployment); db.flush()
+        db.add(AgentInstallation(household_id=member.household_id, deployment_id=deployment.id,
+                                 agent_version_id=version.id, status="installed"))
         chat_session = db.get(ChatSession, session_id)
         chat_session.deployment_id = deployment.id
 

@@ -54,9 +54,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else:
             require_database_revision(database.engine)
         seed_database(database.session_factory, app_settings)
+        from backend.app.api.tools import sync_builtin_catalog
+        with database.session_factory() as catalog_db:
+            sync_builtin_catalog(catalog_db)
         app.state.database = database
         app.state.settings = app_settings
         app.state.vector_store_service = configured_vector_store(database.session_factory, app_settings.chroma_path)
+        from backend.agent.platform.runner import DeploymentAgentRunner
+        app.state.deployment_agent_runner = DeploymentAgentRunner(database.session_factory)
         sync_knowledge_vectors(database, app.state.vector_store_service, app_settings)
         yield
         database.engine.dispose()

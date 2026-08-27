@@ -19,6 +19,13 @@ def _membership(db, account_id, household_id):
     return row
 
 
+def _manager(db, account_id, household_id):
+    member = _membership(db, account_id, household_id)
+    if member.role not in {"owner", "admin"}:
+        raise HTTPException(403, detail={"code": "INSTALLATION_PERMISSION_FORBIDDEN"})
+    return member
+
+
 @router.post("", status_code=201)
 def install(payload: InstallationRequest, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
     _membership(db, account.id, payload.household_id)
@@ -36,7 +43,7 @@ def grant_permission(installation_id: str, payload: InstallationPermissionReques
     installation = db.get(AgentInstallation, installation_id)
     if not installation:
         raise HTTPException(404, detail={"code": "INSTALLATION_NOT_FOUND"})
-    _membership(db, account.id, installation.household_id)
+    _manager(db, account.id, installation.household_id)
     try:
         row = InstallationService(db, installation.household_id, account.id).grant(
             installation_id, payload.tool_id, payload.tool_version)
@@ -52,7 +59,7 @@ def revoke_permission(installation_id: str, tool_id: str, account: Account = Dep
     installation = db.get(AgentInstallation, installation_id)
     if not installation:
         raise HTTPException(404, detail={"code": "INSTALLATION_NOT_FOUND"})
-    _membership(db, account.id, installation.household_id)
+    _manager(db, account.id, installation.household_id)
     db.execute(delete(InstallationPermission).where(InstallationPermission.installation_id == installation_id,
                                                      InstallationPermission.tool_id == tool_id))
     db.commit()

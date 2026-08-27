@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base, utcnow, uuid_str
@@ -37,9 +37,14 @@ class Account(Base):
 
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
+    __table_args__ = (
+        ForeignKeyConstraint(["deployment_id", "household_id"],
+                             ["agent_deployments.id", "agent_deployments.household_id"]),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
+    household_id: Mapped[str | None] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
     deployment_id: Mapped[str | None] = mapped_column(String(36), index=True)
     title: Mapped[str] = mapped_column(String(100), nullable=False, default="新对话")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

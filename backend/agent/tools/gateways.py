@@ -67,3 +67,21 @@ class ToolRepositories:
                 item = Ticket(account_id=account_id, session_id=session_id, title=title, summary=content[:200])
                 db.add(item); db.flush()
             return item
+
+
+@dataclass(frozen=True)
+class ToolCapabilities:
+    search_devices: object
+    device: object
+    inventory: object
+    devices: object
+    approved_faq: object
+    usage: object
+    register_restock: object
+    create_ticket: object
+
+    @classmethod
+    def bind(cls, repositories):
+        return cls(*(getattr(repositories, name) for name in (
+            "search_devices", "device", "inventory", "devices", "approved_faq", "usage",
+            "register_restock", "create_ticket")))

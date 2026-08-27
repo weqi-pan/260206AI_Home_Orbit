@@ -235,6 +235,7 @@ class AgentInstallation(TenantRow, Base):
     __tablename__ = "agent_installations"
     __table_args__ = tenant_parent_constraints(
         ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
+        ForeignKeyConstraint(["agent_version_id", "household_id"], ["agent_versions.id", "agent_versions.household_id"]),
     )
     deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
     agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -245,6 +246,7 @@ class InstallationPermission(Base):
     __tablename__ = "installation_permissions"
     __table_args__ = (
         ForeignKeyConstraint(["installation_id", "household_id"], ["agent_installations.id", "agent_installations.household_id"], ondelete="CASCADE"),
+        UniqueConstraint("installation_id", "tool_id", name="uq_installation_permission_tool"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -320,6 +322,11 @@ class AgentRun(TenantRow, Base):
     model_id: Mapped[str] = mapped_column(String(36), nullable=False)
     model_revision: Mapped[int] = mapped_column(Integer, nullable=False)
     skill_versions_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    compiled_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    model_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    permission_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    consent_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    budget_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="running")
     error_code: Mapped[str | None] = mapped_column(String(64))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -349,6 +356,7 @@ class ToolExecution(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
     duration_ms: Mapped[int | None] = mapped_column(Integer)
+    redaction_schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class ApprovalRequest(Base):
@@ -373,6 +381,9 @@ class ApprovalRequest(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime)
     result_json: Mapped[str | None] = mapped_column(Text)
+    checkpoint_ns: Mapped[str | None] = mapped_column(String(250))
+    checkpoint_id: Mapped[str | None] = mapped_column(String(100))
+    consent_digest: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

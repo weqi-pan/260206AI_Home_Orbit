@@ -34,6 +34,7 @@ class ToolAuditService:
             result_json=json.dumps(redact(result or {}), ensure_ascii=False, sort_keys=True),
             started_at=started_at, finished_at=finished_at,
             duration_ms=max(0, int((finished_at - started_at).total_seconds() * 1000)),
+            redaction_schema_version=1,
         )
         self.session.add(row); self.session.commit()
         return row

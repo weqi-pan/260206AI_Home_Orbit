@@ -1,28 +1,31 @@
 import hashlib
 import json
+
+from backend.agent.platform.audit import ToolAuditService
+from backend.agent.platform.audit import redact
+from backend.agent.platform.authority import ExecutionAuthority
+from backend.agent.platform.catalog import BuiltinToolRegistry
+from backend.agent.platform.policy_errors import ApprovalRequired, PlatformToolError
+from backend.app.db.base import utcnow
+from backend.app.db.models import ApprovalRequest
+from backend.app.db.models import ToolDefinition
 from sqlalchemy import select
 
-from backend.agent.platform.catalog import BuiltinToolRegistry
-from backend.agent.platform.audit import ToolAuditService
-from backend.app.db.models import ApprovalRequest, ToolDefinition, ToolPermission
-from backend.app.db.base import utcnow
 
-
-class PlatformToolError(RuntimeError):
-    def __init__(self, code):
-        self.code = code
-        super().__init__(code)
-
-
-class ApprovalRequired(PlatformToolError):
-    def __init__(self, approval_id):
-        self.approval_id = approval_id
-        super().__init__("APPROVAL_REQUIRED")
+def canonical_json(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def arguments_digest(arguments):
-    body = json.dumps(arguments, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+    return hashlib.sha256(canonical_json(arguments).encode("utf-8")).hexdigest()
+
+
+def invocation_digest(context, tool_key, tool_version, arguments, invocation_id):
+    payload = {"household_id": context.household_id, "run_id": context.run_id,
+               "deployment_id": context.deployment_id, "deployment_revision": context.deployment_revision,
+               "agent_version_id": context.agent_version_id, "tool_key": tool_key, "tool_version": tool_version,
+               "arguments_digest": arguments_digest(arguments), "invocation_id": invocation_id}
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
 class PlatformToolExecutor:
@@ -31,71 +34,52 @@ class PlatformToolExecutor:
         self.registry = registry or BuiltinToolRegistry.default()
         self.side_effect = side_effect
 
-    def _definition(self, key):
-        row = self.session.scalar(select(ToolDefinition).where(ToolDefinition.key == key, ToolDefinition.enabled.is_(True)))
-        if not row:
-            raise PlatformToolError("PERMISSION_REQUIRED")
-        return row
-
-    def _authorize(self, row, context):
-        permission = self.session.scalar(select(ToolPermission).where(
-            ToolPermission.household_id == context.household_id, ToolPermission.tool_id == row.id,
-            ToolPermission.tool_version == row.version,
-        ))
-        if not permission:
-            raise PlatformToolError("PERMISSION_REQUIRED")
-
-    def execute(self, key, arguments, context, idempotency_key):
+    def execute(self, key, arguments, context, invocation_id):
         started_at = utcnow()
-        row = self._definition(key)
-        self._authorize(row, context)
+        try:
+            authority = ExecutionAuthority(self.session, self.registry).recheck(context, key,
+                context.grants.get(key, {}).get("version", ""))
+        except PlatformToolError as exc:
+            definition = self.session.scalar(select(ToolDefinition).where(ToolDefinition.key == key))
+            if definition:
+                denied_key = invocation_digest(context, key, definition.version, arguments, invocation_id)
+                ToolAuditService(self.session).record(context=context, tool_id=definition.id,
+                    tool_version=definition.version, status="permission_denied", error_code=exc.code,
+                    started_at=started_at, idempotency_key=f"{denied_key}:denied", arguments=arguments, result={})
+            raise
+        invocation_key = invocation_digest(context, key, authority.version, arguments, invocation_id)
         tool = self.registry.resolve(key)
-        if row.risk_level == "high":
-            existing = self.session.scalar(select(ApprovalRequest).where(ApprovalRequest.idempotency_key == idempotency_key))
-            if existing:
-                raise ApprovalRequired(existing.id)
-            approval = ApprovalRequest(
-                household_id=context.household_id, run_id=context.run_id, principal_id=context.principal_id,
-                tool_id=row.id, tool_version=row.version, deployment_id=context.deployment_id,
-                deployment_revision=context.deployment_revision, agent_version_id=context.agent_version_id,
-                arguments_digest=arguments_digest(arguments), arguments_json=json.dumps(arguments, sort_keys=True),
-                idempotency_key=idempotency_key,
-            )
+        if authority.risk_level == "high":
+            existing = self.session.scalar(select(ApprovalRequest).where(ApprovalRequest.idempotency_key == invocation_key))
+            if existing: raise ApprovalRequired(existing.id)
+            approval = ApprovalRequest(household_id=context.household_id, run_id=context.run_id,
+                principal_id=context.principal_id, tool_id=authority.tool_id, tool_version=authority.version,
+                deployment_id=context.deployment_id, deployment_revision=context.deployment_revision,
+                agent_version_id=context.agent_version_id, arguments_digest=arguments_digest(arguments),
+                arguments_json=canonical_json(redact(arguments)), idempotency_key=invocation_key,
+                checkpoint_ns=f"{context.household_id}/{context.session_id}/{context.run_id}",
+                consent_digest=hashlib.sha256(canonical_json(dict(context.consent)).encode("utf-8")).hexdigest())
             self.session.add(approval); self.session.commit(); self.session.refresh(approval)
+            ToolAuditService(self.session).record(context=context, tool_id=authority.tool_id,
+                tool_version=authority.version, status="approval_requested", started_at=started_at,
+                idempotency_key=f"{invocation_key}:requested", arguments=arguments, result={})
             raise ApprovalRequired(approval.id)
-        result = tool.handler(arguments, context)
-        ToolAuditService(self.session).record(context=context, tool_id=row.id, tool_version=row.version,
-                                              status="success", started_at=started_at,
-                                              idempotency_key=idempotency_key, arguments=arguments, result=result)
+        try:
+            result = (self.side_effect or tool.handler)(arguments, context)
+        except Exception:
+            ToolAuditService(self.session).record(context=context, tool_id=authority.tool_id,
+                tool_version=authority.version, status="failed", error_code="TOOL_EXECUTION_FAILED",
+                started_at=started_at, idempotency_key=f"{invocation_key}:failed", arguments=arguments, result={})
+            raise
+        ToolAuditService(self.session).record(context=context, tool_id=authority.tool_id, tool_version=authority.version,
+            status="success", started_at=started_at, idempotency_key=invocation_key, arguments=arguments, result=result)
         return result
 
     def approve(self, approval_id, principal_id, expires_at):
         row = self.session.get(ApprovalRequest, approval_id)
+        if not row or row.status != "pending": raise PlatformToolError("APPROVAL_STATE_CONFLICT")
         row.status = "approved"; row.approved_by_account_id = principal_id; row.expires_at = expires_at
-        self.session.commit()
-        return row
+        self.session.commit(); return row
 
     def resume(self, approval_id, context):
-        row = self.session.get(ApprovalRequest, approval_id)
-        if not row or row.household_id != context.household_id or row.run_id != context.run_id:
-            raise PlatformToolError("PERMISSION_REQUIRED")
-        if row.result_json is not None:
-            return json.loads(row.result_json)
-        if row.status != "approved":
-            raise PlatformToolError("APPROVAL_REQUIRED")
-        if not row.expires_at or row.expires_at <= utcnow():
-            raise PlatformToolError("APPROVAL_EXPIRED")
-        if row.deployment_id != context.deployment_id or row.deployment_revision != context.deployment_revision or row.agent_version_id != context.agent_version_id:
-            raise PlatformToolError("APPROVAL_EXPIRED")
-        definition = self.session.get(ToolDefinition, row.tool_id)
-        self._authorize(definition, context)
-        arguments = json.loads(row.arguments_json)
-        handler = self.side_effect or self.registry.resolve(definition.key).handler
-        result = handler(arguments, context)
-        row.result_json = json.dumps(result, ensure_ascii=False, sort_keys=True)
-        row.status = "consumed"; row.consumed_at = utcnow(); self.session.commit()
-        ToolAuditService(self.session).record(context=context, tool_id=row.tool_id, tool_version=row.tool_version,
-                                              status="success", started_at=row.created_at,
-                                              idempotency_key=f"{row.idempotency_key}:execution",
-                                              arguments=arguments, result=result)
-        return result
+        raise PlatformToolError("GRAPH_RESUME_REQUIRED")

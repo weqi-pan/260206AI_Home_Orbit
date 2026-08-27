@@ -1,3 +1,14 @@
+from backend.app.db.base import utcnow
+
+
+def persist_run_outcome(session, run_id, status, error_code=None):
+    from backend.app.db.models import AgentRun
+    run = session.get(AgentRun, run_id)
+    if run:
+        run.status = status; run.error_code = error_code; run.finished_at = utcnow(); session.commit()
+    return run
+
+
 class PlatformAgentRunner:
     """Deployment-aware runner preserving the V1 stream event boundary."""
 
@@ -23,17 +34,23 @@ class PlatformAgentRunner:
 
 
 class DeploymentAgentRunner(PlatformAgentRunner):
-    def __init__(self, session_factory):
+    def __init__(self, session_factory, checkpointer=None):
         self.session_factory = session_factory
+        if checkpointer is None:
+            session = session_factory()
+            try:
+                from backend.agent.platform.checkpointer import checkpoint_saver_for
+                checkpointer = checkpoint_saver_for(session.bind, session_factory)
+            finally:
+                session.close()
+        self.checkpointer = checkpointer
         super().__init__(self._compile)
 
     def _compile(self, context):
         from backend.agent.platform.compiler import AgentCompiler
-        from backend.agent.platform.checkpointer import checkpoint_saver_for
         session = self.session_factory()
         try:
-            saver = checkpoint_saver_for(session.bind, self.session_factory)
-            compiled = AgentCompiler(session, checkpointer=saver).compile(context.deployment_id, context)
+            compiled = AgentCompiler(session, checkpointer=self.checkpointer).compile(context.deployment_id, context)
         except Exception:
             session.close()
             raise
@@ -45,3 +62,8 @@ class DeploymentAgentRunner(PlatformAgentRunner):
                     session.close()
 
         return SessionBoundCompiled()
+
+    def resume(self, approval_id, context):
+        compiled = self._compile(context)
+        yield {"event": "approval_resumed", "data": {"approval_id": approval_id, "run_id": context.run_id}}
+        yield from compiled.resume(approval_id, context)

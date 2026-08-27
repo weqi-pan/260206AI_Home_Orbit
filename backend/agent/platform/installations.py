@@ -28,6 +28,13 @@ class InstallationService:
         tool = self.session.get(ToolDefinition, tool_id)
         if not installation or not tool or tool.version != tool_version:
             raise RuntimeError("PERMISSION_REQUIRED")
+        from backend.agent.platform.catalog import BuiltinToolRegistry
+        try:
+            metadata = BuiltinToolRegistry.default().resolve(tool.key).metadata
+        except KeyError as exc:
+            raise RuntimeError("TOOL_CATALOG_MISMATCH") from exc
+        if metadata.version != tool.version or metadata.risk_level != tool.risk_level:
+            raise RuntimeError("TOOL_CATALOG_MISMATCH")
         row = self.session.scalar(select(InstallationPermission).where(
             InstallationPermission.installation_id == installation_id, InstallationPermission.tool_id == tool_id))
         if row is None:

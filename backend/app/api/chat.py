@@ -13,7 +13,7 @@ from sse_starlette.sse import EventSourceResponse
 from backend.app.core.security import get_current_account, get_db
 from backend.app.db.models import Account, AgentDeployment, AgentRun, AgentVersion, ChatSession, ConversationHistory, HouseholdMember, Ticket, ToolDefinition, ToolPermission
 from backend.agent.platform.context import RunContext
-from backend.agent.tools.gateways import ToolRepositories
+from backend.agent.tools.gateways import ToolCapabilities, ToolRepositories
 from backend.agent.platform.runner import DeploymentAgentRunner
 from backend.app.services.defaults import get_agent_runner, get_followup_service, get_sentiment_service, get_title_service
 from backend.app.api.setup import setup_status
@@ -93,7 +93,8 @@ def list_sessions(account: Account = Depends(get_current_account), db: Session =
 
 @router.post("/sessions", status_code=201)
 def create_session(payload: SessionCreate, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
-    item = ChatSession(account_id=account.id, title=payload.title)
+    household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
+    item = ChatSession(account_id=account.id, household_id=household_id, title=payload.title)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -144,7 +145,8 @@ def feedback(message_id: int, payload: FeedbackRequest, account: Account = Depen
 @router.post("/sessions/{session_id}/chat")
 def chat(session_id: str, payload: ChatRequest, request: Request, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
     owned_session(db, session_id, account.id)
-    household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
+    chat_session = db.get(ChatSession, session_id)
+    household_id = chat_session.household_id
     injected_runner = getattr(request.app.state, "agent_runner", None)
     resolved_runtime = None
     usage_id = None
@@ -172,7 +174,7 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
     history = db.scalars(select(ConversationHistory).where(ConversationHistory.session_id == session_id).order_by(ConversationHistory.id)).all()
     messages = [{"role": item.role, "content": item.content} for item in history]
     context = {"account_id": account.id, "user_id": account.user_id, "city": account.user.city if account.user else None,
-               "session_id": session_id, "repositories": ToolRepositories(request.app.state.database.session_factory),
+               "session_id": session_id, "repositories": ToolCapabilities.bind(ToolRepositories(request.app.state.database.session_factory)),
                "vector_store_service": request.app.state.vector_store_service}
     if enforce_runtime:
         context["model_resolver"] = purpose_model_resolver(request.app.state.database.session_factory, household_id)
@@ -186,7 +188,6 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
             if usage_id:
                 QuotaService(db).complete(usage_id, status="failed")
             raise HTTPException(status_code=503, detail={"code": "MODEL_PROVIDER_UNAVAILABLE"}) from exc
-    chat_session = db.get(ChatSession, session_id)
     if chat_session.deployment_id:
         member = db.scalar(select(HouseholdMember).where(HouseholdMember.account_id == account.id,
                                                           HouseholdMember.household_id == household_id))
@@ -196,27 +197,43 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
         if not member or not deployment or not version:
             raise HTTPException(status_code=404, detail={"code": "DEPLOYMENT_NOT_FOUND"})
         snapshot = resolved_runtime.snapshot if resolved_runtime else None
+        from backend.agent.platform.authority import ExecutionAuthority
+        from backend.agent.platform.snapshots import CompiledSnapshotService
+        installation = ExecutionAuthority(db).installation(deployment.id, household_id, version.id)[1]
+        provisional_context = RunContext(principal_id=account.id, household_id=household_id, member_id=member.id,
+            role=member.role, session_id=session_id, deployment_id=deployment.id, agent_version_id=version.id,
+            run_id="pending", timezone="Asia/Shanghai", grants={}, consent={}, deployment_revision=deployment.revision,
+            model_id=snapshot.model_id if snapshot else "injected-model",
+            model_revision=snapshot.config_revision if snapshot else 1,
+            model_snapshot={"id": snapshot.model_id, "revision": snapshot.config_revision,
+                            "profile": dict(snapshot.profile)} if snapshot else {"id": "injected-model", "revision": 1})
+        compiled_snapshot = CompiledSnapshotService(db).capture(deployment.id, installation.id, provisional_context)
         run = AgentRun(household_id=household_id, deployment_id=deployment.id, principal_id=account.id,
                        member_id=member.id, session_id=session_id, agent_version_id=version.id,
                        deployment_revision=deployment.revision, model_id=snapshot.model_id if snapshot else "injected-model",
-                       model_revision=snapshot.config_revision if snapshot else 1)
+                       model_revision=snapshot.config_revision if snapshot else 1,
+                       compiled_snapshot_json=json.dumps(compiled_snapshot, ensure_ascii=False, sort_keys=True),
+                       model_snapshot_json=json.dumps(provisional_context.model_snapshot, sort_keys=True),
+                       permission_snapshot_json=json.dumps(dict(compiled_snapshot["grants"]), sort_keys=True),
+                       consent_snapshot_json="{}", budget_snapshot_json=json.dumps(
+                           compiled_snapshot["agent_version"]["definition"].get("budgets", {}), sort_keys=True))
         db.add(run); db.commit(); db.refresh(run)
-        grants = {tool.key: {"version": permission.tool_version} for tool, permission in db.execute(
-            select(ToolDefinition, ToolPermission).join(ToolPermission, ToolPermission.tool_id == ToolDefinition.id).where(
-                ToolPermission.household_id == household_id)).all()}
+        grants = dict(compiled_snapshot["grants"])
         context = RunContext(
             principal_id=account.id, household_id=household_id, member_id=member.id, role=member.role,
             session_id=session_id, deployment_id=deployment.id, agent_version_id=version.id, run_id=run.id,
             timezone="Asia/Shanghai", grants=grants, consent={}, deployment_revision=deployment.revision,
             model_id=run.model_id, model_revision=run.model_revision, user_id=account.user_id,
+            model_snapshot=json.loads(run.model_snapshot_json), compiled_snapshot=compiled_snapshot,
+            skill_version_ids=tuple(item["id"] for item in compiled_snapshot["skills"]),
             city=account.user.city if account.user else None,
-            repositories=ToolRepositories(request.app.state.database.session_factory),
+            repositories=ToolCapabilities.bind(ToolRepositories(request.app.state.database.session_factory)),
             vector_store_service=request.app.state.vector_store_service,
-            chat_model=context.get("chat_model"), model_resolver=context.get("model_resolver"),
+            chat_model=context.get("chat_model"),
         )
     runner_override = injected_runner
     if isinstance(context, RunContext) and runner_override is None:
-        runner_override = DeploymentAgentRunner(request.app.state.database.session_factory)
+        runner_override = request.app.state.deployment_agent_runner
     return EventSourceResponse(
         chat_event_stream(request.app, session_id, account, payload.message, messages, context, user_message.id,
                           previous_count is None, usage_id=usage_id, runner_override=runner_override),
@@ -229,7 +246,7 @@ def chat_event_stream(app, session_id, account, message, messages, context, user
     answer = ""
     persisted_assistant_id = None
     started = time.monotonic()
-    model_resolver = context.get("model_resolver") if isinstance(context, dict) else context.model_resolver
+    model_resolver = context.get("model_resolver") if isinstance(context, dict) else None
     sentiment_service = getattr(app.state, "sentiment_service", None) or get_sentiment_service(model_resolver)
     sentiment_future = AUX_EXECUTOR.submit(sentiment_service.analyze, message)
     try:
