@@ -1,4 +1,5 @@
 from io import BytesIO
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -32,6 +33,9 @@ class FakeVectorStore:
     def delete_faq(self, faq_id):
         self.calls.append(("delete_faq", faq_id))
 
+    def search(self, query):
+        return []
+
 
 class FakeFaqGenerator:
     def generate(self, path):
@@ -61,6 +65,66 @@ def test_knowledge_upload_validates_type_size_and_md5(client, app, settings):
     assert client.get("/api/knowledge/files", headers=bearer(token)).json()[0]["filename"] == "guide.txt"
 
 
+def test_soft_deleted_same_md5_upload_restores_record_and_reindexes(client, app, settings):
+    token = admin_token(client, settings)
+    vector = FakeVectorStore()
+    app.state.vector_store_service = vector
+    first = client.post(
+        "/api/knowledge/files", headers=bearer(token), files={"file": ("old.txt", b"same", "text/plain")}
+    ).json()
+    assert client.delete(f"/api/knowledge/files/{first['id']}", headers=bearer(token)).status_code == 204
+
+    restored = client.post(
+        "/api/knowledge/files", headers=bearer(token), files={"file": ("new.txt", b"same", "text/plain")}
+    )
+
+    assert restored.status_code == 201
+    assert restored.json()["id"] == first["id"]
+    assert restored.json()["status"] == "active"
+    assert restored.json()["filename"] == "new.txt"
+    assert vector.calls[-1] == ("add_file", first["id"], "new.txt")
+
+
+def test_upload_vector_failure_removes_file_and_rolls_back_database(client, app, settings):
+    from backend.app.db.models import KnowledgeFile
+    from backend.rag.vector_store import VectorStoreUnavailable
+
+    class FailingVector(FakeVectorStore):
+        def add_file(self, file_id, path, filename):
+            raise VectorStoreUnavailable("embedding failed")
+
+    token = admin_token(client, settings)
+    app.state.vector_store_service = FailingVector()
+    response = client.post(
+        "/api/knowledge/files", headers=bearer(token), files={"file": ("broken.txt", b"broken", "text/plain")}
+    )
+
+    assert response.status_code == 503
+    assert not list(Path(settings.knowledge_upload_path).glob("*"))
+    with app.state.database.session_factory() as session:
+        assert session.scalar(select(KnowledgeFile).where(KnowledgeFile.filename == "broken.txt")) is None
+
+
+def test_upload_unexpected_vector_failure_also_compensates(client, app, settings):
+    from backend.app.db.models import KnowledgeFile
+
+    class UnexpectedFailure(FakeVectorStore):
+        def add_file(self, file_id, path, filename):
+            raise ValueError("unexpected chroma failure")
+
+    token = admin_token(client, settings)
+    app.state.vector_store_service = UnexpectedFailure()
+    response = client.post(
+        "/api/knowledge/files", headers=bearer(token), files={"file": ("unexpected.txt", b"broken", "text/plain")}
+    )
+
+    assert response.status_code == 503
+    assert "unexpected chroma failure" in response.json()["detail"]
+    assert not list(Path(settings.knowledge_upload_path).glob("*"))
+    with app.state.database.session_factory() as session:
+        assert session.scalar(select(KnowledgeFile).where(KnowledgeFile.filename == "unexpected.txt")) is None
+
+
 def test_faq_generation_and_review_updates_vector_store(client, app, settings):
     token = admin_token(client, settings)
     vector = FakeVectorStore()
@@ -84,6 +148,29 @@ def test_faq_generation_and_review_updates_vector_store(client, app, settings):
     assert ("delete_faq", faq_id) in vector.calls
 
 
+def test_faq_generation_falls_back_to_bootstrap_and_approved_review_is_idempotent(client, app, settings):
+    from backend.app.db.models import KnowledgeFile
+
+    token = admin_token(client, settings)
+    vector = FakeVectorStore()
+    app.state.vector_store_service = vector
+    app.state.faq_generator = FakeFaqGenerator()
+    bootstrap = Path(settings.knowledge_path) / "bootstrap-faq.txt"
+    bootstrap.write_text("bootstrap faq", encoding="utf-8")
+    try:
+        with app.state.database.session_factory.begin() as session:
+            item = KnowledgeFile(filename=bootstrap.name, file_md5="f" * 32, file_type=".txt")
+            session.add(item)
+            session.flush()
+            file_id = item.id
+        faq = client.post(f"/api/knowledge/files/{file_id}/generate-faq", headers=bearer(token)).json()[0]
+        assert client.put(f"/api/knowledge/faq/{faq['id']}/review", headers=bearer(token), json={"status": "approved"}).status_code == 200
+        assert client.put(f"/api/knowledge/faq/{faq['id']}/review", headers=bearer(token), json={"status": "approved"}).status_code == 200
+        assert [call for call in vector.calls if call[0] == "add_faq"] == [("add_faq", faq["id"], file_id)]
+    finally:
+        bootstrap.unlink(missing_ok=True)
+
+
 def test_rebuild_passes_active_files_and_approved_faqs(client, app, settings):
     token = admin_token(client, settings)
     vector = FakeVectorStore()
@@ -101,6 +188,30 @@ def test_rebuild_passes_active_files_and_approved_faqs(client, app, settings):
     rebuild_call = next(call for call in vector.calls if call[0] == "rebuild")
     assert uploaded["id"] in {item[0] for item in rebuild_call[1]}
     assert faq["id"] in {item[0] for item in rebuild_call[2]}
+
+
+def test_rebuild_rejects_bootstrap_filename_outside_root_and_reports_vector_failure(client, app, settings):
+    from backend.app.db.models import KnowledgeFile
+    from backend.rag.vector_store import VectorStoreUnavailable
+
+    class FailingRebuild(FakeVectorStore):
+        def rebuild(self, files=(), faqs=()):
+            assert all(path.resolve().is_relative_to(Path(settings.knowledge_path).resolve()) for _, path, _ in files)
+            assert all(filename != "../outside.txt" for _, _, filename in files)
+            raise VectorStoreUnavailable("rebuild incomplete; source data preserved")
+
+    token = admin_token(client, settings)
+    outside = Path(settings.knowledge_path).parent / "outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+    try:
+        with app.state.database.session_factory.begin() as session:
+            session.add(KnowledgeFile(filename="../outside.txt", file_md5="e" * 32, file_type=".txt"))
+        app.state.vector_store_service = FailingRebuild()
+        response = client.post("/api/knowledge/rebuild", headers=bearer(token))
+        assert response.status_code == 503
+        assert "source data preserved" in response.json()["detail"]
+    finally:
+        outside.unlink(missing_ok=True)
 
 
 def test_admin_account_device_inventory_notification_ticket_crud_and_dashboard(client, app, settings):
@@ -129,3 +240,49 @@ def test_admin_account_device_inventory_notification_ticket_crud_and_dashboard(c
     assert dashboard["knowledge_files"] >= 0
     assert any(item["model_id"] == "NEW-1" for item in dashboard["low_stock_devices"])
     assert client.delete("/api/admin/devices/NEW-1", headers=headers).status_code == 204
+
+
+def test_admin_cannot_disable_or_demote_self_and_must_leave_active_admin(client, app, settings):
+    from backend.app.core.security import hash_password
+    from backend.app.db.models import Account
+
+    token = admin_token(client, settings)
+    headers = bearer(token)
+    accounts = client.get("/api/admin/accounts", headers=headers).json()
+    current = next(item for item in accounts if item["username"] == "admin")
+    assert client.put(f"/api/admin/accounts/{current['id']}", headers=headers, json={"status": "disabled"}).status_code == 400
+    assert client.put(f"/api/admin/accounts/{current['id']}", headers=headers, json={"role": "user"}).status_code == 400
+
+    with app.state.database.session_factory.begin() as session:
+        second = Account(username="admin2", password_hash=hash_password("Admin2@123", settings.bcrypt_rounds), role="admin")
+        session.add(second)
+        session.flush()
+        second_id = second.id
+    assert client.put(f"/api/admin/accounts/{second_id}", headers=headers, json={"status": "disabled"}).status_code == 200
+    assert client.put(f"/api/admin/accounts/{current['id']}", headers=headers, json={"status": "disabled"}).status_code == 400
+
+
+def test_dashboard_counts_only_assistant_feedback_and_uses_total_stock_threshold(client, app, settings):
+    from backend.app.db.models import Account, ChatSession, ConversationHistory, Device, Inventory
+
+    token = admin_token(client, settings)
+    with app.state.database.session_factory.begin() as session:
+        account = session.scalar(select(Account).where(Account.username == "demo"))
+        chat = ChatSession(account_id=account.id)
+        session.add(chat)
+        session.flush()
+        session.add_all([
+            ConversationHistory(session_id=chat.id, user_id=account.user_id, role="user", content="q", feedback="like"),
+            ConversationHistory(session_id=chat.id, user_id=account.user_id, role="assistant", content="a", feedback="dislike"),
+        ])
+        session.add(Device(model_id="THRESHOLD", model_name="阈值设备", category="x", specs="x", description="x", price=1, features="x"))
+        session.flush()
+        session.add_all([
+            Inventory(model_id="THRESHOLD", warehouse="A", stock=2, min_stock=3),
+            Inventory(model_id="THRESHOLD", warehouse="B", stock=2, min_stock=5),
+        ])
+
+    dashboard = client.get("/api/admin/dashboard", headers=bearer(token)).json()
+    assert dashboard["satisfaction_rate"] == 0
+    low = next(item for item in dashboard["low_stock_devices"] if item["model_id"] == "THRESHOLD")
+    assert low == {"model_id": "THRESHOLD", "model_name": "阈值设备", "total_stock": 4, "stock_threshold": 5}

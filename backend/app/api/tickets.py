@@ -33,6 +33,14 @@ def my_tickets(account: Account = Depends(get_current_account), db: Session = De
 def create(payload: TicketCreate, request: Request, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
     if payload.session_id and not db.scalar(select(ChatSession).where(ChatSession.id == payload.session_id, ChatSession.account_id == account.id)):
         raise HTTPException(status_code=404, detail="会话不存在")
+    existing = db.scalar(select(Ticket).where(
+        Ticket.account_id == account.id,
+        Ticket.session_id == payload.session_id,
+        Ticket.status == "open",
+        Ticket.title == payload.title,
+    ))
+    if existing:
+        return ticket_dict(existing)
     try:
         service = getattr(request.app.state, "ticket_summary_service", None)
         summary = service.summarize(payload.content) if service else payload.content[:200]

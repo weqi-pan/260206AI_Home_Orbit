@@ -16,6 +16,40 @@ def test_agent_tools_use_runtime_context_identity(client, app):
     assert ticket["account_id"] == account_id
 
 
+def test_agent_restock_and_ticket_tools_are_idempotent(client, app):
+    from backend.agent.tools.agent_tools import create_ticket, register_restock_notify
+    from backend.app.db.models import Account, ChatSession, RestockNotification, Ticket
+    from sqlalchemy import func, select
+
+    with app.state.database.session_factory.begin() as db:
+        account_id = db.scalar(select(Account.id).where(Account.username == "demo"))
+        chat = ChatSession(account_id=account_id)
+        db.add(chat)
+        db.flush()
+        session_id = chat.id
+    runtime = SimpleNamespace(context={
+        "account_id": account_id,
+        "session_id": session_id,
+        "session_factory": app.state.database.session_factory,
+    })
+
+    first_notice = register_restock_notify.func(model_id="R1-Pro", runtime=runtime)
+    second_notice = register_restock_notify.func(model_id="R1-Pro", runtime=runtime)
+    first_ticket = create_ticket.func(title="相同故障", content="第一次", runtime=runtime)
+    second_ticket = create_ticket.func(title="相同故障", content="第二次", runtime=runtime)
+
+    assert first_notice["id"] == second_notice["id"]
+    assert first_ticket["id"] == second_ticket["id"]
+    with app.state.database.session_factory() as db:
+        assert db.scalar(select(func.count()).select_from(RestockNotification).where(
+            RestockNotification.account_id == account_id, RestockNotification.model_id == "R1-Pro"
+        )) == 1
+        assert db.scalar(select(func.count()).select_from(Ticket).where(
+            Ticket.account_id == account_id, Ticket.session_id == session_id, Ticket.status == "open",
+            Ticket.title == "相同故障",
+        )) == 1
+
+
 def test_create_deep_agent_is_lazy_and_has_three_declarative_subagents(monkeypatch):
     from backend.agent import deep_agent
 

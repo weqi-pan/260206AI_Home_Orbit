@@ -1,5 +1,7 @@
 import os
 
+from langchain_core.messages import AIMessage, AIMessageChunk
+
 
 class UnavailableAgentRunner:
     def stream(self, messages, context):
@@ -10,8 +12,10 @@ class UnavailableAgentRunner:
         for mode, chunk in agent.stream({"messages": messages}, stream_mode=["messages", "custom"], context=context):
             if mode == "messages":
                 message = chunk[0] if isinstance(chunk, tuple) else chunk
+                if not isinstance(message, (AIMessageChunk, AIMessage)):
+                    continue
                 content = getattr(message, "content", "")
-                if content:
+                if isinstance(content, str) and content:
                     yield {"event": "token", "data": {"content": content}}
             elif mode == "custom" and isinstance(chunk, dict):
                 yield {"event": "tool", "data": chunk}

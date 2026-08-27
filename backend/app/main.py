@@ -7,6 +7,7 @@ from backend.app.api import admin, auth, chat, devices, knowledge, tickets
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.seed import seed_database
 from backend.app.db.session import create_database
+from backend.rag.vector_store import VectorStoreService
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -19,6 +20,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         seed_database(database.session_factory, app_settings)
         app.state.database = database
         app.state.settings = app_settings
+        app.state.vector_store_service = VectorStoreService(app_settings.chroma_path)
         yield
         database.engine.dispose()
 

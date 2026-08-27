@@ -3,6 +3,7 @@ from datetime import datetime
 from langchain.tools import ToolRuntime
 from langchain_core.tools import tool
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 
 from backend.app.db.models import Device, DeviceUsageRecord, FaqPair, Inventory, RestockNotification, Ticket
 
@@ -70,7 +71,10 @@ def rag_summarize(query: str, runtime: ToolRuntime) -> str:
     service = runtime.context.get("vector_store_service")
     if not service:
         return "知识库服务当前不可用。"
-    return "\n".join(doc.page_content for doc in service.search(query))
+    try:
+        return "\n".join(doc.page_content for doc in service.search(query)) or "知识库中未找到相关资料。"
+    except Exception as exc:
+        return str(exc) or "知识库服务当前不可用。"
 
 
 @tool
@@ -99,10 +103,23 @@ def register_restock_notify(model_id: str, runtime: ToolRuntime) -> dict:
     account_id = runtime.context.get("account_id")
     if not account_id:
         raise RuntimeError("缺少当前账号身份")
-    with _factory(runtime).begin() as db:
+    factory = _factory(runtime)
+    with factory() as db:
         item = db.scalar(select(RestockNotification).where(RestockNotification.account_id == account_id, RestockNotification.model_id == model_id))
         if not item:
-            item = RestockNotification(account_id=account_id, model_id=model_id); db.add(item); db.flush()
+            item = RestockNotification(account_id=account_id, model_id=model_id)
+            db.add(item)
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                item = db.scalar(select(RestockNotification).where(
+                    RestockNotification.account_id == account_id, RestockNotification.model_id == model_id
+                ))
+                if item is None:
+                    raise
+            else:
+                db.refresh(item)
         return {"id": item.id, "account_id": item.account_id, "model_id": item.model_id, "status": item.status}
 
 
@@ -112,6 +129,16 @@ def create_ticket(title: str, content: str, runtime: ToolRuntime) -> dict:
     account_id = runtime.context.get("account_id")
     if not account_id:
         raise RuntimeError("缺少当前账号身份")
+    session_id = runtime.context.get("session_id")
     with _factory(runtime).begin() as db:
-        item = Ticket(account_id=account_id, title=title, summary=content[:200]); db.add(item); db.flush()
+        item = db.scalar(select(Ticket).where(
+            Ticket.account_id == account_id,
+            Ticket.session_id == session_id,
+            Ticket.status == "open",
+            Ticket.title == title,
+        ))
+        if not item:
+            item = Ticket(account_id=account_id, session_id=session_id, title=title, summary=content[:200])
+            db.add(item)
+            db.flush()
         return {"id": item.id, "account_id": item.account_id, "title": item.title, "status": item.status}

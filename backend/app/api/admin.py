@@ -72,7 +72,7 @@ def dashboard(session: Session = Depends(get_db)):
     likes, dislikes = session.execute(select(
         func.sum(case((ConversationHistory.feedback == "like", 1), else_=0)),
         func.sum(case((ConversationHistory.feedback == "dislike", 1), else_=0)),
-    )).one()
+    ).where(ConversationHistory.role == "assistant")).one()
     low_rows = session.execute(select(Device.model_id, Device.model_name, func.sum(Inventory.stock), func.max(Inventory.min_stock))
                                .join(Inventory).group_by(Device.model_id, Device.model_name)
                                .having(func.sum(Inventory.stock) <= func.max(Inventory.min_stock))).all()
@@ -86,7 +86,7 @@ def dashboard(session: Session = Depends(get_db)):
         "messages_last_7_days": session.scalar(select(func.count()).select_from(ConversationHistory).where(ConversationHistory.created_at >= week)) or 0,
         "satisfaction_rate": (likes or 0) / ((likes or 0) + (dislikes or 0)) if (likes or 0) + (dislikes or 0) else 0,
         "ticket_status_counts": ticket_counts,
-        "low_stock_devices": [{"model_id": row[0], "model_name": row[1], "total_stock": row[2], "min_stock": row[3]} for row in low_rows],
+        "low_stock_devices": [{"model_id": row[0], "model_name": row[1], "total_stock": row[2], "stock_threshold": row[3]} for row in low_rows],
         "knowledge_files": session.scalar(select(func.count()).select_from(KnowledgeFile).where(KnowledgeFile.status == "active")) or 0,
         "approved_faq": session.scalar(select(func.count()).select_from(FaqPair).where(FaqPair.status == "approved")) or 0,
     }
@@ -98,9 +98,20 @@ def accounts(db: Session = Depends(get_db)):
 
 
 @router.put("/accounts/{account_id}")
-def update_account(account_id: str, payload: AccountUpdate, db: Session = Depends(get_db)):
+def update_account(account_id: str, payload: AccountUpdate, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     item = db.get(Account, account_id)
     if not item: raise HTTPException(status_code=404, detail="账号不存在")
+    disabling_admin = item.role == "admin" and item.status == "active" and (
+        payload.status == "disabled" or payload.role == "user"
+    )
+    if item.id == admin.id and disabling_admin:
+        raise HTTPException(status_code=400, detail="不能禁用或降级当前管理员账号")
+    if disabling_admin:
+        active_admins = db.scalar(select(func.count()).select_from(Account).where(
+            Account.role == "admin", Account.status == "active"
+        )) or 0
+        if active_admins <= 1:
+            raise HTTPException(status_code=400, detail="至少保留一个启用的管理员账号")
     if payload.status is not None: item.status = payload.status
     if payload.role is not None: item.role = payload.role
     db.commit(); db.refresh(item)

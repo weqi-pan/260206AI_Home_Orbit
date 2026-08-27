@@ -14,6 +14,12 @@ def echo_tool(text: str) -> str:
     return f"echo:{text}"
 
 
+@tool
+def failing_tool(text: str) -> str:
+    """Raise an offline failure."""
+    raise RuntimeError(f"failed:{text}")
+
+
 class ToolCallingChatModel(BaseChatModel):
     bound_tool_names: list[str] = []
 
@@ -77,3 +83,55 @@ def test_real_deep_agent_invokes_custom_tool_with_todo_subagent_and_monitor():
     assert monitored_tools == ["echo_tool"]
     assert any(isinstance(message, ToolMessage) and message.content == "echo:offline" for message in result["messages"])
     assert result["messages"][-1].content == "offline harness complete"
+
+
+def test_real_deep_agent_runner_emits_tool_lifecycle_without_tool_result_as_token(monkeypatch):
+    from backend.agent.deep_agent import build_deep_agent
+    from backend.app.services.defaults import UnavailableAgentRunner
+    import backend.agent.deep_agent as deep_agent_module
+
+    agent = build_deep_agent(
+        model=ToolCallingChatModel(),
+        tools=[echo_tool],
+        subagents=[{"name": "researcher", "description": "offline", "system_prompt": "Summarize."}],
+    )
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "offline-test-key")
+    monkeypatch.setattr(deep_agent_module, "create_deep_agent", lambda: agent)
+
+    events = list(UnavailableAgentRunner().stream([{"role": "user", "content": "run"}], {}))
+
+    tokens = [event["data"]["content"] for event in events if event["event"] == "token"]
+    tool_events = [event["data"] for event in events if event["event"] == "tool"]
+    assert "".join(tokens) == "offline harness complete"
+    assert all("echo:offline" not in token for token in tokens)
+    assert [(event["name"], event["status"]) for event in tool_events] == [
+        ("echo_tool", "start"),
+        ("echo_tool", "success"),
+    ]
+
+
+def test_monitor_tool_emits_error_event_on_real_deep_agent_tool_failure():
+    from backend.agent.deep_agent import build_deep_agent
+
+    class FailingToolModel(ToolCallingChatModel):
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs: Any) -> ChatResult:
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(
+                content="",
+                tool_calls=[{"name": "failing_tool", "args": {"text": "offline"}, "id": "fail-1", "type": "tool_call"}],
+            ))])
+
+    agent = build_deep_agent(model=FailingToolModel(), tools=[failing_tool])
+    custom_events = []
+    try:
+        for mode, chunk in agent.stream(
+            {"messages": [{"role": "user", "content": "fail"}]}, stream_mode=["messages", "custom"]
+        ):
+            if mode == "custom":
+                custom_events.append(chunk)
+    except RuntimeError as exc:
+        assert "failed:offline" in str(exc)
+
+    assert custom_events == [
+        {"name": "failing_tool", "status": "start"},
+        {"name": "failing_tool", "status": "error", "message": "failed:offline"},
+    ]

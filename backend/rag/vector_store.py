@@ -45,14 +45,19 @@ class VectorStoreService:
         chunks = self.splitter.split_documents(documents)
         for chunk in chunks:
             chunk.metadata = {"source_file_id": str(file_id), "source_type": "kb", "filename": filename}
-        self._get_store().add_documents(chunks)
+        ids = [f"kb:{file_id}:{index}" for index in range(len(chunks))]
+        store = self._get_store()
+        store._collection.delete(where={"source_file_id": str(file_id)})
+        store.add_documents(chunks, ids=ids)
 
     def delete_file(self, file_id):
         self._get_store()._collection.delete(where={"source_file_id": str(file_id)})
 
     def add_faq(self, faq_id, question, answer, source_file_id):
         metadata = {"source_file_id": str(source_file_id or ""), "source_type": "faq", "filename": "FAQ", "faq_id": str(faq_id)}
-        self._get_store().add_documents([Document(page_content=f"Q:{question}\nA:{answer}", metadata=metadata)])
+        store = self._get_store()
+        store._collection.delete(where={"faq_id": str(faq_id)})
+        store.add_documents([Document(page_content=f"Q:{question}\nA:{answer}", metadata=metadata)], ids=[f"faq:{faq_id}"])
 
     def delete_faq(self, faq_id):
         self._get_store()._collection.delete(where={"faq_id": str(faq_id)})

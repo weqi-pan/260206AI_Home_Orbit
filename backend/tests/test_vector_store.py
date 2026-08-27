@@ -14,8 +14,9 @@ class FakeStore:
         self.documents = []
         self._collection = FakeCollection()
 
-    def add_documents(self, documents):
+    def add_documents(self, documents, ids=None):
         self.documents.extend(documents)
+        self.ids = getattr(self, "ids", []) + list(ids or [])
 
 
 def test_vector_store_adds_required_metadata_and_deletes_by_ids(tmp_path: Path):
@@ -33,7 +34,13 @@ def test_vector_store_adds_required_metadata_and_deletes_by_ids(tmp_path: Path):
 
     assert store.documents[0].metadata == {"source_file_id": "file-1", "source_type": "kb", "filename": "guide.txt"}
     assert store.documents[-1].metadata == {"source_file_id": "file-1", "source_type": "faq", "filename": "FAQ", "faq_id": "7"}
-    assert store._collection.deletes == [{"where": {"source_file_id": "file-1"}}, {"where": {"faq_id": "7"}}]
+    assert store.ids[-1] == "faq:7"
+    assert store._collection.deletes == [
+        {"where": {"source_file_id": "file-1"}},
+        {"where": {"faq_id": "7"}},
+        {"where": {"source_file_id": "file-1"}},
+        {"where": {"faq_id": "7"}},
+    ]
 
 
 def test_vector_store_rebuilds_files_and_approved_faqs(tmp_path: Path):
@@ -49,5 +56,9 @@ def test_vector_store_rebuilds_files_and_approved_faqs(tmp_path: Path):
         faqs=[(7, "如何维护？", "定期清洁。", "file-1")],
     )
 
-    assert store._collection.deletes == [{"where": {"source_type": {"$in": ["kb", "faq"]}}}]
+    assert store._collection.deletes == [
+        {"where": {"source_type": {"$in": ["kb", "faq"]}}},
+        {"where": {"source_file_id": "file-1"}},
+        {"where": {"faq_id": "7"}},
+    ]
     assert [document.metadata["source_type"] for document in store.documents] == ["kb", "faq"]

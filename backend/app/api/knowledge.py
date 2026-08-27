@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_db, require_admin
@@ -21,7 +22,25 @@ class ReviewRequest(BaseModel):
 
 
 def vector_service(request):
-    return getattr(request.app.state, "vector_store_service", None) or VectorStoreService(request.app.state.settings.chroma_path)
+    service = getattr(request.app.state, "vector_store_service", None)
+    if service is None:
+        service = VectorStoreService(request.app.state.settings.chroma_path)
+        request.app.state.vector_store_service = service
+    return service
+
+
+def _bootstrap_file(settings, filename):
+    root = Path(settings.knowledge_path).resolve()
+    candidate = (root / filename).resolve()
+    return candidate if candidate.is_relative_to(root) else None
+
+
+def _knowledge_file_path(settings, item):
+    uploaded = Path(settings.knowledge_upload_path) / f"{item.id}{item.file_type}"
+    if uploaded.exists():
+        return uploaded
+    bootstrap = _bootstrap_file(settings, item.filename)
+    return bootstrap if bootstrap and bootstrap.exists() else None
 
 
 def file_dict(item):
@@ -47,21 +66,32 @@ async def upload(request: Request, file: UploadFile = File(...), admin: Account 
     if len(content) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=413, detail="文件不能超过20MB")
     digest = hashlib.md5(content).hexdigest()
-    if db.scalar(select(KnowledgeFile).where(KnowledgeFile.file_md5 == digest, KnowledgeFile.status == "active")):
+    existing = db.scalar(select(KnowledgeFile).where(KnowledgeFile.file_md5 == digest))
+    if existing and existing.status == "active":
         raise HTTPException(status_code=409, detail="文件内容重复")
     directory = Path(request.app.state.settings.knowledge_upload_path)
     directory.mkdir(parents=True, exist_ok=True)
-    item = KnowledgeFile(filename=Path(file.filename).name, file_md5=digest, file_type=suffix, uploaded_by=admin.id)
-    db.add(item)
-    db.flush()
+    item = existing or KnowledgeFile(file_md5=digest)
+    item.filename = Path(file.filename).name
+    item.file_type = suffix
+    item.uploaded_by = admin.id
+    item.status = "active"
+    if existing is None:
+        db.add(item)
+        try:
+            db.flush()
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="文件内容重复") from exc
     path = directory / f"{item.id}{suffix}"
     path.write_bytes(content)
     try:
         vector_service(request).add_file(item.id, path, item.filename)
-    except VectorStoreUnavailable as exc:
+    except Exception as exc:
         db.rollback()
         path.unlink(missing_ok=True)
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        detail = str(exc) if isinstance(exc, VectorStoreUnavailable) else f"向量库写入失败：{exc}"
+        raise HTTPException(status_code=503, detail=detail) from exc
     db.commit()
     db.refresh(item)
     return file_dict(item)
@@ -87,13 +117,11 @@ def delete_file(file_id: str, request: Request, response: Response, db: Session 
 
 @router.post("/rebuild")
 def rebuild(request: Request, db: Session = Depends(get_db)):
-    directory = Path(request.app.state.settings.knowledge_upload_path)
-    bootstrap = Path(request.app.state.settings.knowledge_path)
-    files = [
-        (item.id, directory / f"{item.id}{item.file_type}" if (directory / f"{item.id}{item.file_type}").exists() else bootstrap / item.filename, item.filename)
-        for item in db.scalars(select(KnowledgeFile).where(KnowledgeFile.status == "active")).all()
-        if (directory / f"{item.id}{item.file_type}").exists() or (bootstrap / item.filename).exists()
-    ]
+    files = []
+    for item in db.scalars(select(KnowledgeFile).where(KnowledgeFile.status == "active")).all():
+        path = _knowledge_file_path(request.app.state.settings, item)
+        if path:
+            files.append((item.id, path, item.filename))
     faqs = [
         (item.id, item.question, item.answer, item.source_file_id)
         for item in db.scalars(select(FaqPair).where(FaqPair.status == "approved")).all()
@@ -113,7 +141,9 @@ def generate_faq(file_id: str, request: Request, db: Session = Depends(get_db)):
     service = getattr(request.app.state, "faq_generator", None)
     if not service:
         service = FaqGenerator()
-    path = Path(request.app.state.settings.knowledge_upload_path) / f"{item.id}{item.file_type}"
+    path = _knowledge_file_path(request.app.state.settings, item)
+    if not path:
+        raise HTTPException(status_code=409, detail="知识文件源文件不存在，请重新上传或重建")
     result = []
     for pair in service.generate(path):
         faq = FaqPair(question=pair["question"], answer=pair["answer"], source_file_id=item.id)
@@ -138,6 +168,8 @@ def review(faq_id: int, payload: ReviewRequest, request: Request, db: Session = 
     if not item:
         raise HTTPException(status_code=404, detail="FAQ不存在")
     try:
+        if payload.status == item.status:
+            return faq_dict(item)
         if payload.status == "approved":
             vector_service(request).add_faq(item.id, item.question, item.answer, item.source_file_id)
         else:
