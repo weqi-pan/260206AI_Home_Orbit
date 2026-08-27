@@ -98,12 +98,14 @@ class SnapshotCompiler:
                 raise ValueError
             deployment, version, installation = node["deployment"], node["agent_version"], node["installation"]
             definition = validate_agent_definition(version["definition"])
-            if _hash_json(normalize_json(definition)) != version["config_hash"]:
-                raise ValueError
             live_version = self.session.get(AgentVersion, version["id"])
             live_agent = self.session.get(AgentDefinition, node["agent"]["id"])
+            live_definition = validate_agent_definition(json.loads(live_version.definition_json)) if live_version else None
+            canonical_definition_json = normalize_json(live_definition) if live_definition else None
             if (not live_version or live_version.household_id != household_id or
-                    live_version.agent_id != node["agent"]["id"] or not live_agent or
+                    live_version.agent_id != node["agent"]["id"] or live_version.version != version["version"] or
+                    definition != live_definition or version["config_hash"] != _hash_json(canonical_definition_json) or
+                    not live_agent or
                     live_agent.household_id != household_id or live_agent.name != node["agent"]["name"]):
                 raise ValueError
             if node["workflow"] != definition.get("workflow") or node["budget"] != definition.get("budgets", {}):
@@ -133,14 +135,16 @@ class SnapshotCompiler:
                 raise ValueError
             for skill in node["skills"]:
                 safe = validate_skill_definition(skill["definition"])
-                if _hash_json(normalize_json(safe)) != skill["config_hash"]:
-                    raise ValueError
                 live = self.session.get(SkillVersion, skill["id"])
+                live_definition = validate_skill_definition(json.loads(live.definition_json)) if live else None
+                canonical_definition_json = normalize_json(live_definition) if live_definition else None
                 binding = self.session.scalar(select(AgentSkillBinding.id).where(
                     AgentSkillBinding.household_id == household_id,
                     AgentSkillBinding.agent_version_id == version["id"],
                     AgentSkillBinding.skill_version_id == skill["id"]))
-                if not live or live.household_id != household_id or live.skill_id != skill["skill_id"] or not binding:
+                if (not live or live.household_id != household_id or live.skill_id != skill["skill_id"] or
+                        live.version != skill["version"] or safe != live_definition or
+                        skill["config_hash"] != _hash_json(canonical_definition_json) or not binding):
                     raise ValueError
             for child in node["children"]:
                 self._validate_node(child, household_id)

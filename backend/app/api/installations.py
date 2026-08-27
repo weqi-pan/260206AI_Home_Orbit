@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.agent.platform.installations import InstallationService
 from backend.app.core.security import get_current_account, get_db
-from backend.app.db.models import Account, AgentInstallation, HouseholdMember, InstallationPermission
+from backend.app.db.models import Account, AgentInstallation, HouseholdMember
 from backend.app.schemas.agent_platform import InstallationPermissionRequest, InstallationRequest
 
 
@@ -57,11 +57,11 @@ def grant_permission(installation_id: str, payload: InstallationPermissionReques
 @router.delete("/{installation_id}/permissions/{tool_id}", status_code=204)
 def revoke_permission(installation_id: str, tool_id: str, account: Account = Depends(get_current_account),
                       db: Session = Depends(get_db)):
-    installation = db.scalar(select(AgentInstallation).where(AgentInstallation.id == installation_id,
-        AgentInstallation.status == "installed", AgentInstallation.authority_slot == "active"))
+    installation = db.get(AgentInstallation, installation_id)
     if not installation:
         raise HTTPException(404, detail={"code": "INSTALLATION_NOT_FOUND"})
     _manager(db, account.id, installation.household_id)
-    db.execute(delete(InstallationPermission).where(InstallationPermission.installation_id == installation_id,
-                                                     InstallationPermission.tool_id == tool_id))
-    db.commit()
+    try:
+        InstallationService(db, installation.household_id, account.id).revoke(installation_id, tool_id)
+    except RuntimeError as exc:
+        raise HTTPException(409, detail={"code": str(exc)}) from exc

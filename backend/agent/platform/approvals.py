@@ -65,13 +65,25 @@ class ApprovalResumeService:
             consent_digest = hashlib.sha256(canonical_json(dict(context.consent)).encode("utf-8")).hexdigest()
             if row.consent_digest != consent_digest: raise PlatformToolError("APPROVAL_CONSENT_CHANGED")
             if not row.expires_at or row.expires_at <= utcnow():
-                audit_approval(session, row, "approval_expired", "APPROVAL_EXPIRED")
+                try:
+                    row.status = "expired"; row.error_code = "APPROVAL_EXPIRED"; row.error_detail = None
+                    audit_approval(session, row, "approval_expired", row.error_code)
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
                 raise PlatformToolError("APPROVAL_EXPIRED")
             if row.arguments_digest != arguments_digest(arguments): raise PlatformToolError("APPROVAL_ARGUMENTS_MISMATCH")
             deployment = session.scalar(select(AgentDeployment).where(AgentDeployment.id == row.deployment_id,
                                                                        AgentDeployment.household_id == row.household_id))
             if not deployment or deployment.revision != row.deployment_revision or deployment.agent_version_id != row.agent_version_id:
-                audit_approval(session, row, "approval_invalidated", "APPROVAL_VERSION_CHANGED")
+                try:
+                    row.status = "invalidated"; row.error_code = "APPROVAL_VERSION_CHANGED"; row.error_detail = None
+                    audit_approval(session, row, "approval_invalidated", row.error_code)
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
                 raise PlatformToolError("APPROVAL_VERSION_CHANGED")
             authority = ExecutionAuthority(session).recheck(context,
                 session.get(__import__("backend.app.db.models", fromlist=["ToolDefinition"]).ToolDefinition, row.tool_id).key,

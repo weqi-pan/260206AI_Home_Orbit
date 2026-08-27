@@ -9,6 +9,19 @@ class InstallationService:
         self.household_id = household_id
         self.principal_id = principal_id
 
+    def _current(self, installation_id):
+        installation = self.session.scalar(select(AgentInstallation).where(
+            AgentInstallation.id == installation_id,
+            AgentInstallation.household_id == self.household_id).join(
+                AgentDeployment, AgentDeployment.id == AgentInstallation.deployment_id))
+        if not installation or installation.status != "installed" or installation.authority_slot != "active":
+            raise RuntimeError("PERMISSION_REQUIRED")
+        deployment = self.session.get(AgentDeployment, installation.deployment_id)
+        if (not deployment or deployment.household_id != self.household_id or
+                deployment.agent_version_id != installation.agent_version_id):
+            raise RuntimeError("VERSION_CHANGED")
+        return installation
+
     def install(self, deployment_id):
         deployment = self.session.scalar(select(AgentDeployment).where(AgentDeployment.id == deployment_id,
                                                                        AgentDeployment.household_id == self.household_id))
@@ -39,12 +52,7 @@ class InstallationService:
         self.session.add(row); self.session.commit(); self.session.refresh(row); return row
 
     def grant(self, installation_id, tool_id, tool_version):
-        installation = self.session.scalar(select(AgentInstallation).where(AgentInstallation.id == installation_id,
-            AgentInstallation.household_id == self.household_id, AgentInstallation.status == "installed",
-            AgentInstallation.authority_slot == "active").join(AgentDeployment,
-                AgentDeployment.id == AgentInstallation.deployment_id).where(
-                    AgentDeployment.household_id == self.household_id,
-                    AgentDeployment.agent_version_id == AgentInstallation.agent_version_id))
+        installation = self._current(installation_id)
         tool = self.session.get(ToolDefinition, tool_id)
         if not installation or not tool or tool.version != tool_version:
             raise RuntimeError("PERMISSION_REQUIRED")
@@ -67,6 +75,7 @@ class InstallationService:
         self.session.commit(); return row
 
     def authorized_tool_ids(self, installation_id):
+        self._current(installation_id)
         return set(self.session.scalars(select(InstallationPermission.tool_id).join(
             AgentInstallation, AgentInstallation.id == InstallationPermission.installation_id).join(
                 AgentDeployment, AgentDeployment.id == AgentInstallation.deployment_id).where(
@@ -76,3 +85,13 @@ class InstallationService:
             AgentInstallation.authority_slot == "active",
             AgentDeployment.household_id == self.household_id,
             AgentDeployment.agent_version_id == AgentInstallation.agent_version_id)).all())
+
+    def revoke(self, installation_id, tool_id):
+        from sqlalchemy import delete
+
+        self._current(installation_id)
+        self.session.execute(delete(InstallationPermission).where(
+            InstallationPermission.household_id == self.household_id,
+            InstallationPermission.installation_id == installation_id,
+            InstallationPermission.tool_id == tool_id))
+        self.session.commit()

@@ -236,8 +236,9 @@ def test_snapshot_rehydrated_high_risk_tool_uses_interrupt_wrapper(db_session, p
     assert events[-1]["event"] == "approval_required"
 
 
-def test_snapshot_rehydration_ignores_live_child_definition_mutation(db_session, platform_seed):
+def test_snapshot_rehydration_rejects_live_child_immutable_row_mutation(db_session, platform_seed):
     from backend.agent.platform.snapshots import CompiledSnapshotService, SnapshotCompiler
+    from backend.agent.platform.policy_errors import PlatformToolError
     from backend.app.db.models import AgentDefinition, AgentDeployment, AgentInstallation, AgentVersion
     child_def = AgentDefinition(household_id=platform_seed["household_id"], name="snapshot-child")
     db_session.add(child_def); db_session.flush()
@@ -255,13 +256,10 @@ def test_snapshot_rehydration_ignores_live_child_definition_mutation(db_session,
         platform_seed["installation_id"], platform_seed["context"])
     child_version.definition_json = '{"prompt":"changed child","tools":[]}'
     db_session.commit()
-    from backend.tests.test_agent_platform_delegation import ChildContextModel
-    compiler = SnapshotCompiler(db_session, model_factory=lambda deployment: ChildContextModel())
-    loaded = compiler.validate_and_load(json.loads(json.dumps(snapshot)), platform_seed["context"])
-    compiler.validate_safety(loaded, platform_seed["context"])
-    compiled = compiler.rehydrate(loaded, platform_seed["context"])
-    assert loaded["children"][0]["agent_version"]["definition"]["prompt"] == "original child"
-    assert compiled.subagent_names == ("snapshot-child",)
+    compiler = SnapshotCompiler(db_session)
+    with pytest.raises(PlatformToolError) as error:
+        compiler.validate_and_load(json.loads(json.dumps(snapshot)), platform_seed["context"])
+    assert error.value.code == "SNAPSHOT_INVALID"
 
 
 def test_confirm_parallel_and_child_budgets_are_authoritative(platform_seed):

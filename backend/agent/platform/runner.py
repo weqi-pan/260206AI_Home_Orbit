@@ -3,6 +3,23 @@ import json
 from backend.app.db.base import utcnow
 
 
+STABLE_RUN_CODES = frozenset({
+    "AGENT_RUN_FAILED", "APPROVAL_ARGUMENTS_MISMATCH", "APPROVAL_CONSENT_CHANGED",
+    "APPROVAL_DECISION_FORBIDDEN", "APPROVAL_EXPIRED", "APPROVAL_IN_PROGRESS",
+    "APPROVAL_NOT_FOUND", "APPROVAL_REQUIRED", "APPROVAL_RETRY_REQUIRED",
+    "APPROVAL_STATE_CONFLICT", "APPROVAL_VERSION_CHANGED", "MODEL_CONFIGURATION_STALE",
+    "PERMISSION_REQUIRED", "RUN_CANCELLED", "RUN_LIMIT_EXCEEDED", "SNAPSHOT_INVALID",
+    "SUBAGENT_NAME_CONFLICT", "SUBAGENT_NOT_FOUND", "VERSION_CHANGED",
+})
+
+
+def stable_run_code(exc):
+    code = getattr(exc, "code", None)
+    if code is None and str(exc) in STABLE_RUN_CODES:
+        code = str(exc)
+    return code if code in STABLE_RUN_CODES else "AGENT_RUN_FAILED"
+
+
 def persist_run_outcome(session, run_id, status, error_code=None, finished=False):
     from backend.app.db.models import AgentRun
     run = session.get(AgentRun, run_id)
@@ -114,9 +131,10 @@ class DeploymentAgentRunner(PlatformAgentRunner):
             self._persist(context, "cancelled", "RUN_CANCELLED", finished=True); terminal = True
             raise
         except Exception as exc:
-            code = getattr(exc, "code", None) or "AGENT_RUN_FAILED"
-            self._persist(context, "failed", code, finished=True); terminal = True
-            yield {"event": "run", "data": {"run_id": context.run_id, "status": "failed", "error_code": code}}
+            code = stable_run_code(exc)
+            status = "cancelled" if code == "RUN_CANCELLED" else "failed"
+            self._persist(context, status, code, finished=True); terminal = True
+            yield {"event": "run", "data": {"run_id": context.run_id, "status": status, "error_code": code}}
             return
         finally:
             self._persist_budget(context)
@@ -138,8 +156,9 @@ class DeploymentAgentRunner(PlatformAgentRunner):
         except GeneratorExit:
             self._persist(context, "cancelled", "RUN_CANCELLED", finished=True); raise
         except Exception as exc:
-            code = getattr(exc, "code", None) or "AGENT_RUN_FAILED"
-            status = "retry_required" if code == "APPROVAL_RETRY_REQUIRED" else "failed"
+            code = stable_run_code(exc)
+            status = ("cancelled" if code == "RUN_CANCELLED" else
+                      "retry_required" if code == "APPROVAL_RETRY_REQUIRED" else "failed")
             self._persist(context, status, code, finished=True)
             yield {"event": "run", "data": {"run_id": context.run_id, "status": status, "error_code": code}}
             return
