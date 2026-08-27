@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus, Promotion, Tickets } from '@element-plus/icons-vue'
@@ -16,6 +16,7 @@ import {
 } from '../api/chat'
 import MessageItem from '../components/MessageItem.vue'
 import { useModalFocus } from '../composables/useModalFocus'
+import { shellModalOpenKey } from '../composables/shellModal'
 import type { ChatUiMessage } from '../types'
 
 const router = useRouter()
@@ -32,12 +33,15 @@ const scrollRef = ref<HTMLElement | undefined>()
 const sessionDrawerOpen = ref(false)
 const sessionDrawerTrigger = ref<HTMLButtonElement>()
 const sessionDrawer = ref<HTMLElement>()
+const shellModalOpen = inject(shellModalOpenKey, ref(false))
 const { show: openSessionDrawer, hide: closeSessionDrawer, onKeydown: onSessionDrawerKeydown } = useModalFocus(
   sessionDrawerOpen,
   sessionDrawer,
   sessionDrawerTrigger,
 )
 let abortController: AbortController | null = null
+watch(sessionDrawerOpen, (open) => { shellModalOpen.value = open }, { immediate: true })
+onUnmounted(() => { shellModalOpen.value = false })
 
 const activeSession = computed(() => sessions.value.find((item) => item.id === activeId.value) ?? null)
 
@@ -235,40 +239,42 @@ onMounted(() => {
 <template>
   <div class="chat-page">
     <button ref="sessionDrawerTrigger" class="session-drawer-trigger" type="button" aria-label="打开会话列表" @click="openSessionDrawer">会话</button>
-    <div v-if="sessionDrawerOpen" class="drawer-backdrop" @click="closeSessionDrawer"></div>
-    <aside
-      ref="sessionDrawer"
-      v-loading="listLoading"
-      :class="['sessions-panel', { 'drawer-open': sessionDrawerOpen }]"
-      :role="sessionDrawerOpen ? 'dialog' : undefined"
-      :aria-label="sessionDrawerOpen ? '会话列表' : undefined"
-      :aria-modal="sessionDrawerOpen ? 'true' : undefined"
-      @keydown="onSessionDrawerKeydown"
-    >
-      <div class="sessions-head">
-        <span class="sessions-title">会话列表</span>
-        <div><button v-if="sessionDrawerOpen" class="drawer-close" type="button" aria-label="关闭会话列表" @click="closeSessionDrawer">关闭</button><el-button type="primary" size="small" :icon="Plus" @click="handleNewSession()">新建</el-button></div>
-      </div>
-      <div class="session-list">
-        <div
-          v-for="item in sessions"
-          :key="item.id"
-          class="session-item"
-          :class="{ active: item.id === activeId }"
-          :data-session-id="item.id"
-          role="button"
-          tabindex="0"
-          @click="selectSession(item.id)"
-          @keydown.enter.prevent="selectSession(item.id)"
-          @keydown.space.prevent="selectSession(item.id)"
-        >
-          <span class="session-name" :title="item.title">{{ item.title }}</span>
-          <el-icon class="session-delete" title="删除会话" @click.stop="handleDeleteSession(item.id)"><Delete /></el-icon>
+    <Teleport to="body" :disabled="!sessionDrawerOpen">
+      <aside
+        ref="sessionDrawer"
+        v-loading="listLoading"
+        :class="['sessions-panel', { 'drawer-open': sessionDrawerOpen }]"
+        :role="sessionDrawerOpen ? 'dialog' : undefined"
+        :aria-label="sessionDrawerOpen ? '会话列表' : undefined"
+        :aria-modal="sessionDrawerOpen ? 'true' : undefined"
+        @keydown="onSessionDrawerKeydown"
+      >
+        <div class="sessions-head">
+          <span class="sessions-title">会话列表</span>
+          <div><button v-if="sessionDrawerOpen" class="drawer-close" type="button" aria-label="关闭会话列表" @click="closeSessionDrawer">关闭</button><el-button type="primary" size="small" :icon="Plus" @click="handleNewSession()">新建</el-button></div>
         </div>
-        <el-empty v-if="!sessions.length && !listLoading" description="暂无会话" :image-size="60" />
-      </div>
-    </aside>
-    <section class="chat-main" :inert="sessionDrawerOpen" :aria-hidden="sessionDrawerOpen ? 'true' : undefined">
+        <div class="session-list">
+          <div
+            v-for="item in sessions"
+            :key="item.id"
+            class="session-item"
+            :class="{ active: item.id === activeId }"
+            :data-session-id="item.id"
+            role="button"
+            tabindex="0"
+            @click="selectSession(item.id)"
+            @keydown.enter.prevent="selectSession(item.id)"
+            @keydown.space.prevent="selectSession(item.id)"
+          >
+            <span class="session-name" :title="item.title">{{ item.title }}</span>
+            <el-icon class="session-delete" title="删除会话" @click.stop="handleDeleteSession(item.id)"><Delete /></el-icon>
+          </div>
+          <el-empty v-if="!sessions.length && !listLoading" description="暂无会话" :image-size="60" />
+        </div>
+      </aside>
+    </Teleport>
+    <Teleport to="body"><div v-if="sessionDrawerOpen" class="drawer-backdrop" @click="closeSessionDrawer"></div></Teleport>
+    <section class="chat-main">
       <header class="chat-header">
         <span class="chat-session-title" :title="activeSession?.title">{{ activeSession?.title ?? '新对话' }}</span>
         <el-button size="small" :icon="Tickets" @click="goCreateTicket()">提交工单</el-button>
