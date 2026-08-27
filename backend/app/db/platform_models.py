@@ -77,7 +77,12 @@ class ToolDefinition(Base):
     __tablename__ = "tool_definitions"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     risk_level: Mapped[str] = mapped_column(String(32), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False, default="1")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    catalog_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
 
 
 class TenantRow:
@@ -137,7 +142,10 @@ class ActiveEmbeddingCollection(Base):
 
 class ToolPermission(TenantRow, Base):
     __tablename__ = "tool_permissions"
+    __table_args__ = (UniqueConstraint("household_id", "tool_id", name="uq_tool_permission_household_tool"),)
     tool_id: Mapped[str] = mapped_column(ForeignKey("tool_definitions.id"), nullable=False)
+    tool_version: Mapped[str] = mapped_column(String(32), nullable=False, default="1")
+    granted_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id"))
 
 
 class Skill(TenantRow, Base):
@@ -219,6 +227,8 @@ class AgentDeployment(TenantRow, Base):
         ForeignKeyConstraint(["agent_version_id", "household_id"], ["agent_versions.id", "agent_versions.household_id"]),
     )
     agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="private")
 
 
 class AgentInstallation(TenantRow, Base):
@@ -227,6 +237,8 @@ class AgentInstallation(TenantRow, Base):
         ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
     )
     deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="installed")
 
 
 class InstallationPermission(Base):
@@ -238,6 +250,9 @@ class InstallationPermission(Base):
     household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     installation_id: Mapped[str] = mapped_column(String(36), nullable=False)
     tool_id: Mapped[str] = mapped_column(ForeignKey("tool_definitions.id"), nullable=False)
+    tool_version: Mapped[str] = mapped_column(String(32), nullable=False, default="1")
+    granted_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Favorite(TenantRow, Base):
@@ -297,6 +312,17 @@ class AgentRun(TenantRow, Base):
         ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
     )
     deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    principal_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    member_id: Mapped[str] = mapped_column(ForeignKey("household_members.id"), nullable=False)
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    deployment_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    model_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    skill_versions_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="running")
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class ToolExecution(Base):
@@ -308,6 +334,21 @@ class ToolExecution(Base):
     household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     run_id: Mapped[str] = mapped_column(String(36), nullable=False)
     tool_id: Mapped[str] = mapped_column(ForeignKey("tool_definitions.id"), nullable=False)
+    principal_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    skill_versions_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    tool_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    deployment_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    idempotency_key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    arguments_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    result_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
 
 
 class ApprovalRequest(Base):
@@ -318,6 +359,54 @@ class ApprovalRequest(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    principal_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    tool_id: Mapped[str] = mapped_column(ForeignKey("tool_definitions.id"), nullable=False)
+    tool_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    deployment_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    arguments_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    arguments_json: Mapped[str] = mapped_column(Text, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    approved_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id"))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    result_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AgentCheckpoint(Base):
+    __tablename__ = "agent_checkpoints"
+    __table_args__ = (UniqueConstraint("thread_id", "checkpoint_ns", "checkpoint_id", name="uq_agent_checkpoint_key"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    thread_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    checkpoint_ns: Mapped[str] = mapped_column(String(250), nullable=False)
+    checkpoint_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    parent_checkpoint_id: Mapped[str | None] = mapped_column(String(100))
+    checkpoint_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    metadata_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AgentCheckpointWrite(Base):
+    __tablename__ = "agent_checkpoint_writes"
+    __table_args__ = (UniqueConstraint("thread_id", "checkpoint_ns", "checkpoint_id", "task_id", "write_index", name="uq_agent_checkpoint_write"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    thread_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    checkpoint_ns: Mapped[str] = mapped_column(String(250), nullable=False)
+    checkpoint_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    task_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    task_path: Mapped[str] = mapped_column(String(250), nullable=False, default="")
+    write_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    channel: Mapped[str] = mapped_column(String(100), nullable=False)
+    value_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
 
 
 class HouseholdTask(TenantRow, Base):

@@ -40,6 +40,7 @@ class ChatSession(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
+    deployment_id: Mapped[str | None] = mapped_column(String(36), index=True)
     title: Mapped[str] = mapped_column(String(100), nullable=False, default="新对话")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -165,8 +166,9 @@ class ConversationHistory(Base):
 # existing V1 imports continue to use backend.app.db.models.
 from backend.app.db.household_models import Household, HouseholdMember, HouseholdPreference, Invitation  # noqa: E402,F401
 from backend.app.db.platform_models import (  # noqa: E402,F401
-    ActiveEmbeddingCollection, AgentDefinition, AgentDeployment, AgentRun, AgentVersion,
+    ActiveEmbeddingCollection, AgentCheckpoint, AgentCheckpointWrite, AgentDefinition, AgentDeployment, AgentInstallation,
+    AgentRun, AgentSkillBinding, AgentToolBinding, AgentVersion, ApprovalRequest,
     EmbeddingCollectionBuild, LlmCredential, LlmEndpoint, LlmModel, ModelGrant,
-    ModelHealthCheck, ModelPurposeBinding, ModelUsage, Notification, Skill, SkillVersion,
-    ToolExecution, UsageQuota,
+    InstallationPermission, ModelHealthCheck, ModelPurposeBinding, ModelUsage, Notification, Skill, SkillVersion,
+    ToolDefinition, ToolExecution, ToolPermission, UsageQuota,
 )

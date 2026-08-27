@@ -11,7 +11,10 @@ from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
 from backend.app.core.security import get_current_account, get_db
-from backend.app.db.models import Account, ChatSession, ConversationHistory, HouseholdMember, Ticket
+from backend.app.db.models import Account, AgentDeployment, AgentRun, AgentVersion, ChatSession, ConversationHistory, HouseholdMember, Ticket, ToolDefinition, ToolPermission
+from backend.agent.platform.context import RunContext
+from backend.agent.tools.gateways import ToolRepositories
+from backend.agent.platform.runner import DeploymentAgentRunner
 from backend.app.services.defaults import get_agent_runner, get_followup_service, get_sentiment_service, get_title_service
 from backend.app.api.setup import setup_status
 from backend.app.models.adapters import build_langchain_chat
@@ -141,6 +144,7 @@ def feedback(message_id: int, payload: FeedbackRequest, account: Account = Depen
 @router.post("/sessions/{session_id}/chat")
 def chat(session_id: str, payload: ChatRequest, request: Request, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
     owned_session(db, session_id, account.id)
+    household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
     injected_runner = getattr(request.app.state, "agent_runner", None)
     resolved_runtime = None
     usage_id = None
@@ -148,7 +152,6 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
     if enforce_runtime:
         if not setup_status(db, account).ready:
             raise HTTPException(status_code=503, detail={"code": "MODEL_NOT_CONFIGURED"})
-        household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
         try:
             resolved_runtime = ModelRuntimeService(db).resolve("primary_chat", household_id=household_id)
         except ModelRuntimeError as exc:
@@ -169,8 +172,8 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
     history = db.scalars(select(ConversationHistory).where(ConversationHistory.session_id == session_id).order_by(ConversationHistory.id)).all()
     messages = [{"role": item.role, "content": item.content} for item in history]
     context = {"account_id": account.id, "user_id": account.user_id, "city": account.user.city if account.user else None,
-                "session_id": session_id, "session_factory": request.app.state.database.session_factory,
-                "vector_store_service": request.app.state.vector_store_service}
+               "session_id": session_id, "repositories": ToolRepositories(request.app.state.database.session_factory),
+               "vector_store_service": request.app.state.vector_store_service}
     if enforce_runtime:
         context["model_resolver"] = purpose_model_resolver(request.app.state.database.session_factory, household_id)
     if resolved_runtime:
@@ -183,22 +186,54 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
             if usage_id:
                 QuotaService(db).complete(usage_id, status="failed")
             raise HTTPException(status_code=503, detail={"code": "MODEL_PROVIDER_UNAVAILABLE"}) from exc
+    chat_session = db.get(ChatSession, session_id)
+    if chat_session.deployment_id:
+        member = db.scalar(select(HouseholdMember).where(HouseholdMember.account_id == account.id,
+                                                          HouseholdMember.household_id == household_id))
+        deployment = db.scalar(select(AgentDeployment).where(AgentDeployment.id == chat_session.deployment_id,
+                                                              AgentDeployment.household_id == household_id))
+        version = db.get(AgentVersion, deployment.agent_version_id) if deployment else None
+        if not member or not deployment or not version:
+            raise HTTPException(status_code=404, detail={"code": "DEPLOYMENT_NOT_FOUND"})
+        snapshot = resolved_runtime.snapshot if resolved_runtime else None
+        run = AgentRun(household_id=household_id, deployment_id=deployment.id, principal_id=account.id,
+                       member_id=member.id, session_id=session_id, agent_version_id=version.id,
+                       deployment_revision=deployment.revision, model_id=snapshot.model_id if snapshot else "injected-model",
+                       model_revision=snapshot.config_revision if snapshot else 1)
+        db.add(run); db.commit(); db.refresh(run)
+        grants = {tool.key: {"version": permission.tool_version} for tool, permission in db.execute(
+            select(ToolDefinition, ToolPermission).join(ToolPermission, ToolPermission.tool_id == ToolDefinition.id).where(
+                ToolPermission.household_id == household_id)).all()}
+        context = RunContext(
+            principal_id=account.id, household_id=household_id, member_id=member.id, role=member.role,
+            session_id=session_id, deployment_id=deployment.id, agent_version_id=version.id, run_id=run.id,
+            timezone="Asia/Shanghai", grants=grants, consent={}, deployment_revision=deployment.revision,
+            model_id=run.model_id, model_revision=run.model_revision, user_id=account.user_id,
+            city=account.user.city if account.user else None,
+            repositories=ToolRepositories(request.app.state.database.session_factory),
+            vector_store_service=request.app.state.vector_store_service,
+            chat_model=context.get("chat_model"), model_resolver=context.get("model_resolver"),
+        )
+    runner_override = injected_runner
+    if isinstance(context, RunContext) and runner_override is None:
+        runner_override = DeploymentAgentRunner(request.app.state.database.session_factory)
     return EventSourceResponse(
         chat_event_stream(request.app, session_id, account, payload.message, messages, context, user_message.id,
-                          previous_count is None, usage_id=usage_id),
+                          previous_count is None, usage_id=usage_id, runner_override=runner_override),
         ping=15,
         headers={"X-Accel-Buffering": "no"},
     )
 
-def chat_event_stream(app, session_id, account, message, messages, context, user_message_id, first_message, usage_id=None):
+def chat_event_stream(app, session_id, account, message, messages, context, user_message_id, first_message, usage_id=None,
+                      runner_override=None):
     answer = ""
     persisted_assistant_id = None
     started = time.monotonic()
-    model_resolver = context.get("model_resolver")
+    model_resolver = context.get("model_resolver") if isinstance(context, dict) else context.model_resolver
     sentiment_service = getattr(app.state, "sentiment_service", None) or get_sentiment_service(model_resolver)
     sentiment_future = AUX_EXECUTOR.submit(sentiment_service.analyze, message)
     try:
-        runner = getattr(app.state, "agent_runner", None) or get_agent_runner()
+        runner = runner_override or getattr(app.state, "agent_runner", None) or get_agent_runner()
         for event in runner.stream(messages, context):
             if event.get("event") == "token":
                 answer += event.get("data", {}).get("content", "")

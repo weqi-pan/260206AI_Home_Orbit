@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
-from backend.app.api import admin, auth, chat, devices, home, households, knowledge, models, setup, tickets
+from backend.app.api import admin, agents, approvals, auth, chat, devices, home, households, installations, knowledge, models, setup, skills, tickets, tools
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.seed import seed_database
 from backend.app.db.session import create_database, require_database_revision
@@ -79,6 +79,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(setup.router, prefix="/api")
     app.include_router(home.router, prefix="/api")
     app.include_router(models.router, prefix="/api")
+    app.include_router(tools.router, prefix="/api")
+    app.include_router(agents.router, prefix="/api")
+    app.include_router(approvals.router, prefix="/api")
+    app.include_router(skills.router, prefix="/api")
+    app.include_router(installations.router, prefix="/api")
 
     @app.get("/health")
     def health():
