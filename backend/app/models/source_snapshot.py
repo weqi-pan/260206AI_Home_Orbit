@@ -1,6 +1,9 @@
 import hashlib
 import json
+import shutil
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -26,6 +29,7 @@ class EmbeddingSourceSnapshot:
     files: list[tuple]
     faqs: list[tuple]
     evidence: dict
+    staging_path: Path | None = None
 
 
 def _token(records) -> str:
@@ -33,7 +37,7 @@ def _token(records) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def capture_embedding_sources(session, settings, path_resolver, lock=False) -> EmbeddingSourceSnapshot:
+def capture_embedding_sources(session, settings, path_resolver, lock=False, staging_root=None) -> EmbeddingSourceSnapshot:
     file_query = select(KnowledgeFile).where(KnowledgeFile.status == "active").order_by(KnowledgeFile.id)
     faq_query = select(FaqPair).where(FaqPair.status == "approved").order_by(FaqPair.id)
     if lock:
@@ -44,24 +48,41 @@ def capture_embedding_sources(session, settings, path_resolver, lock=False) -> E
     files = []
     missing_ids = []
     file_records = []
-    for item in active:
-        path = path_resolver(settings, item)
-        digest = None
-        try:
-            supported = path and path.is_file() and path.suffix.lower() in {".pdf", ".txt"}
+    staging_path = None
+    if staging_root is not None:
+        root = Path(staging_root)
+        root.mkdir(parents=True, exist_ok=True)
+        staging_path = Path(tempfile.mkdtemp(prefix="embedding-build-capturing-", dir=root))
+    try:
+        for index, item in enumerate(active):
+            path = path_resolver(settings, item)
+            digest = None
+            try:
+                supported = path and path.is_file() and path.suffix.lower() in {".pdf", ".txt"}
+                if supported:
+                    hasher = hashlib.sha256()
+                    captured_path = staging_path / f"{index}{path.suffix.lower()}" if staging_path else path
+                    with path.open("rb") as source:
+                        if staging_path:
+                            with captured_path.open("xb") as captured:
+                                for block in iter(lambda: source.read(1024 * 1024), b""):
+                                    hasher.update(block)
+                                    captured.write(block)
+                        else:
+                            for block in iter(lambda: source.read(1024 * 1024), b""):
+                                hasher.update(block)
+                    digest = hasher.hexdigest()
+            except (OSError, PermissionError):
+                supported = False
             if supported:
-                hasher = hashlib.sha256()
-                with path.open("rb") as source:
-                    for block in iter(lambda: source.read(1024 * 1024), b""):
-                        hasher.update(block)
-                digest = hasher.hexdigest()
-        except (OSError, PermissionError):
-            supported = False
-        if supported:
-            files.append((item.id, path, item.filename))
-            file_records.append({"id": item.id, "file_md5": item.file_md5, "content_sha256": digest})
-        else:
-            missing_ids.append(item.id)
+                files.append((item.id, captured_path, item.filename))
+                file_records.append({"id": item.id, "file_md5": item.file_md5, "content_sha256": digest})
+            else:
+                missing_ids.append(item.id)
+    except Exception:
+        if staging_path:
+            shutil.rmtree(staging_path, ignore_errors=True)
+        raise
     faq_records = [{
         "id": item.id,
         "question_sha256": hashlib.sha256(item.question.encode("utf-8")).hexdigest(),
@@ -79,5 +100,21 @@ def capture_embedding_sources(session, settings, path_resolver, lock=False) -> E
         "included_faq_ids": sorted(item[0] for item in faqs), "source_snapshot_token": token,
     }
     if missing_ids:
+        if staging_path:
+            shutil.rmtree(staging_path, ignore_errors=True)
         raise EmbeddingSourceIncomplete(evidence)
-    return EmbeddingSourceSnapshot(token, files, faqs, evidence)
+    if staging_path:
+        try:
+            token_path = staging_path.with_name(f"embedding-build-{token}-{staging_path.name.rsplit('-', 1)[-1]}")
+            staging_path.rename(token_path)
+        except Exception:
+            shutil.rmtree(staging_path, ignore_errors=True)
+            raise
+        files = [(file_id, token_path / path.name, filename) for file_id, path, filename in files]
+        staging_path = token_path
+    return EmbeddingSourceSnapshot(token, files, faqs, evidence, staging_path)
+
+
+def cleanup_embedding_sources(snapshot: EmbeddingSourceSnapshot | None) -> None:
+    if snapshot and snapshot.staging_path:
+        shutil.rmtree(snapshot.staging_path, ignore_errors=True)

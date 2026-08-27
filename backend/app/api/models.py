@@ -14,7 +14,10 @@ from backend.app.models.endpoint_security import UnsafeEndpointUrl, validate_end
 from backend.app.models.quotas import QuotaService
 from backend.app.models.registry import BindingRejected, ModelRegistry, RegistryValidationError
 from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
-from backend.app.models.source_snapshot import EmbeddingSourceIncomplete, EmbeddingSourceSnapshotStale, capture_embedding_sources
+from backend.app.models.source_snapshot import (
+    EmbeddingSourceIncomplete, EmbeddingSourceSnapshotStale,
+    capture_embedding_sources, cleanup_embedding_sources,
+)
 from backend.app.models.schemas import EndpointCreate, EndpointUpdate, ModelCreate, ModelUpdate, PurposeBindingRequest, QuotaRequest
 
 
@@ -163,6 +166,7 @@ def list_bindings(db: Session = Depends(get_db)):
 def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request, db: Session = Depends(get_db)):
     if purpose != payload.purpose: raise HTTPException(status_code=422, detail={"code": "PURPOSE_MISMATCH"})
     registry = ModelRegistry(db)
+    snapshot = None
     try:
         model, _ = registry.validate_binding(purpose, payload.model_id)
         if purpose == "embedding":
@@ -170,7 +174,10 @@ def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request,
             from backend.rag.vector_store import VectorStoreService
             switch = DatabaseCollectionSwitchService(db, getattr(request.app.state, "embedding_store_factory", None))
             try:
-                snapshot = capture_embedding_sources(db, request.app.state.settings, _knowledge_file_path, lock=True)
+                snapshot = capture_embedding_sources(
+                    db, request.app.state.settings, _knowledge_file_path, lock=True,
+                    staging_root=request.app.state.settings.chroma_path,
+                )
             except EmbeddingSourceIncomplete as exc:
                 switch.fail(model.id, "EMBEDDING_SOURCE_INCOMPLETE", exc.evidence)
                 raise HTTPException(status_code=409, detail={"code": "EMBEDDING_SOURCE_INCOMPLETE"})
@@ -205,6 +212,8 @@ def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request,
     except BindingRejected as exc: raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     except ModelRuntimeError as exc: raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
     except Exception as exc: raise HTTPException(status_code=503, detail={"code": "EMBEDDING_REBUILD_FAILED"}) from exc
+    finally:
+        cleanup_embedding_sources(snapshot)
     return {"purpose": item.purpose, "model_id": item.model_id, "config_revision": item.config_revision}
 
 

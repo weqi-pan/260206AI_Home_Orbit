@@ -48,18 +48,23 @@ class ModelAdapter:
         def consume():
             iterator = self.chat_transport.stream(model=self.model, messages=messages, cancel_event=cancel_event)
             try:
-                for _chunk in iterator:
-                    if not first_chunk.is_set():
-                        first_chunk.set()
-                        cancel_event.wait(0.5)
-                    if cancel_event.is_set():
-                        break
+                next(iterator)
+                first_chunk.set()
+                cancel_event.wait(0.5)
+                if cancel_event.is_set():
+                    try:
+                        next(iterator)
+                    except StopIteration:
+                        pass
             except Exception as exc:
                 outcome.append(exc)
             finally:
                 close = getattr(iterator, "close", None)
                 if close:
-                    close()
+                    try:
+                        close()
+                    except Exception as exc:
+                        outcome.append(exc)
 
         worker = threading.Thread(target=consume, name="model-stream-cancel-probe", daemon=True)
         worker.start()
@@ -124,8 +129,19 @@ class LangChainChatTransport:
 
         worker = threading.Thread(target=consume, name="model-stream-reader", daemon=True)
         worker.start()
+        cancel_lock = threading.Lock()
+        cancellation_attempted = False
+        cancellation_error = None
+        completed = False
 
         def bounded_cancel():
+            nonlocal cancellation_attempted, cancellation_error
+            with cancel_lock:
+                if cancellation_attempted:
+                    if cancellation_error:
+                        raise cancellation_error
+                    return
+                cancellation_attempted = True
             operations = []
             cancel_request = getattr(self.chat_model, "_runtime_cancel", None)
             close = getattr(iterator, "close", None)
@@ -139,7 +155,8 @@ class LangChainChatTransport:
                 thread.join(timeout=max(0, deadline - __import__("time").monotonic()))
             worker.join(timeout=max(0, deadline - __import__("time").monotonic()))
             if worker.is_alive() or any(thread.is_alive() for thread in operations):
-                raise RuntimeError("STREAM_CANCELLATION_TIMEOUT")
+                cancellation_error = RuntimeError("STREAM_CANCELLATION_TIMEOUT")
+                raise cancellation_error
 
         try:
             while True:
@@ -157,9 +174,12 @@ class LangChainChatTransport:
                     raise value
                 else:
                     worker.join(timeout=0.25)
+                    completed = True
                     return
         finally:
-            if not cancel_event.is_set():
+            if not completed:
+                bounded_cancel()
+            else:
                 worker.join(timeout=0.25)
 
 
