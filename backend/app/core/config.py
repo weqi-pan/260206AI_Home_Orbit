@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     usage_csv_path: Path = Path("data/external/records.csv")
     knowledge_path: Path = Path("data")
+    knowledge_upload_path: Path = Path("backend/data/knowledge")
+    chroma_path: Path = Path("backend/data/chroma")
+    main_model_name: str = "qwen3-max"
+    aux_model_name: str = "qwen-flash"
 
     model_config = SettingsConfigDict(
         env_file=".env",

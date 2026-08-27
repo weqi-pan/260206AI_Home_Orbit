@@ -16,6 +16,8 @@ def settings(tmp_path: Path):
         demo_initial_password="DemoTest@123",
         usage_csv_path=Path(__file__).parents[2] / "data" / "external" / "records.csv",
         knowledge_path=Path(__file__).parents[2] / "data",
+        knowledge_upload_path=tmp_path / "knowledge",
+        chroma_path=tmp_path / "chroma",
     )
 
 

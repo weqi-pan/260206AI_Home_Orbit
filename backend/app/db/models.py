@@ -128,7 +128,10 @@ class Inventory(Base):
 
 class RestockNotification(Base):
     __tablename__ = "restock_notifications"
-    __table_args__ = (CheckConstraint("status IN ('waiting', 'notified')", name="ck_restock_notifications_status"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('waiting', 'notified')", name="ck_restock_notifications_status"),
+        UniqueConstraint("account_id", "model_id", name="uq_restock_account_model"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False)

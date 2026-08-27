@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api import admin, auth
+from backend.app.api import admin, auth, chat, devices, knowledge, tickets
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.seed import seed_database
 from backend.app.db.session import create_database
@@ -32,6 +32,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(auth.router, prefix="/api")
     app.include_router(admin.router, prefix="/api")
+    app.include_router(chat.router, prefix="/api")
+    app.include_router(devices.router, prefix="/api")
+    app.include_router(tickets.router, prefix="/api")
+    app.include_router(knowledge.router, prefix="/api")
 
     @app.get("/health")
     def health():
