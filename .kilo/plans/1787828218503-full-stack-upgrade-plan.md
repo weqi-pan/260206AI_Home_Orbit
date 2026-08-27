@@ -53,8 +53,8 @@ backend/
 ├── prompts/                    # main + 3个子代理提示词 + rag_summary
 ├── config/                     # 迁移 + 新增 auth/db/aux_model 配置项
 ├── utils/                      # 迁移
-├── data/                       # knowledge/（上传目录）+ 样例CSV；现有4个知识文件迁入 knowledge/
-├── tests/                      # pytest
+├── runtime/                      # 运行产物（gitignore）：uploads/ 上传文件、chroma_db/、sqlite 兜底库
+├── tests/                        # pytest
 └── requirements.txt
 frontend/
 ├── src/
@@ -63,6 +63,7 @@ frontend/
 │   │   views/devices/(List,Compare)  admin/(Dashboard,Users,Knowledge,FaqReview,DevicesInventory,Tickets)
 ├── vite.config.ts              # dev 代理 /api → localhost:8000
 └── package.json                # vue3 element-plus pinia vue-router axios markdown-it highlight.js
+data/                           # 仓库资产（长期保留）：知识库源文件 + external/records.csv 样例
 docker-compose.yml              # mysql(healthcheck: mysqladmin ping) + backend + frontend(nginx,多阶段构建)
 .env.example
 ```
@@ -240,6 +241,12 @@ streamlit
 21. docker-compose（mysql healthcheck→backend depends_on condition:service_healthy、nginx 多阶段构建、proxy_buffering off）、.env.example、/health 端点
 22. README 重写；删除根目录 app.py 与 Streamlit 依赖；旧 react_agent.py 清理
 
+**结构收敛补漏（并入阶段 6，其中杂质目录在当前后端修复任务收尾时先行处理）**
+23. 杂质清理：删除 `backend/backend/` 遗留空目录（路径解析 bug 产物）与根/backend 重复 `.pytest_cache`；检查并杜绝再次生成嵌套 `backend/backend` 的路径拼接
+24. 数据目录统一：仓库资产（知识库源文件、样例 CSV）固定放根 `data/`；运行产物（上传文件、Chroma、SQLite app.db）固定放 `backend/` 运行目录并保持 gitignore；`knowledge_path`/`knowledge_upload_path` 等配置统一指向该约定并加测试防回归
+25. 旧栈删除后简化测试入口：删除根目录 `conftest.py` shim，pytest 统一从 `backend/` 执行（basetemp 配置保留在 `backend/conftest.py`）
+26. 最终结构验收：根目录仅剩 `backend/`、`frontend/`、`data/`、`docker-compose.yml`、`.env.example`、`README.md`、`.gitignore`（+`.kilo/` 工作目录）
+
 ## 十四、验证方案
 
 - **自动化（pytest，LLM mock）**：认证全流程、权限 403、资源归属、repositories、双方言降级、SSE 事件序列（mock agent 流）
@@ -252,6 +259,7 @@ streamlit
   6. 负面情绪消息 → 前端展示情绪标签 → 建议创建工单 → 管理端处理 → 用户端可见回复
   7. 管理端上传 txt → 生成 FAQ → 审核通过 → 用户问答命中 FAQ；删除知识文件后其内容不再被检索
   8. docker-compose up 一键启动全链路可用
+  9. 结构验收：仓库无 `backend/backend/` 嵌套目录；知识资产只在根 `data/`；运行产物只在 `backend/runtime/`（或环境指定目录）且被 gitignore；`git status` 干净、无未忽略的 db/缓存产物
 - **阶段 0 专项**：升级后旧代码冒烟 + deepagents spike 通过才进入阶段 1
 
 ## 十五、风险与缓解
