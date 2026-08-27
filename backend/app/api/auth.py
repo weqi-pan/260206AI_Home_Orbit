@@ -3,6 +3,7 @@ from datetime import timedelta
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import Integer, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.security import create_token, get_current_account, get_db, hash_password, verify_password
@@ -11,6 +12,7 @@ from backend.app.schemas.auth import AccessToken, AccountResponse, LoginRequest,
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+REGISTER_ID_RETRIES = 3
 
 
 def _tokens(account: Account, request: Request) -> TokenPair:
@@ -22,23 +24,32 @@ def _tokens(account: Account, request: Request) -> TokenPair:
     )
 
 
+def _next_user_id(session: Session) -> str:
+    max_user_id = session.scalar(select(func.max(func.cast(User.user_id, Integer)))) or 1001
+    return str(max(max_user_id + 1, 1002))
+
+
 @router.post("/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, request: Request, session: Session = Depends(get_db)):
     if session.scalar(select(Account).where(Account.username == payload.username)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名已存在")
-    max_user_id = session.scalar(select(func.max(func.cast(User.user_id, Integer)))) or 1001
-    user = User(user_id=str(max(max_user_id + 1, 1002)), username=payload.username, city=payload.city, phone=payload.phone)
-    session.add(user)
-    session.flush()
-    account = Account(
-        username=payload.username,
-        password_hash=hash_password(payload.password, request.app.state.settings.bcrypt_rounds),
-        user_id=user.user_id,
-    )
-    session.add(account)
-    session.commit()
-    session.refresh(account)
-    return _tokens(account, request)
+    password_hash = hash_password(payload.password, request.app.state.settings.bcrypt_rounds)
+    for attempt in range(REGISTER_ID_RETRIES):
+        user_id = _next_user_id(session)
+        user = User(user_id=user_id, username=payload.username, city=payload.city, phone=payload.phone)
+        account = Account(username=payload.username, password_hash=password_hash, user_id=user_id)
+        session.add_all([user, account])
+        try:
+            session.commit()
+        except IntegrityError as exc:
+            session.rollback()
+            if session.scalar(select(Account).where(Account.username == payload.username)):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名已存在") from exc
+            if attempt == REGISTER_ID_RETRIES - 1:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户编号分配冲突，请重试") from exc
+            continue
+        session.refresh(account)
+        return _tokens(account, request)
 
 
 @router.post("/login", response_model=TokenPair)

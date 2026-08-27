@@ -1,19 +1,7 @@
-import shutil
-import uuid
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
-
-@pytest.fixture
-def tmp_path():
-    path = Path(__file__).parent / ".tmp" / uuid.uuid4().hex
-    path.mkdir(parents=True)
-    try:
-        yield path
-    finally:
-        shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture

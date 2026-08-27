@@ -1,4 +1,6 @@
+import pytest
 from sqlalchemy import inspect, select
+from sqlalchemy.exc import IntegrityError, NoSuchModuleError, OperationalError
 
 
 EXPECTED_TABLES = {
@@ -42,6 +44,41 @@ def test_mysql_url_uses_utf8mb4_and_connection_failure_falls_back_to_sqlite(sett
     assert database.engine.url.drivername == "sqlite"
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        OperationalError("connect", {}, OSError(10061, "connection refused")),
+        OperationalError("connect", {}, TimeoutError("connection timed out")),
+    ],
+)
+def test_mysql_operational_connectivity_errors_fall_back(settings, error):
+    from backend.app.db.session import create_database
+
+    settings.database_url = "mysql+pymysql://user:password@db/customer_service"
+
+    database = create_database(settings, mysql_probe=lambda _url: (_ for _ in ()).throw(error))
+
+    assert database.is_fallback is True
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OperationalError("connect", {}, Exception(1045, "Access denied for user")),
+        OperationalError("connect", {}, Exception(1049, "Unknown database")),
+        NoSuchModuleError("Can't load plugin: sqlalchemy.dialects:mysql.missing"),
+        ValueError("invalid database configuration"),
+    ],
+)
+def test_mysql_non_connectivity_errors_are_not_hidden_by_fallback(settings, error):
+    from backend.app.db.session import create_database
+
+    settings.database_url = "mysql+pymysql://user:password@db/customer_service"
+
+    with pytest.raises(type(error)):
+        create_database(settings, mysql_probe=lambda _url: (_ for _ in ()).throw(error))
+
+
 def test_sqlite_engine_creates_missing_parent_directory(settings, tmp_path):
     from backend.app.db.session import create_database
 
@@ -70,3 +107,97 @@ def test_seed_is_idempotent_and_imports_demo_data(settings):
         assert len(session.scalars(select(Inventory)).all()) == 7
         assert session.get(User, "1001").username == "演示用户"
         assert len(session.scalars(select(DeviceUsageRecord)).all()) == 6
+
+
+def test_seed_does_not_overwrite_existing_device_or_inventory(settings):
+    from backend.app.db.models import Device, Inventory
+    from backend.app.db.seed import seed_database
+    from backend.app.db.session import create_database
+
+    database = create_database(settings)
+    database.create_all()
+    seed_database(database.session_factory, settings)
+    with database.session_factory.begin() as session:
+        session.get(Device, "R1-Lite").model_name = "管理员自定义名称"
+        inventory = session.scalar(select(Inventory).where(
+            Inventory.model_id == "R1-Lite", Inventory.warehouse == "北京仓"
+        ))
+        inventory.stock = 999
+        inventory.min_stock = 42
+
+    seed_database(database.session_factory, settings)
+
+    with database.session_factory() as session:
+        assert session.get(Device, "R1-Lite").model_name == "管理员自定义名称"
+        inventory = session.scalar(select(Inventory).where(
+            Inventory.model_id == "R1-Lite", Inventory.warehouse == "北京仓"
+        ))
+        assert (inventory.stock, inventory.min_stock) == (999, 42)
+
+
+def test_fallback_database_can_create_tables_and_seed(settings):
+    from backend.app.db.models import Account
+    from backend.app.db.seed import seed_database
+    from backend.app.db.session import create_database
+
+    settings.database_url = "mysql+pymysql://user:password@db/customer_service"
+    database = create_database(settings, mysql_probe=lambda _url: (_ for _ in ()).throw(OSError("unreachable")))
+    database.create_all()
+    seed_database(database.session_factory, settings)
+
+    assert EXPECTED_TABLES <= set(inspect(database.engine).get_table_names())
+    with database.session_factory() as session:
+        assert {account.username for account in session.scalars(select(Account))} == {"admin", "demo"}
+
+
+def test_demo_is_linked_to_1001_and_admin_has_no_profile(settings):
+    from backend.app.db.models import Account, User
+    from backend.app.db.seed import seed_database
+    from backend.app.db.session import create_database
+
+    database = create_database(settings)
+    database.create_all()
+    seed_database(database.session_factory, settings)
+
+    with database.session_factory() as session:
+        demo = session.scalar(select(Account).where(Account.username == "demo"))
+        admin = session.scalar(select(Account).where(Account.username == "admin"))
+        assert demo.user_id == "1001"
+        assert session.get(User, "1001") is not None
+        assert admin.user_id is None
+
+
+def test_database_rejects_invalid_account_role(settings):
+    from backend.app.db.models import Account
+    from backend.app.db.session import create_database
+
+    database = create_database(settings)
+    database.create_all()
+    with database.session_factory() as session:
+        session.add(Account(username="bad-role", password_hash="hash", role="superuser"))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_database_rejects_invalid_message_feedback(settings):
+    from backend.app.db.models import Account, ChatSession, ConversationHistory
+    from backend.app.db.seed import seed_database
+    from backend.app.db.session import create_database
+
+    database = create_database(settings)
+    database.create_all()
+    seed_database(database.session_factory, settings)
+    with database.session_factory() as session:
+        demo = session.scalar(select(Account).where(Account.username == "demo"))
+        chat = ChatSession(account_id=demo.id)
+        session.add(chat)
+        session.flush()
+        session.add(ConversationHistory(
+            session_id=chat.id,
+            user_id="1001",
+            role="user",
+            content="hello",
+            feedback="neutral",
+        ))
+        with pytest.raises(IntegrityError):
+            session.commit()

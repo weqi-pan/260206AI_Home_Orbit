@@ -5,6 +5,7 @@ from typing import Callable
 
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import URL, make_url
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
@@ -45,6 +46,21 @@ def _engine(url: URL | str) -> Engine:
     return engine
 
 
+def _is_mysql_connectivity_error(exc: Exception) -> bool:
+    if isinstance(exc, OSError):
+        return True
+    if not isinstance(exc, OperationalError):
+        return False
+    original = exc.orig
+    if isinstance(original, (OSError, TimeoutError)):
+        return True
+    args = getattr(original, "args", ())
+    if args and args[0] in {2002, 2003, 2005, 2006, 2013}:
+        return True
+    message = str(original).lower()
+    return any(text in message for text in ("connection refused", "timed out", "timeout", "can't connect"))
+
+
 def create_database(
     settings: Settings,
     mysql_probe: Callable[[URL], None] | None = None,
@@ -61,6 +77,8 @@ def create_database(
                 with engine.connect() as connection:
                     connection.exec_driver_sql("SELECT 1")
         except Exception as exc:
+            if not _is_mysql_connectivity_error(exc):
+                raise
             logging.getLogger(__name__).warning("MySQL 连接失败，自动降级 SQLite: %s", exc)
             engine = _engine(settings.sqlite_fallback_url)
             return Database(engine, sessionmaker(engine, expire_on_commit=False), True)

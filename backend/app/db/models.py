@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -29,6 +29,10 @@ class User(Base):
 
 class Account(Base):
     __tablename__ = "accounts"
+    __table_args__ = (
+        CheckConstraint("role IN ('admin', 'user')", name="ck_accounts_role"),
+        CheckConstraint("status IN ('active', 'disabled')", name="ck_accounts_status"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
@@ -54,6 +58,10 @@ class ChatSession(Base):
 
 class Ticket(Base):
     __tablename__ = "tickets"
+    __table_args__ = (
+        CheckConstraint("priority IN ('low', 'normal', 'high')", name="ck_tickets_priority"),
+        CheckConstraint("status IN ('open', 'processing', 'resolved', 'closed')", name="ck_tickets_status"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
@@ -70,6 +78,7 @@ class Ticket(Base):
 
 class KnowledgeFile(Base):
     __tablename__ = "knowledge_files"
+    __table_args__ = (CheckConstraint("status IN ('active', 'deleted')", name="ck_knowledge_files_status"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -82,6 +91,7 @@ class KnowledgeFile(Base):
 
 class FaqPair(Base):
     __tablename__ = "faq_pairs"
+    __table_args__ = (CheckConstraint("status IN ('pending', 'approved', 'rejected')", name="ck_faq_pairs_status"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     question: Mapped[str] = mapped_column(Text, nullable=False)
@@ -118,6 +128,7 @@ class Inventory(Base):
 
 class RestockNotification(Base):
     __tablename__ = "restock_notifications"
+    __table_args__ = (CheckConstraint("status IN ('waiting', 'notified')", name="ck_restock_notifications_status"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False)
@@ -142,6 +153,10 @@ class DeviceUsageRecord(Base):
 
 class ConversationHistory(Base):
     __tablename__ = "conversation_history"
+    __table_args__ = (
+        CheckConstraint("role IN ('user', 'assistant', 'system')", name="ck_conversation_history_role"),
+        CheckConstraint("feedback IS NULL OR feedback IN ('like', 'dislike')", name="ck_conversation_history_feedback"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("chat_sessions.id"), nullable=False, index=True)

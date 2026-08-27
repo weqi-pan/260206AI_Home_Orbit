@@ -49,19 +49,14 @@ def _seed_devices(session: Session) -> None:
     for row in DEVICES:
         device = session.get(Device, row[0])
         values = dict(zip(("model_id", "model_name", "category", "specs", "description", "price", "features"), row))
-        if device:
-            for key, value in values.items():
-                setattr(device, key, value)
-        else:
+        if not device:
             session.add(Device(**values))
     session.flush()
     for model_id, warehouse, stock in INVENTORY:
         item = session.scalar(select(Inventory).where(
             Inventory.model_id == model_id, Inventory.warehouse == warehouse
         ))
-        if item:
-            item.stock = stock
-        else:
+        if not item:
             session.add(Inventory(model_id=model_id, warehouse=warehouse, stock=stock))
 
 
@@ -85,10 +80,7 @@ def _seed_usage_csv(session: Session, csv_path: Path) -> None:
                 "consumables": row["耗材"].strip(),
                 "comparison": row["对比"].strip(),
             }
-            if record:
-                for key, value in values.items():
-                    setattr(record, key, value)
-            else:
+            if not record:
                 session.add(DeviceUsageRecord(user_id=user_id, month=row["时间"].strip(), **values))
 
 
