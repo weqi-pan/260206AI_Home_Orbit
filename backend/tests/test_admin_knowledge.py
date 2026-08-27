@@ -331,7 +331,9 @@ def test_dashboard_counts_only_assistant_feedback_and_uses_total_stock_threshold
     token = admin_token(client, settings)
     with app.state.database.session_factory.begin() as session:
         account = session.scalar(select(Account).where(Account.username == "demo"))
-        chat = ChatSession(account_id=account.id)
+        from backend.app.db.models import HouseholdMember
+        household_id = session.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
+        chat = ChatSession(account_id=account.id, household_id=household_id)
         session.add(chat)
         session.flush()
         session.add_all([

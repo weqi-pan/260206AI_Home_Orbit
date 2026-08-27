@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_current_account, get_db
 from backend.app.db.models import Account, AgentRun, ApprovalRequest, HouseholdMember
-from backend.agent.platform.context import RunContext
+from backend.agent.platform.context import RunBudget, RunContext
 from backend.agent.tools.gateways import ToolCapabilities, ToolRepositories
 from backend.agent.platform.approvals import audit_approval
 from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
@@ -75,6 +75,7 @@ def resume(approval_id: str, request: Request, account: Account = Depends(get_cu
         chat_model = ModelRuntimeService(db).build_chat_model(resolved)
     except ModelRuntimeError as exc:
         raise HTTPException(503, detail={"code": exc.code}) from exc
+    budget_snapshot = json.loads(run.budget_snapshot_json or "{}")
     context = RunContext(principal_id=run.principal_id, household_id=run.household_id, member_id=run.member_id,
         role=member.role, session_id=run.session_id, deployment_id=run.deployment_id,
         agent_version_id=run.agent_version_id, run_id=run.id, timezone="Asia/Shanghai",
@@ -84,7 +85,8 @@ def resume(approval_id: str, request: Request, account: Account = Depends(get_cu
         skill_version_ids=tuple(item["id"] for item in snapshot.get("skills", [])),
         repositories=ToolCapabilities.bind(ToolRepositories(request.app.state.database.session_factory)),
         vector_store_service=request.app.state.vector_store_service,
-        chat_model=chat_model)
+        budget=RunBudget.restore(budget_snapshot, budget_snapshot.get("counters", {})))
+    request.app.state.deployment_agent_runner.bind_model(run.id, chat_model)
     def events():
         for event in request.app.state.deployment_agent_runner.resume(approval_id, context):
             yield {"event": event["event"], "data": json.dumps(event.get("data", {}), ensure_ascii=False)}

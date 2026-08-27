@@ -235,7 +235,9 @@ def test_database_rejects_invalid_message_feedback(settings):
     seed_database(database.session_factory, settings)
     with database.session_factory() as session:
         demo = session.scalar(select(Account).where(Account.username == "demo"))
-        chat = ChatSession(account_id=demo.id)
+        from backend.app.db.models import HouseholdMember
+        household_id = session.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == demo.id))
+        chat = ChatSession(account_id=demo.id, household_id=household_id)
         session.add(chat)
         session.flush()
         session.add(ConversationHistory(

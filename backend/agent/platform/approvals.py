@@ -44,10 +44,14 @@ class ApprovalResumeService:
             if not row: raise PlatformToolError("APPROVAL_NOT_FOUND")
             if row.result_json is not None: return json.loads(row.result_json)
             if row.status == "executing":
-                session.expire_all()
-                current = session.get(ApprovalRequest, approval_id)
-                if current.result_json is not None: return json.loads(current.result_json)
+                if row.claimed_at and row.claimed_at <= utcnow() - __import__("datetime").timedelta(minutes=5):
+                    row.status = "retryable"; row.error_code = "EXECUTION_LEASE_EXPIRED"
+                    row.error_detail = None; session.commit()
+                    audit_approval(session, row, "approval_retryable", row.error_code)
+                    raise PlatformToolError("APPROVAL_RETRY_REQUIRED")
                 raise PlatformToolError("APPROVAL_IN_PROGRESS")
+            if row.status == "retryable":
+                raise PlatformToolError("APPROVAL_RETRY_REQUIRED")
             if row.status != "approved": raise PlatformToolError("APPROVAL_STATE_CONFLICT")
             if row.principal_id != context.principal_id or row.household_id != context.household_id or row.run_id != context.run_id:
                 raise PlatformToolError("PERMISSION_REQUIRED")
@@ -72,14 +76,24 @@ class ApprovalResumeService:
                 session.get(__import__("backend.app.db.models", fromlist=["ToolDefinition"]).ToolDefinition, row.tool_id).key,
                 row.tool_version)
             claimed = session.execute(update(ApprovalRequest).where(ApprovalRequest.id == approval_id,
-                ApprovalRequest.status == "approved").values(status="executing")).rowcount
+                ApprovalRequest.status == "approved").values(status="executing", claimed_at=utcnow(),
+                                                               error_code=None, error_detail=None)).rowcount
             if claimed != 1: raise PlatformToolError("APPROVAL_IN_PROGRESS")
             session.commit()
-        result = self.side_effect(arguments, context)
+        try:
+            result = self.side_effect(arguments, context)
+        except Exception:
+            with self.session_factory() as session:
+                row = session.scalar(select(ApprovalRequest).where(ApprovalRequest.id == approval_id).with_for_update())
+                if row and row.status == "executing" and row.result_json is None:
+                    row.status = "retryable"; row.error_code = "SIDE_EFFECT_FAILED"; row.error_detail = None
+                    session.commit(); audit_approval(session, row, "approval_retryable", row.error_code)
+            raise PlatformToolError("APPROVAL_RETRY_REQUIRED")
         with self.session_factory() as session:
             row = session.scalar(select(ApprovalRequest).where(ApprovalRequest.id == approval_id).with_for_update())
             if row.result_json is None:
                 row.result_json = json.dumps(result, ensure_ascii=False, sort_keys=True)
-                row.status = "consumed"; row.consumed_at = utcnow(); session.commit()
+                row.status = "consumed"; row.consumed_at = utcnow(); row.error_code = None; row.error_detail = None
+                session.commit()
                 audit_approval(session, row, "approval_consumed")
             return json.loads(row.result_json)

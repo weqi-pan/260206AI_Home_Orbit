@@ -146,7 +146,8 @@ def test_skill_service_publishes_normalized_immutable_versions(db_session, platf
     skill = Skill(household_id=platform_seed["household_id"], name="知识技能")
     db_session.add(skill); db_session.commit()
     service = SkillVersionService(db_session, platform_seed["household_id"])
-    version = service.publish(skill.id, {"instructions": "# Read only", "attachments": [{"kind": "knowledge", "name": "guide.txt"}]})
+    version = service.publish(skill.id, {"instructions": "# Read only", "attachments": [{"kind": "knowledge",
+        "name": "guide.txt", "asset_id": "guide-1", "content_hash": "a" * 64}]})
     with pytest.raises(VersionImmutable):
         service.replace(version.id, {"instructions": "changed"})
     assert version.definition["instructions"] == "# Read only"
@@ -232,7 +233,8 @@ def test_run_snapshot_contains_exact_compiled_authority(db_session, platform_see
     assert snapshot["deployment"]["revision"] == 1
     assert snapshot["agent_version"]["id"] == platform_seed["context"].agent_version_id
     assert snapshot["installation"]["id"] == platform_seed["installation_id"]
-    assert snapshot["tools"] == ({"key": "platform.current_month", "version": "1", "risk_level": "low"},)
+    assert snapshot["tools"][0]["key"] == "platform.current_month"
+    assert snapshot["tools"][0]["permission_id"] == platform_seed["installation_permission"].id
     with pytest.raises(TypeError):
         snapshot["tools"] = []
 

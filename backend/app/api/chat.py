@@ -12,7 +12,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from backend.app.core.security import get_current_account, get_db
 from backend.app.db.models import Account, AgentDeployment, AgentRun, AgentVersion, ChatSession, ConversationHistory, HouseholdMember, Ticket, ToolDefinition, ToolPermission
-from backend.agent.platform.context import RunContext
+from backend.agent.platform.context import RunBudget, RunContext
 from backend.agent.tools.gateways import ToolCapabilities, ToolRepositories
 from backend.agent.platform.runner import DeploymentAgentRunner
 from backend.app.services.defaults import get_agent_runner, get_followup_service, get_sentiment_service, get_title_service
@@ -85,6 +85,13 @@ def owned_session(db, session_id, account_id):
     return item
 
 
+def exactly_one_household(household_ids):
+    values = list(household_ids)
+    if not values: raise HTTPException(409, detail={"code": "HOUSEHOLD_MEMBERSHIP_MISSING"})
+    if len(values) != 1: raise HTTPException(409, detail={"code": "HOUSEHOLD_MEMBERSHIP_AMBIGUOUS"})
+    return values[0]
+
+
 @router.get("/sessions")
 def list_sessions(account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
     items = db.scalars(select(ChatSession).where(ChatSession.account_id == account.id).order_by(ChatSession.updated_at.desc())).all()
@@ -93,7 +100,8 @@ def list_sessions(account: Account = Depends(get_current_account), db: Session =
 
 @router.post("/sessions", status_code=201)
 def create_session(payload: SessionCreate, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
-    household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
+    household_id = exactly_one_household(db.scalars(select(HouseholdMember.household_id).where(
+        HouseholdMember.account_id == account.id)).all())
     item = ChatSession(account_id=account.id, household_id=household_id, title=payload.title)
     db.add(item)
     db.commit()
@@ -219,6 +227,7 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
                            compiled_snapshot["agent_version"]["definition"].get("budgets", {}), sort_keys=True))
         db.add(run); db.commit(); db.refresh(run)
         grants = dict(compiled_snapshot["grants"])
+        platform_model = context.get("chat_model")
         context = RunContext(
             principal_id=account.id, household_id=household_id, member_id=member.id, role=member.role,
             session_id=session_id, deployment_id=deployment.id, agent_version_id=version.id, run_id=run.id,
@@ -229,8 +238,13 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
             city=account.user.city if account.user else None,
             repositories=ToolCapabilities.bind(ToolRepositories(request.app.state.database.session_factory)),
             vector_store_service=request.app.state.vector_store_service,
-            chat_model=context.get("chat_model"),
+            budget=RunBudget(
+                max_delegation_depth=int(compiled_snapshot["budget"].get("delegation_depth", 4)),
+                max_tool_calls=int(compiled_snapshot["budget"].get("tool_calls", 16)),
+                max_tokens=int(compiled_snapshot["budget"].get("tokens", 32000)),
+                wall_time_seconds=int(compiled_snapshot["budget"].get("wall_time_seconds", 120))),
         )
+        request.app.state.deployment_agent_runner.bind_model(run.id, platform_model)
     runner_override = injected_runner
     if isinstance(context, RunContext) and runner_override is None:
         runner_override = request.app.state.deployment_agent_runner

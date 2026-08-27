@@ -1,4 +1,5 @@
 from backend.app.db.base import utcnow
+import json
 
 
 def persist_run_outcome(session, run_id, status, error_code=None):
@@ -36,6 +37,7 @@ class PlatformAgentRunner:
 class DeploymentAgentRunner(PlatformAgentRunner):
     def __init__(self, session_factory, checkpointer=None):
         self.session_factory = session_factory
+        self._models = {}
         if checkpointer is None:
             session = session_factory()
             try:
@@ -46,19 +48,43 @@ class DeploymentAgentRunner(PlatformAgentRunner):
         self.checkpointer = checkpointer
         super().__init__(self._compile)
 
-    def _compile(self, context):
+    def bind_model(self, run_id, model): self._models[run_id] = model
+    def model_for(self, run_id): return self._models.get(run_id)
+
+    def _compile_agent(self, context, session):
         from backend.agent.platform.compiler import AgentCompiler
+        return AgentCompiler(session, checkpointer=self.checkpointer,
+                             model_factory=lambda _deployment: self.model_for(context.run_id)).compile(
+                                 context.deployment_id, context)
+
+    def _compile(self, context):
         session = self.session_factory()
         try:
-            compiled = AgentCompiler(session, checkpointer=self.checkpointer).compile(context.deployment_id, context)
+            compiled = self._compile_agent(context, session)
         except Exception:
             session.close()
             raise
         class SessionBoundCompiled:
+            def persist_budget(self):
+                from backend.app.db.models import AgentRun
+                run = session.get(AgentRun, context.run_id)
+                if run:
+                    current = json.loads(run.budget_snapshot_json or "{}")
+                    current["counters"] = dict(context.budget.snapshot())
+                    run.budget_snapshot_json = json.dumps(current, sort_keys=True); session.commit()
+
             def stream(self, messages, run_context):
                 try:
                     yield from compiled.stream(messages, run_context)
                 finally:
+                    self.persist_budget()
+                    session.close()
+
+            def resume(self, approval_id, run_context):
+                try:
+                    yield from compiled.resume(approval_id, run_context)
+                finally:
+                    self.persist_budget()
                     session.close()
 
         return SessionBoundCompiled()

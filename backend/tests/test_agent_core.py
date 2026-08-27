@@ -26,7 +26,9 @@ def test_agent_restock_and_ticket_tools_are_idempotent(client, app):
 
     with app.state.database.session_factory.begin() as db:
         account_id = db.scalar(select(Account.id).where(Account.username == "demo"))
-        chat = ChatSession(account_id=account_id)
+        from backend.app.db.models import HouseholdMember
+        household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account_id))
+        chat = ChatSession(account_id=account_id, household_id=household_id)
         db.add(chat)
         db.flush()
         session_id = chat.id

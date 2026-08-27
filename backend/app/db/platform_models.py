@@ -236,6 +236,7 @@ class AgentInstallation(TenantRow, Base):
     __table_args__ = tenant_parent_constraints(
         ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
         ForeignKeyConstraint(["agent_version_id", "household_id"], ["agent_versions.id", "agent_versions.household_id"]),
+        UniqueConstraint("household_id", "deployment_id", "agent_version_id", name="uq_agent_installation_authority"),
     )
     deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
     agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -384,6 +385,9 @@ class ApprovalRequest(Base):
     checkpoint_ns: Mapped[str | None] = mapped_column(String(250))
     checkpoint_id: Mapped[str | None] = mapped_column(String(100))
     consent_digest: Mapped[str | None] = mapped_column(String(64))
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_detail: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

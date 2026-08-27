@@ -31,13 +31,8 @@ class KnowledgeCapability(Protocol):
     def search(self, query): ...
 
 
-@runtime_checkable
-class ChatModelCapability(Protocol):
-    def bind_tools(self, tools, *, tool_choice=None, **kwargs): ...
-
-
-@dataclass(frozen=True)
-class BudgetState:
+@dataclass
+class _BudgetState:
     values: dict = field(default_factory=lambda: {"delegation_depth": 0, "tool_calls": 0, "tokens": 0})
     lock: object = field(default_factory=Lock, repr=False)
     started_at: float = field(default_factory=time.monotonic)
@@ -49,28 +44,47 @@ class RunBudget:
     max_tool_calls: int = 16
     max_tokens: int = 32000
     wall_time_seconds: int = 120
-    state: BudgetState = field(default_factory=BudgetState, repr=False)
+    __state: _BudgetState = field(default_factory=_BudgetState, repr=False)
 
     def consume_tool(self):
         self.check_time()
-        with self.state.lock:
-            self.state.values["tool_calls"] += 1
-            if self.state.values["tool_calls"] > self.max_tool_calls: raise RuntimeError("RUN_LIMIT_EXCEEDED")
+        with self.__state.lock:
+            self.__state.values["tool_calls"] += 1
+            if self.__state.values["tool_calls"] > self.max_tool_calls: raise RuntimeError("RUN_LIMIT_EXCEEDED")
 
     def consume_tokens(self, count):
         self.check_time()
-        with self.state.lock:
-            self.state.values["tokens"] += max(0, int(count))
-            if self.state.values["tokens"] > self.max_tokens: raise RuntimeError("RUN_LIMIT_EXCEEDED")
+        with self.__state.lock:
+            self.__state.values["tokens"] += max(0, int(count))
+            if self.__state.values["tokens"] > self.max_tokens: raise RuntimeError("RUN_LIMIT_EXCEEDED")
 
     def enter_delegation(self):
         self.check_time()
-        with self.state.lock:
-            self.state.values["delegation_depth"] += 1
-            if self.state.values["delegation_depth"] > self.max_delegation_depth: raise RuntimeError("RUN_LIMIT_EXCEEDED")
+        with self.__state.lock:
+            next_depth = self.__state.values["delegation_depth"] + 1
+            if next_depth > self.max_delegation_depth: raise RuntimeError("RUN_LIMIT_EXCEEDED")
+            self.__state.values["delegation_depth"] = next_depth
+            self.__state.values["delegations"] = self.__state.values.get("delegations", 0) + 1
+
+    def exit_delegation(self):
+        with self.__state.lock:
+            self.__state.values["delegation_depth"] = max(0, self.__state.values["delegation_depth"] - 1)
+
+    def snapshot(self):
+        with self.__state.lock:
+            return _freeze(dict(self.__state.values))
+
+    @classmethod
+    def restore(cls, limits, counters):
+        state = _BudgetState(values={"delegation_depth": 0, "tool_calls": 0, "tokens": 0, **dict(counters)})
+        budget = cls(max_delegation_depth=limits.get("delegation_depth", 4),
+                     max_tool_calls=limits.get("tool_calls", 16), max_tokens=limits.get("tokens", 32000),
+                     wall_time_seconds=limits.get("wall_time_seconds", 120))
+        object.__setattr__(budget, "_RunBudget__state", state)
+        return budget
 
     def check_time(self):
-        if time.monotonic() - self.state.started_at > self.wall_time_seconds:
+        if time.monotonic() - self.__state.started_at > self.wall_time_seconds:
             raise RuntimeError("RUN_LIMIT_EXCEEDED")
 
 
@@ -97,7 +111,6 @@ class RunContext:
     city: str | None = None
     repositories: RepositoryCapability | None = None
     vector_store_service: KnowledgeCapability | None = None
-    chat_model: ChatModelCapability | None = None
     budget: RunBudget = field(default_factory=RunBudget)
 
     def __post_init__(self):

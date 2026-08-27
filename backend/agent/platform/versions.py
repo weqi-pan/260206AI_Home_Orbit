@@ -1,5 +1,8 @@
 import json
 import re
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sqlalchemy import func, select
 
@@ -30,6 +33,61 @@ AGENT_FIELDS = {"prompt", "model_requirements", "permissions", "budgets", "tests
 ATTACHMENT_FIELDS = {"kind", "name", "asset_id", "content_hash"}
 
 
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class SkillAttachmentSchema(StrictModel):
+    kind: Literal["knowledge", "data"]
+    name: str = Field(min_length=1, max_length=200)
+    asset_id: str = Field(min_length=1, max_length=100)
+    content_hash: str = Field(pattern=r"^[a-fA-F0-9]{64}$")
+
+
+class SkillSchema(StrictModel):
+    instructions: str = Field(min_length=1, max_length=50000)
+    knowledge: list[str] = Field(default_factory=list)
+    attachments: list[SkillAttachmentSchema] = Field(default_factory=list)
+
+
+class ModelRequirementsSchema(StrictModel):
+    capabilities: list[str] = Field(default_factory=list)
+
+
+class PermissionSchema(StrictModel):
+    tool_key: str = Field(min_length=1, max_length=100)
+    required: bool = True
+
+
+class BudgetSchema(StrictModel):
+    tool_calls: int = Field(default=16, ge=1, le=64)
+    tokens: int = Field(default=32000, ge=1, le=100000)
+    wall_time_seconds: int = Field(default=120, ge=1, le=300)
+    delegation_depth: int = Field(default=4, ge=0, le=16)
+
+
+class AgentTestSchema(StrictModel):
+    name: str = Field(min_length=1, max_length=100)
+    input: str = Field(min_length=1, max_length=5000)
+    expected_contains: str = Field(min_length=1, max_length=1000)
+
+
+class MetadataSchema(StrictModel):
+    description: str = Field(default="", max_length=500)
+
+
+class AgentSchema(StrictModel):
+    prompt: str = Field(min_length=1, max_length=50000)
+    model_requirements: ModelRequirementsSchema = Field(default_factory=ModelRequirementsSchema)
+    permissions: list[PermissionSchema] = Field(default_factory=list)
+    budgets: BudgetSchema = Field(default_factory=BudgetSchema)
+    tests: list[AgentTestSchema] = Field(default_factory=list)
+    workflow: dict | None = None
+    tools: list[str] = Field(default_factory=list)
+    child_deployments: list[str] = Field(default_factory=list)
+    metadata: MetadataSchema = Field(default_factory=MetadataSchema)
+
+
 def _unsafe_key(key):
     normalized = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
     parts = set(normalized.split("_"))
@@ -53,36 +111,23 @@ def _only_fields(definition, allowed, code):
 
 def validate_skill_definition(definition: dict) -> dict:
     _only_fields(definition, SKILL_FIELDS, "SKILL_DEFINITION_UNSAFE")
-    instructions = definition.get("instructions", "")
-    if not isinstance(instructions, str):
-        raise DefinitionRejected("SKILL_DEFINITION_INVALID")
-    attachments = definition.get("attachments", [])
-    if not isinstance(attachments, list):
-        raise DefinitionRejected("SKILL_DEFINITION_INVALID")
-    normalized_attachments = []
-    for attachment in attachments:
-        if not isinstance(attachment, dict) or set(attachment) - ATTACHMENT_FIELDS:
-            raise DefinitionRejected("SKILL_DEFINITION_UNSAFE")
-        if attachment.get("kind") not in {"knowledge", "data"}:
-            raise DefinitionRejected("SKILL_DEFINITION_UNSAFE")
-        normalized_attachments.append({key: attachment[key] for key in sorted(attachment)})
-    return {"instructions": instructions, "attachments": normalized_attachments,
-            **({"knowledge": definition["knowledge"]} if "knowledge" in definition else {})}
+    if any(isinstance(item, dict) and item.get("kind") not in {"knowledge", "data"}
+           for item in definition.get("attachments", []) if isinstance(definition.get("attachments"), list)):
+        raise DefinitionRejected("SKILL_DEFINITION_UNSAFE")
+    try:
+        return SkillSchema.model_validate(definition).model_dump(mode="json")
+    except ValidationError as exc:
+        raise DefinitionRejected("SKILL_DEFINITION_INVALID") from exc
 
 
 def validate_agent_definition(definition: dict) -> dict:
     _only_fields(definition, AGENT_FIELDS, "AGENT_DEFINITION_UNSAFE")
-    if not isinstance(definition.get("prompt", ""), str):
-        raise DefinitionRejected("AGENT_DEFINITION_INVALID")
-    validate_workflow(definition.get("workflow"))
-    normalized = {key: definition[key] for key in sorted(definition)}
-    for collection in ("permissions", "tests", "child_deployments", "tools"):
-        if collection in normalized and not isinstance(normalized[collection], list):
-            raise DefinitionRejected("AGENT_DEFINITION_INVALID")
-    for mapping in ("model_requirements", "budgets", "metadata"):
-        if mapping in normalized and not isinstance(normalized[mapping], dict):
-            raise DefinitionRejected("AGENT_DEFINITION_INVALID")
-    return normalized
+    try:
+        normalized = AgentSchema.model_validate(definition).model_dump(mode="json")
+        validate_workflow(normalized.get("workflow"))
+        return normalized
+    except (ValidationError, ValueError) as exc:
+        raise DefinitionRejected("AGENT_DEFINITION_INVALID") from exc
 
 
 def normalize_json(value: dict) -> str:

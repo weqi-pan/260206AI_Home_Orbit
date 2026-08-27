@@ -370,7 +370,9 @@ def test_message_feedback_enforces_session_owner(client, app, settings):
     other = register(client, "other-feedback-user")
     with app.state.database.session_factory.begin() as session:
         account = session.scalar(select(Account).where(Account.username == "demo"))
-        chat = ChatSession(account_id=account.id)
+        from backend.app.db.models import HouseholdMember
+        household_id = session.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
+        chat = ChatSession(account_id=account.id, household_id=household_id)
         session.add(chat)
         session.flush()
         message = ConversationHistory(session_id=chat.id, user_id=account.user_id, role="assistant", content="answer")

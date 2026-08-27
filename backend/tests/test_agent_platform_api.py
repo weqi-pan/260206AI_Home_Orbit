@@ -37,7 +37,9 @@ def test_agent_version_api_publishes_immutable_snapshot_and_rolls_deployment(cli
                           json={"household_id": household_id, "agent_version_id": second.json()["id"]})
     assert switched.status_code == 200
     assert switched.json()["revision"] == 2
-    assert first.json()["definition"] == {"prompt": "v1", "tools": []}
+    assert first.json()["definition"]["prompt"] == "v1"
+    assert first.json()["definition"]["tools"] == []
+    assert first.json()["definition"]["budgets"]["tool_calls"] == 16
 
 
 def test_approval_api_rejects_cross_household_request(client, app):

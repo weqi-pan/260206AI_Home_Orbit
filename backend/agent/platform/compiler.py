@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_core.tools import StructuredTool
 from langchain.tools import ToolRuntime
 from langgraph.types import Command, interrupt
+from langgraph.graph import END, StateGraph
 from sqlalchemy import select
 
 from backend.agent.platform.deepagents_runtime import create_secured_deep_agent
@@ -15,8 +16,22 @@ from backend.agent.platform.policy import PlatformToolExecutor
 from backend.agent.platform.policy_errors import PlatformToolError
 from backend.agent.platform.workflow import validate_workflow
 from backend.agent.platform.workflow import WorkflowExecutor
-from backend.app.db.models import AgentDeployment, AgentSkillBinding, AgentToolBinding, AgentVersion, SkillVersion
+from backend.app.db.models import AgentDefinition, AgentDeployment, AgentSkillBinding, AgentToolBinding, AgentVersion, SkillVersion
 from backend.app.models.adapters import content_text
+
+
+class BudgetedChildRunnable:
+    def __init__(self, runnable, budget): self.runnable, self.budget = runnable, budget
+    def invoke(self, *args, **kwargs):
+        self.budget.enter_delegation()
+        try: return self.runnable.invoke(*args, **kwargs)
+        finally: self.budget.exit_delegation()
+    def stream(self, *args, **kwargs):
+        self.budget.enter_delegation()
+        try: yield from self.runnable.stream(*args, **kwargs)
+        finally: self.budget.exit_delegation()
+    def with_config(self, config):
+        return BudgetedChildRunnable(self.runnable.with_config(config), self.budget)
 
 
 @dataclass(frozen=True)
@@ -34,11 +49,77 @@ class CompiledAgent:
     tool_executor: object = None
     graph: object = None
 
+    def _workflow_graph(self, context):
+        child_map = {item["name"]: item["runnable"] for item in self.subagents}
+        nodes = {node["id"]: node for node in self.workflow["nodes"]}
+        builder = StateGraph(dict)
+        def append_event(state, event): return {**state, "events": [*state.get("events", []), event]}
+        for node_id, node in nodes.items():
+            kind = node["type"]
+            def run_node(state, _node=node, _kind=kind):
+                context.budget.check_time()
+                if _kind == "call_tool":
+                    context.budget.consume_tool()
+                    result = self.tool_executor.execute(_node["tool"], _node.get("arguments", {}), context, _node["id"])
+                    return append_event(state, {"event": "tool", "data": {"name": _node["tool"], "result": result}})
+                if _kind == "respond":
+                    return append_event(state, {"event": "token", "data": {"content": _node.get("text", "")}})
+                if _kind == "confirm":
+                    try:
+                        result = self.tool_executor.execute("platform.workflow_confirm", {"message": _node["message"]},
+                                                            context, _node["id"])
+                    except __import__("backend.agent.platform.policy_errors", fromlist=["ApprovalRequired"]).ApprovalRequired as exc:
+                        answer = interrupt({"approval_id": exc.approval_id, "code": "APPROVAL_REQUIRED",
+                                            "kind": "workflow_confirm", "node_id": _node["id"],
+                                            "message": _node["message"]})
+                        from backend.agent.platform.approvals import ApprovalResumeService
+                        result = ApprovalResumeService(lambda: self.tool_executor.session,
+                            ExecutionAuthority(self.tool_executor.session).registry.resolve("platform.workflow_confirm").handler
+                        ).claim_and_execute(answer.get("approval_id", exc.approval_id), context,
+                                            {"message": _node["message"]})
+                    return append_event(state, {"event": "approval_resumed", "data": result})
+                if _kind == "delegate":
+                    target = child_map.get(_node["subagent"])
+                    if target is None: raise PlatformToolError("SUBAGENT_NOT_FOUND")
+                    context.budget.enter_delegation()
+                    try:
+                        result = target.invoke({"messages": [{"role": "user", "content": _node["message"]}]}, context=context)
+                    finally: context.budget.exit_delegation()
+                    return append_event(state, {"event": "delegate", "data": {"subagent": _node["subagent"],
+                                                                                 "result": str(result)}})
+                if _kind == "parallel":
+                    events = list(state.get("events", []))
+                    for branch in _node["branches"]:
+                        branch_node = nodes[branch]
+                        if branch_node["type"] == "respond":
+                            events.append({"event": "token", "data": {"content": branch_node.get("text", "")}})
+                        else: raise PlatformToolError("WORKFLOW_PARALLEL_BRANCH_INVALID")
+                    return {**state, "events": events}
+                return state
+            builder.add_node(node_id, run_node)
+        builder.set_entry_point(self.workflow["entry"])
+        for node_id, node in nodes.items():
+            if node["type"] == "end": builder.add_edge(node_id, END); continue
+            if node["type"] == "condition":
+                builder.add_conditional_edges(node_id, lambda state, n=node: n["then"] if state.get(n["field"]) == n["equals"] else n["else"],
+                                              {node["then"]: node["then"], node["else"]: node["else"]})
+            else:
+                builder.add_edge(node_id, node.get("next", END))
+        return builder.compile(checkpointer=self.checkpointer)
+
     def stream(self, messages, context):
         if self.workflow:
-            inputs = {"message": messages[-1].get("content", "") if messages and isinstance(messages[-1], dict) else ""}
-            executor = WorkflowExecutor(lambda key, args, invocation: self.tool_executor.execute(key, args, context, invocation))
-            yield from executor.run(self.workflow, inputs)
+            graph = self.graph or self._workflow_graph(context); object.__setattr__(self, "graph", graph)
+            config = {"configurable": {"thread_id": context.session_id,
+                                        "checkpoint_ns": f"{context.household_id}/{context.session_id}/{context.run_id}"}}
+            initial = {"message": messages[-1].get("content", "") if messages and isinstance(messages[-1], dict) else "",
+                       "events": []}
+            for update in graph.stream(initial, config=config, context=context, stream_mode="updates"):
+                if "__interrupt__" in update:
+                    yield {"event": "approval_required", "data": update["__interrupt__"][0].value}
+                else:
+                    for value in update.values():
+                        for event in value.get("events", []): yield event
             return
         agent = self.graph or create_secured_deep_agent(model=self.model, tools=self.tools, subagents=list(self.subagents),
                                           system_prompt=self.prompt, context_schema=type(context),
@@ -62,7 +143,6 @@ class CompiledAgent:
                     continue
                 for call in getattr(message, "tool_calls", []) or []:
                     context.budget.consume_tool()
-                    if call.get("name") == "task": context.budget.enter_delegation()
                     event = "delegate" if call.get("name") == "task" else "tool"
                     yield {"event": event, "data": {**call, "type": "tool_call"}}
                 content = content_text(getattr(message, "content", ""))
@@ -78,12 +158,21 @@ class CompiledAgent:
 
     def resume(self, approval_id, context):
         if self.graph is None:
-            object.__setattr__(self, "graph", create_secured_deep_agent(model=self.model, tools=self.tools,
-                subagents=list(self.subagents), system_prompt=self.prompt, context_schema=type(context),
-                checkpointer=self.checkpointer))
+            object.__setattr__(self, "graph", self._workflow_graph(context) if self.workflow else create_secured_deep_agent(
+                model=self.model, tools=self.tools, subagents=list(self.subagents), system_prompt=self.prompt,
+                context_schema=type(context), checkpointer=self.checkpointer))
         config = {"configurable": {"thread_id": context.session_id,
                                     "checkpoint_ns": f"{context.household_id}/{context.session_id}/{context.run_id}"}}
-        yield from self._stream_input(self.graph, Command(resume={"approval_id": approval_id}), context, config)
+        if self.workflow:
+            for update in self.graph.stream(Command(resume={"approval_id": approval_id}), config=config, context=context,
+                                            stream_mode="updates"):
+                if "__interrupt__" in update:
+                    yield {"event": "approval_required", "data": update["__interrupt__"][0].value}
+                else:
+                    for value in update.values():
+                        for event in value.get("events", []): yield event
+        else:
+            yield from self._stream_input(self.graph, Command(resume={"approval_id": approval_id}), context, config)
         yield {"event": "run", "data": {"run_id": context.run_id, "status": "completed"}}
 
 
@@ -142,20 +231,28 @@ class AgentCompiler:
         subagents, names = [], []
         for child_id in definition.get("child_deployments", []):
             child_context = context
-            child_model = self.model_factory(child_id) if self.model_factory else context.chat_model
+            child_model = self.model_factory(child_id) if self.model_factory else None
             child_deployment = self.session.get(AgentDeployment, child_id)
+            child_version = self.session.get(AgentVersion, child_deployment.agent_version_id)
+            child_definition = self.session.get(AgentDefinition, child_version.agent_id)
+            child_name = child_definition.name.strip().lower().replace(" ", "-")
+            if not child_name or child_name in names:
+                raise PlatformToolError("SUBAGENT_NAME_CONFLICT")
+            child_metadata = json.loads(child_version.definition_json).get("metadata", {})
+            child_description = child_metadata.get("description") or child_definition.name
             child_authorities = ExecutionAuthority(self.session).tools(
                 child_id, context.household_id, child_deployment.agent_version_id)
             child_grants = {item.key: {"version": item.version, "risk_level": item.risk_level}
                             for item in child_authorities}
             child_context = type(context)(**{**context.__dict__, "deployment_id": child_id,
                                               "agent_version_id": child_deployment.agent_version_id,
-                                              "grants": child_grants,
-                                              "chat_model": child_model})
+                                              "grants": child_grants})
             child = self.compile(child_id, child_context)
             child_graph = create_secured_deep_agent(model=child.model, tools=child.tools, subagents=list(child.subagents),
-                system_prompt=child.prompt, context_schema=type(context), checkpointer=self.checkpointer, name="child")
-            subagents.append({"name": "child", "description": "Persisted compiled child agent", "runnable": child_graph})
-            names.append("child")
-        return CompiledAgent(deployment.id, version.id, prompt, workflow, tuple(tools), context.chat_model, limits,
+                system_prompt=child.prompt, context_schema=type(context), checkpointer=self.checkpointer, name=child_name)
+            subagents.append({"name": child_name, "description": child_description,
+                              "runnable": BudgetedChildRunnable(child_graph, context.budget)})
+            names.append(child_name)
+        model = self.model_factory(deployment.id) if self.model_factory else None
+        return CompiledAgent(deployment.id, version.id, prompt, workflow, tuple(tools), model, limits,
                              self.checkpointer, tuple(subagents), tuple(names), executor)

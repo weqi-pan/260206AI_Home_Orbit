@@ -39,9 +39,8 @@ def test_compiled_graph_persists_interrupt_and_resumes_same_checkpoint_once(db_s
     db_session.add(AgentToolBinding(household_id=platform_seed["household_id"],
         agent_version_id=platform_seed["context"].agent_version_id, tool_id=high.id)); db_session.commit()
     context = platform_seed["context"]
-    context = type(context)(**{**context.__dict__, "chat_model": OneToolModel(tool_name=high.key)})
     effects = []
-    compiler = AgentCompiler(db_session, checkpointer=InMemorySaver(),
+    compiler = AgentCompiler(db_session, checkpointer=InMemorySaver(), model_factory=lambda _deployment: OneToolModel(tool_name=high.key),
         tool_executor_factory=lambda session: PlatformToolExecutor(session,
             side_effect=lambda args, _context: effects.append(args) or {"ok": True}))
     compiled = compiler.compile(platform_seed["deployment_id"], context)
@@ -107,8 +106,8 @@ def test_compiler_builds_persisted_child_and_real_task_delegation(db_session, pl
     parent.definition_json = '{"prompt":"delegate","tools":[],"child_deployments":["' + child_deployment.id + '"]}'
     db_session.commit()
     context = platform_seed["context"]
-    context = type(context)(**{**context.__dict__, "chat_model": DelegatingModel()})
-    compiled = AgentCompiler(db_session, model_factory=lambda deployment_id: ChildContextModel()).compile(
+    compiled = AgentCompiler(db_session, model_factory=lambda deployment_id: ChildContextModel()
+        if deployment_id == child_deployment.id else DelegatingModel()).compile(
         platform_seed["deployment_id"], context)
     events = list(compiled.stream([{"role": "user", "content": "delegate"}], context))
     assert any(event["event"] == "delegate" for event in events)

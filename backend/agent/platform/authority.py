@@ -10,6 +10,8 @@ from backend.app.db.models import AgentDeployment, AgentInstallation, Installati
 @dataclass(frozen=True)
 class ToolAuthority:
     installation_id: str
+    permission_id: str
+    granted_by_account_id: str | None
     tool_id: str
     key: str
     version: str
@@ -26,7 +28,7 @@ class ExecutionAuthority:
             AgentDeployment.id == deployment_id, AgentDeployment.household_id == household_id))
         installation = self.session.scalar(select(AgentInstallation).where(
             AgentInstallation.deployment_id == deployment_id, AgentInstallation.household_id == household_id,
-            AgentInstallation.status == "installed"))
+            AgentInstallation.status == "installed").order_by(AgentInstallation.id))
         if not deployment or not installation:
             raise PlatformToolError("INSTALLATION_REQUIRED")
         if deployment.agent_version_id != agent_version_id or installation.agent_version_id != agent_version_id:
@@ -51,7 +53,8 @@ class ExecutionAuthority:
                 continue
             if metadata.version != row.version or metadata.risk_level != row.risk_level:
                 continue
-            result.append(ToolAuthority(installation.id, row.id, row.key, row.version, row.risk_level))
+            result.append(ToolAuthority(installation.id, permission.id, permission.granted_by_account_id,
+                                        row.id, row.key, row.version, row.risk_level))
         return tuple(result)
 
     def recheck(self, context, key, version):

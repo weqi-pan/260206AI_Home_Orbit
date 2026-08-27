@@ -45,6 +45,15 @@ def _context_probe(_arguments, context):
     return f"{context.household_id}|{context.principal_id}|{context.agent_version_id}|{sorted(context.grants)}"
 
 
+def _workflow_confirm(arguments, _context):
+    return {"confirmed": arguments.get("message", "")}
+
+
+class WorkflowConfirmArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str
+
+
 class BuiltinToolRegistry:
     def __init__(self, tools: list[BuiltinTool]):
         self._tools = {tool.metadata.key: tool for tool in tools}
@@ -57,6 +66,8 @@ class BuiltinToolRegistry:
                         _test_high_risk, HighRiskTestArguments),
             BuiltinTool(ToolMetadata("platform.context_probe", "上下文探针", "读取当前运行的非敏感身份快照", "low"),
                         _context_probe, NoArguments),
+            BuiltinTool(ToolMetadata("platform.workflow_confirm", "工作流确认", "确认受限工作流继续执行", "high"),
+                        _workflow_confirm, WorkflowConfirmArguments),
         ])
 
     def resolve(self, key: str) -> BuiltinTool:
