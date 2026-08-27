@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.db.models import Base, utcnow, uuid_str
@@ -67,6 +67,10 @@ class TenantRow:
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+def tenant_parent_constraints(*constraints):
+    return (*constraints, UniqueConstraint("id", "household_id"))
+
+
 class ModelGrant(TenantRow, Base):
     __tablename__ = "model_grants"
     model_id: Mapped[str] = mapped_column(ForeignKey("llm_models.id"), nullable=False)
@@ -84,14 +88,19 @@ class ToolPermission(TenantRow, Base):
 
 class Skill(TenantRow, Base):
     __tablename__ = "skills"
+    __table_args__ = tenant_parent_constraints()
     name: Mapped[str] = mapped_column(String(100), nullable=False)
 
 
 class SkillVersion(Base):
     __tablename__ = "skill_versions"
-    __table_args__ = (UniqueConstraint("skill_id", "version"),)
+    __table_args__ = tenant_parent_constraints(
+        UniqueConstraint("skill_id", "version"),
+        ForeignKeyConstraint(["skill_id", "household_id"], ["skills.id", "skills.household_id"], ondelete="CASCADE"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    skill_id: Mapped[str] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    skill_id: Mapped[str] = mapped_column(String(36), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     definition_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     published_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -99,20 +108,29 @@ class SkillVersion(Base):
 
 class SkillKnowledgeAsset(Base):
     __tablename__ = "skill_knowledge_assets"
+    __table_args__ = (
+        ForeignKeyConstraint(["skill_version_id", "household_id"], ["skill_versions.id", "skill_versions.household_id"], ondelete="CASCADE"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    skill_version_id: Mapped[str] = mapped_column(ForeignKey("skill_versions.id", ondelete="CASCADE"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    skill_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class AgentDefinition(TenantRow, Base):
     __tablename__ = "agent_definitions"
+    __table_args__ = tenant_parent_constraints()
     name: Mapped[str] = mapped_column(String(100), nullable=False)
 
 
 class AgentVersion(Base):
     __tablename__ = "agent_versions"
-    __table_args__ = (UniqueConstraint("agent_id", "version"),)
+    __table_args__ = tenant_parent_constraints(
+        UniqueConstraint("agent_id", "version"),
+        ForeignKeyConstraint(["agent_id", "household_id"], ["agent_definitions.id", "agent_definitions.household_id"], ondelete="CASCADE"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    agent_id: Mapped[str] = mapped_column(ForeignKey("agent_definitions.id", ondelete="CASCADE"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_id: Mapped[str] = mapped_column(String(36), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     definition_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     published_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -120,38 +138,60 @@ class AgentVersion(Base):
 
 class AgentSkillBinding(Base):
     __tablename__ = "agent_skill_bindings"
+    __table_args__ = (
+        ForeignKeyConstraint(["agent_version_id", "household_id"], ["agent_versions.id", "agent_versions.household_id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["skill_version_id", "household_id"], ["skill_versions.id", "skill_versions.household_id"]),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    agent_version_id: Mapped[str] = mapped_column(ForeignKey("agent_versions.id", ondelete="CASCADE"), nullable=False)
-    skill_version_id: Mapped[str] = mapped_column(ForeignKey("skill_versions.id"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    skill_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class AgentToolBinding(Base):
     __tablename__ = "agent_tool_bindings"
+    __table_args__ = (
+        ForeignKeyConstraint(["agent_version_id", "household_id"], ["agent_versions.id", "agent_versions.household_id"], ondelete="CASCADE"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    agent_version_id: Mapped[str] = mapped_column(ForeignKey("agent_versions.id", ondelete="CASCADE"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
     tool_id: Mapped[str] = mapped_column(ForeignKey("tool_definitions.id"), nullable=False)
 
 
 class AgentDeployment(TenantRow, Base):
     __tablename__ = "agent_deployments"
-    agent_version_id: Mapped[str] = mapped_column(ForeignKey("agent_versions.id"), nullable=False)
+    __table_args__ = tenant_parent_constraints(
+        ForeignKeyConstraint(["agent_version_id", "household_id"], ["agent_versions.id", "agent_versions.household_id"]),
+    )
+    agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class AgentInstallation(TenantRow, Base):
     __tablename__ = "agent_installations"
-    deployment_id: Mapped[str] = mapped_column(ForeignKey("agent_deployments.id"), nullable=False)
+    __table_args__ = tenant_parent_constraints(
+        ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
+    )
+    deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class InstallationPermission(Base):
     __tablename__ = "installation_permissions"
+    __table_args__ = (
+        ForeignKeyConstraint(["installation_id", "household_id"], ["agent_installations.id", "agent_installations.household_id"], ondelete="CASCADE"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    installation_id: Mapped[str] = mapped_column(ForeignKey("agent_installations.id", ondelete="CASCADE"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    installation_id: Mapped[str] = mapped_column(String(36), nullable=False)
     tool_id: Mapped[str] = mapped_column(ForeignKey("tool_definitions.id"), nullable=False)
 
 
 class Favorite(TenantRow, Base):
     __tablename__ = "favorites"
-    deployment_id: Mapped[str] = mapped_column(ForeignKey("agent_deployments.id"), nullable=False)
+    __table_args__ = (
+        ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
+    )
+    deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class CreatorDraft(TenantRow, Base):
@@ -161,63 +201,99 @@ class CreatorDraft(TenantRow, Base):
 
 class ReviewSubmission(Base):
     __tablename__ = "review_submissions"
+    __table_args__ = tenant_parent_constraints(
+        ForeignKeyConstraint(["agent_version_id", "household_id"], ["agent_versions.id", "agent_versions.household_id"]),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    agent_version_id: Mapped[str] = mapped_column(ForeignKey("agent_versions.id"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class ReviewCheck(Base):
     __tablename__ = "review_checks"
+    __table_args__ = (
+        ForeignKeyConstraint(["submission_id", "household_id"], ["review_submissions.id", "review_submissions.household_id"], ondelete="CASCADE"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    submission_id: Mapped[str] = mapped_column(ForeignKey("review_submissions.id", ondelete="CASCADE"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    submission_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class ReviewDecision(Base):
     __tablename__ = "review_decisions"
+    __table_args__ = (
+        ForeignKeyConstraint(["submission_id", "household_id"], ["review_submissions.id", "review_submissions.household_id"], ondelete="CASCADE"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    submission_id: Mapped[str] = mapped_column(ForeignKey("review_submissions.id", ondelete="CASCADE"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    submission_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class Report(TenantRow, Base):
     __tablename__ = "reports"
-    deployment_id: Mapped[str] = mapped_column(ForeignKey("agent_deployments.id"), nullable=False)
+    __table_args__ = (
+        ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
+    )
+    deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class AgentRun(TenantRow, Base):
     __tablename__ = "agent_runs"
-    deployment_id: Mapped[str] = mapped_column(ForeignKey("agent_deployments.id"), nullable=False)
+    __table_args__ = tenant_parent_constraints(
+        ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
+    )
+    deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class ToolExecution(Base):
     __tablename__ = "tool_executions"
+    __table_args__ = (
+        ForeignKeyConstraint(["run_id", "household_id"], ["agent_runs.id", "agent_runs.household_id"], ondelete="CASCADE"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    run_id: Mapped[str] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(String(36), nullable=False)
     tool_id: Mapped[str] = mapped_column(ForeignKey("tool_definitions.id"), nullable=False)
 
 
 class ApprovalRequest(Base):
     __tablename__ = "approval_requests"
+    __table_args__ = (
+        ForeignKeyConstraint(["run_id", "household_id"], ["agent_runs.id", "agent_runs.household_id"], ondelete="CASCADE"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    run_id: Mapped[str] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class HouseholdTask(TenantRow, Base):
     __tablename__ = "household_tasks"
+    __table_args__ = tenant_parent_constraints()
     title: Mapped[str] = mapped_column(String(200), nullable=False)
 
 
 class TaskSchedule(Base):
     __tablename__ = "task_schedules"
+    __table_args__ = (
+        ForeignKeyConstraint(["task_id", "household_id"], ["household_tasks.id", "household_tasks.household_id"], ondelete="CASCADE"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    task_id: Mapped[str] = mapped_column(ForeignKey("household_tasks.id", ondelete="CASCADE"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class Notification(TenantRow, Base):
     __tablename__ = "notifications"
+    __table_args__ = tenant_parent_constraints()
     title: Mapped[str] = mapped_column(String(200), nullable=False)
 
 
 class NotificationRead(Base):
     __tablename__ = "notification_reads"
+    __table_args__ = (
+        ForeignKeyConstraint(["notification_id", "household_id"], ["notifications.id", "notifications.household_id"], ondelete="CASCADE"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    notification_id: Mapped[str] = mapped_column(ForeignKey("notifications.id", ondelete="CASCADE"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    notification_id: Mapped[str] = mapped_column(String(36), nullable=False)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)

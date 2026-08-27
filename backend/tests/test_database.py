@@ -110,6 +110,19 @@ def test_startup_rejects_database_without_required_alembic_revision(settings):
         require_database_revision(database.engine)
 
 
+def test_alembic_url_prefers_explicit_override_then_compose_database_url():
+    from backend.app.db.migration_url import resolve_migration_url
+
+    mysql_url = "mysql+pymysql://app:secret@mysql:3306/customer_service"
+    override_url = "sqlite:///override.db"
+
+    assert resolve_migration_url("sqlite:///configured.db", {"DATABASE_URL": mysql_url}) == mysql_url
+    assert resolve_migration_url(
+        "sqlite:///configured.db",
+        {"DATABASE_URL": mysql_url, "ALEMBIC_DATABASE_URL": override_url},
+    ) == override_url
+
+
 def test_default_settings_paths_are_absolute_and_do_not_create_nested_backend(tmp_path, monkeypatch):
     from pathlib import Path
 

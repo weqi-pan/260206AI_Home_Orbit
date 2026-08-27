@@ -3,7 +3,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from sqlalchemy import inspect, select
+from sqlalchemy.exc import IntegrityError
 
 
 def bearer(token: str) -> dict[str, str]:
@@ -203,6 +205,105 @@ def test_version_and_deployment_relationship_constraints_are_enforced():
     assert ("household_id", "households", "id") in deployment_fks
     assert ("agent_version_id", "agent_versions", "id") in deployment_fks
     assert tables["agent_deployments"].c.household_id.nullable is False
+
+
+def test_database_rejects_cross_household_agent_skill_binding(settings):
+    from backend.app.db.session import create_database
+    from backend.app.db.models import Account, Household
+    from backend.app.db.platform_models import AgentDefinition, AgentSkillBinding, AgentVersion, Skill, SkillVersion
+
+    database = create_database(settings)
+    database.create_all()
+    with database.session_factory() as session:
+        owner = Account(username="tenant-owner", password_hash="hash")
+        session.add(owner)
+        session.flush()
+        household_a = Household(name="A", created_by_account_id=owner.id)
+        household_b = Household(name="B", created_by_account_id=owner.id)
+        session.add_all([household_a, household_b])
+        session.flush()
+        agent = AgentDefinition(household_id=household_a.id, name="A agent")
+        skill = Skill(household_id=household_b.id, name="B skill")
+        session.add_all([agent, skill])
+        session.flush()
+        agent_version = AgentVersion(household_id=household_a.id, agent_id=agent.id, version=1)
+        skill_version = SkillVersion(household_id=household_b.id, skill_id=skill.id, version=1)
+        session.add_all([agent_version, skill_version])
+        session.flush()
+        session.add(AgentSkillBinding(
+            household_id=household_a.id,
+            agent_version_id=agent_version.id,
+            skill_version_id=skill_version.id,
+        ))
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_database_rejects_cross_household_agent_deployment_version(settings):
+    from backend.app.db.models import Account, Household
+    from backend.app.db.platform_models import AgentDefinition, AgentDeployment, AgentVersion
+    from backend.app.db.session import create_database
+
+    database = create_database(settings)
+    database.create_all()
+    with database.session_factory() as session:
+        owner = Account(username="deployment-version-owner", password_hash="hash")
+        session.add(owner)
+        session.flush()
+        household_a = Household(name="A", created_by_account_id=owner.id)
+        household_b = Household(name="B", created_by_account_id=owner.id)
+        session.add_all([household_a, household_b])
+        session.flush()
+        agent = AgentDefinition(household_id=household_a.id, name="A agent")
+        session.add(agent)
+        session.flush()
+        version = AgentVersion(household_id=household_a.id, agent_id=agent.id, version=1)
+        session.add(version)
+        session.flush()
+        session.add(AgentDeployment(household_id=household_b.id, agent_version_id=version.id))
+
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+@pytest.mark.parametrize("resource_name", ["installation", "favorite", "report", "run"])
+def test_database_rejects_cross_household_deployment_relationships(settings, resource_name):
+    from backend.app.db.models import Account, Household
+    from backend.app.db.platform_models import (
+        AgentDefinition, AgentDeployment, AgentInstallation, AgentRun, AgentVersion, Favorite, Report,
+    )
+    from backend.app.db.session import create_database
+
+    database = create_database(settings)
+    database.create_all()
+    with database.session_factory() as session:
+        owner = Account(username=f"deployment-{resource_name}", password_hash="hash")
+        session.add(owner)
+        session.flush()
+        household_a = Household(name="A", created_by_account_id=owner.id)
+        household_b = Household(name="B", created_by_account_id=owner.id)
+        session.add_all([household_a, household_b])
+        session.flush()
+        agent = AgentDefinition(household_id=household_a.id, name="A agent")
+        session.add(agent)
+        session.flush()
+        version = AgentVersion(household_id=household_a.id, agent_id=agent.id, version=1)
+        session.add(version)
+        session.flush()
+        deployment = AgentDeployment(household_id=household_a.id, agent_version_id=version.id)
+        session.add(deployment)
+        session.flush()
+        resource_type = {
+            "installation": AgentInstallation,
+            "favorite": Favorite,
+            "report": Report,
+            "run": AgentRun,
+        }[resource_name]
+        session.add(resource_type(household_id=household_b.id, deployment_id=deployment.id))
+
+        with pytest.raises(IntegrityError):
+            session.commit()
 
 
 def test_empty_database_upgrades_through_frozen_alembic_chain(tmp_path):

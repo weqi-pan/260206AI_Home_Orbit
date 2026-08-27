@@ -5,11 +5,11 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from backend.app.db.models import Base
+from backend.app.db.migration_url import resolve_migration_url
 
 
 config = context.config
-if database_url := os.getenv("ALEMBIC_DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", database_url)
+config.set_main_option("sqlalchemy.url", resolve_migration_url(config.get_main_option("sqlalchemy.url"), os.environ))
 if config.config_file_name:
     fileConfig(config.config_file_name)
 target_metadata = Base.metadata
