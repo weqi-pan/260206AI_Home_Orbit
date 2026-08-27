@@ -21,6 +21,9 @@ async function handleLogout() {
         <router-link to="/tickets">我的工单</router-link>
       </nav>
       <div class="user-area">
+        <router-link v-if="auth.account?.role === 'admin'" to="/admin/dashboard" class="admin-link">
+          <el-button size="small" type="primary" plain>管理后台</el-button>
+        </router-link>
         <span class="username">{{ auth.account?.username }}</span>
         <el-button size="small" text type="danger" @click="handleLogout()">退出</el-button>
       </div>
@@ -80,6 +83,10 @@ async function handleLogout() {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.admin-link {
+  text-decoration: none;
 }
 
 .username {
