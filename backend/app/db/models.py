@@ -1,20 +1,9 @@
-import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def uuid_str() -> str:
-    return str(uuid.uuid4())
-
-
-class Base(DeclarativeBase):
-    pass
+from backend.app.db.base import Base, utcnow, uuid_str
 
 
 class User(Base):
@@ -176,6 +165,8 @@ class ConversationHistory(Base):
 # existing V1 imports continue to use backend.app.db.models.
 from backend.app.db.household_models import Household, HouseholdMember, HouseholdPreference, Invitation  # noqa: E402,F401
 from backend.app.db.platform_models import (  # noqa: E402,F401
-    AgentDefinition, AgentDeployment, AgentRun, AgentVersion, LlmCredential, LlmEndpoint,
-    LlmModel, ModelPurposeBinding, Notification, Skill, SkillVersion, ToolExecution,
+    ActiveEmbeddingCollection, AgentDefinition, AgentDeployment, AgentRun, AgentVersion,
+    EmbeddingCollectionBuild, LlmCredential, LlmEndpoint, LlmModel, ModelGrant,
+    ModelHealthCheck, ModelPurposeBinding, ModelUsage, Notification, Skill, SkillVersion,
+    ToolExecution, UsageQuota,
 )

@@ -42,12 +42,11 @@ class ToolCallingChatModel(BaseChatModel):
         return ChatResult(generations=[ChatGeneration(message=message)])
 
 
-def test_chat_tongyi_instance_constructs_real_deep_agent_without_network():
-    from langchain_community.chat_models.tongyi import ChatTongyi
-
+def test_openai_compatible_instance_constructs_real_deep_agent_without_network():
+    from langchain_openai import ChatOpenAI
     from backend.model.factory import build_chat_model
 
-    model = build_chat_model(api_key="not-a-real-key", model_name="qwen3-max")
+    model = build_chat_model(protocol="openai_compatible", api_key="not-a-real-key", model_name="test-chat", base_url="https://api.openai.com/v1")
     agent = create_deep_agent(
         model=model,
         tools=[echo_tool],
@@ -55,7 +54,7 @@ def test_chat_tongyi_instance_constructs_real_deep_agent_without_network():
         middleware=[TodoListMiddleware()],
     )
 
-    assert isinstance(model, ChatTongyi)
+    assert isinstance(model, ChatOpenAI)
     assert agent.get_graph().nodes
 
 
@@ -95,7 +94,6 @@ def test_real_deep_agent_runner_emits_tool_lifecycle_without_tool_result_as_toke
         tools=[echo_tool],
         subagents=[{"name": "researcher", "description": "offline", "system_prompt": "Summarize."}],
     )
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "offline-test-key")
     monkeypatch.setattr(deep_agent_module, "create_deep_agent", lambda: agent)
 
     events = list(UnavailableAgentRunner().stream([{"role": "user", "content": "run"}], {}))

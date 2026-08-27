@@ -17,9 +17,9 @@ def _prompt(name, fallback):
     return path.read_text(encoding="utf-8") if path.exists() else fallback
 
 
-def create_deep_agent():
+def create_deep_agent(model=None):
     subagents = [PRESALES_SUBAGENT, AFTERSALES_SUBAGENT, REPORT_TICKET_SUBAGENT]
-    return deepagents_create(model=get_chat_model(), tools=[get_weather, get_current_month],
+    return deepagents_create(model=model or get_chat_model(), tools=[get_weather, get_current_month],
                              system_prompt=_prompt("main_prompt.txt", "你是智能客服主代理，按需委派子代理。"),
                              subagents=subagents, middleware=[TodoListMiddleware(), monitor_tool, log_before_model])
 

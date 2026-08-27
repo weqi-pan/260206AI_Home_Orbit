@@ -13,6 +13,9 @@ from sse_starlette.sse import EventSourceResponse
 from backend.app.core.security import get_current_account, get_db
 from backend.app.db.models import Account, ChatSession, ConversationHistory, Ticket
 from backend.app.services.defaults import get_agent_runner, get_followup_service, get_sentiment_service, get_title_service
+from backend.app.api.setup import setup_status
+from backend.app.models.adapters import build_langchain_chat
+from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -135,6 +138,15 @@ def feedback(message_id: int, payload: FeedbackRequest, account: Account = Depen
 
 @router.post("/sessions/{session_id}/chat")
 def chat(session_id: str, payload: ChatRequest, request: Request, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
+    injected_runner = getattr(request.app.state, "agent_runner", None)
+    resolved_runtime = None
+    if injected_runner is None:
+        if not setup_status(db, account).ready:
+            raise HTTPException(status_code=503, detail={"code": "MODEL_NOT_CONFIGURED"})
+        try:
+            resolved_runtime = ModelRuntimeService(db).resolve("primary_chat")
+        except ModelRuntimeError as exc:
+            raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
     owned_session(db, session_id, account.id)
     previous_count = db.scalar(select(ConversationHistory.id).where(ConversationHistory.session_id == session_id).limit(1))
     user_message = ConversationHistory(session_id=session_id, user_id=account.user_id, role="user", content=payload.message)
@@ -143,8 +155,17 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
     history = db.scalars(select(ConversationHistory).where(ConversationHistory.session_id == session_id).order_by(ConversationHistory.id)).all()
     messages = [{"role": item.role, "content": item.content} for item in history]
     context = {"account_id": account.id, "user_id": account.user_id, "city": account.user.city if account.user else None,
-               "session_id": session_id, "session_factory": request.app.state.database.session_factory,
-               "vector_store_service": request.app.state.vector_store_service}
+                "session_id": session_id, "session_factory": request.app.state.database.session_factory,
+                "vector_store_service": request.app.state.vector_store_service}
+    if resolved_runtime:
+        profile = resolved_runtime.snapshot.profile
+        context["model_snapshot"] = resolved_runtime.snapshot
+        context["chat_model"] = build_langchain_chat(
+            resolved_runtime.protocol, api_key=resolved_runtime.api_key, model=profile["model_name"],
+            base_url=resolved_runtime.base_url, timeout=resolved_runtime.timeout_seconds,
+            max_retries=resolved_runtime.max_retries, temperature=profile["temperature"],
+            max_tokens=profile["max_tokens"], use_responses_api=profile["use_responses_api"],
+        )
     return EventSourceResponse(
         chat_event_stream(request.app, session_id, account, payload.message, messages, context, user_message.id, previous_count is None),
         ping=15,

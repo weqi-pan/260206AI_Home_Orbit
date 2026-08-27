@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.app.db.models import Base, utcnow, uuid_str
+from backend.app.db.base import Base, utcnow, uuid_str
 
 
 class Household(Base):

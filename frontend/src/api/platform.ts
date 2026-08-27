@@ -1,13 +1,7 @@
 import http from './http'
 
-export interface SetupStatus {
-  ready: boolean
-  error_code: 'MODEL_NOT_CONFIGURED' | null
-  required_purposes: string[]
-  configured_purposes: string[]
-  missing_purposes: string[]
-  can_configure: boolean
-}
+export { fetchSetupStatus } from './setup'
+export type { SetupStatus } from './setup'
 
 export interface HouseholdMember {
   account_id: string
@@ -31,7 +25,6 @@ export interface OrbitNode {
   detail: string
 }
 
-export const fetchSetupStatus = () => http.get<SetupStatus>('/setup/status').then((response) => response.data)
 export const fetchHousehold = () => http.get<Household>('/households/current').then((response) => response.data)
 export const fetchOrbit = () => http.get<{ nodes: OrbitNode[] }>('/home/orbit').then((response) => response.data)
 export const inviteMember = (householdId: string, username: string, role: string) =>

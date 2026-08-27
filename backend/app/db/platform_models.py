@@ -1,9 +1,9 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.app.db.models import Base, utcnow, uuid_str
+from backend.app.db.base import Base, utcnow, uuid_str
 
 
 class LlmEndpoint(Base):
@@ -13,8 +13,11 @@ class LlmEndpoint(Base):
     protocol: Mapped[str] = mapped_column(String(32), nullable=False)
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    max_retries: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    disabled_reason: Mapped[str | None] = mapped_column(String(64))
 
 
 class LlmCredential(Base):
@@ -34,6 +37,13 @@ class LlmModel(Base):
     endpoint_id: Mapped[str] = mapped_column(ForeignKey("llm_endpoints.id", ondelete="CASCADE"), nullable=False)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
     model_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    temperature: Mapped[float] = mapped_column(Float, default=0.2, nullable=False)
+    max_tokens: Mapped[int | None] = mapped_column(Integer)
+    embedding_dimensions: Mapped[int | None] = mapped_column(Integer)
+    use_responses_api: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    capability_flags_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    requests_per_minute: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    agent_token_budget: Mapped[int | None] = mapped_column(Integer)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
@@ -42,6 +52,7 @@ class ModelPurposeBinding(Base):
     __tablename__ = "model_purpose_bindings"
     purpose: Mapped[str] = mapped_column(String(32), primary_key=True)
     model_id: Mapped[str] = mapped_column(ForeignKey("llm_models.id"), nullable=False)
+    config_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
 class ModelHealthCheck(Base):
@@ -50,6 +61,9 @@ class ModelHealthCheck(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     model_id: Mapped[str] = mapped_column(ForeignKey("llm_models.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    capabilities_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -73,12 +87,43 @@ def tenant_parent_constraints(*constraints):
 
 class ModelGrant(TenantRow, Base):
     __tablename__ = "model_grants"
+    __table_args__ = (UniqueConstraint("household_id", "model_id", name="uq_model_grant_household_model"),)
     model_id: Mapped[str] = mapped_column(ForeignKey("llm_models.id"), nullable=False)
 
 
 class UsageQuota(TenantRow, Base):
     __tablename__ = "usage_quotas"
+    __table_args__ = (UniqueConstraint("household_id", name="uq_usage_quota_household"),)
     monthly_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    requests_per_minute: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    agent_token_budget: Mapped[int | None] = mapped_column(Integer)
+
+
+class ModelUsage(Base):
+    __tablename__ = "model_usage"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    model_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    month: Mapped[str] = mapped_column(String(7), nullable=False, index=True)
+    tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class EmbeddingCollectionBuild(Base):
+    __tablename__ = "embedding_collection_builds"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    model_id: Mapped[str] = mapped_column(ForeignKey("llm_models.id"), nullable=False)
+    collection_name: Mapped[str | None] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="building")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ActiveEmbeddingCollection(Base):
+    __tablename__ = "active_embedding_collection"
+    key: Mapped[str] = mapped_column(String(32), primary_key=True, default="knowledge")
+    collection_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    model_id: Mapped[str] = mapped_column(ForeignKey("llm_models.id"), nullable=False)
+    previous_collection_name: Mapped[str | None] = mapped_column(String(200))
 
 
 class ToolPermission(TenantRow, Base):

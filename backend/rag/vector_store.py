@@ -22,13 +22,7 @@ class VectorStoreService:
             if self._factory:
                 self._vector_store = self._factory()
             else:
-                import os
-                if not os.getenv("DASHSCOPE_API_KEY"):
-                    raise VectorStoreUnavailable("向量库不可用：未配置 DASHSCOPE_API_KEY")
-                from langchain_chroma import Chroma
-                from langchain_community.embeddings import DashScopeEmbeddings
-                self.persist_directory.mkdir(parents=True, exist_ok=True)
-                self._vector_store = Chroma(collection_name="customer-service", embedding_function=DashScopeEmbeddings(), persist_directory=str(self.persist_directory))
+                raise VectorStoreUnavailable("向量库不可用：MODEL_NOT_CONFIGURED")
         except VectorStoreUnavailable:
             raise
         except Exception as exc:

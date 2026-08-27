@@ -22,8 +22,8 @@
 │  售前设备顾问 │ 售后知识专家 │ 报告与工单                       │
 │  TodoList 规划 · 工具监控中间件 · runtime context 身份注入     │
 ├──────────────────────┬──────────────────────────────────────┤
-│   MySQL 8（主）       │   Chroma 向量库 + DashScope Embeddings │
-│   SQLite（自动兜底）  │   通义千问 qwen3-max / qwen-flash       │
+│   MySQL 8（主）       │   Chroma 版本化向量集合                  │
+│   SQLite（测试/预览） │   OpenAI-compatible / Anthropic         │
 └──────────────────────┴──────────────────────────────────────┘
 ```
 
@@ -40,7 +40,7 @@
 │   │   └── services/        # chat_service sentiment title_gen followup faq_gen
 │   ├── agent/               # DeepAgents 组装 + subagents + tools
 │   ├── rag/vector_store.py  # Chroma（metadata 标记/按文件删除/重建）
-│   ├── model/factory.py     # ChatTongyi 模型工厂
+│   ├── model/factory.py     # OpenAI-compatible/Anthropic 模型工厂
 │   ├── prompts/             # 主代理 + 子代理提示词
 │   ├── tests/               # pytest（67 项，LLM 全 mock）
 │   └── data/                # 运行产物（gitignore）：上传/向量库/SQLite
@@ -54,7 +54,7 @@
 ## 快速开始（Docker 一键启动）
 
 ```bash
-cp .env.example .env        # 填入 DASHSCOPE_API_KEY 等必要配置
+cp .env.example .env        # 设置 LLM_CREDENTIAL_MASTER_KEY 等必要配置
 docker compose up -d --build
 ```
 
@@ -120,7 +120,7 @@ SSE 事件序列：`token`（增量输出）→ `tool`（工具状态）→ `sen
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `DASHSCOPE_API_KEY` | 无 | 通义千问 API Key；缺失时启动仅告警，AI 功能（聊天/情绪/标题/摘要/FAQ/向量检索）不可用，非 AI 接口正常 |
+| `LLM_CREDENTIAL_MASTER_KEY` | 无 | Base64 编码的 32 字节主密钥；模型 API Key 由管理员向导以 AES-256-GCM 加密入库 |
 | `APP_MODE` | `production` | `production` 强制 MySQL 与 Alembic head；`preview`/`test` 才允许显式 SQLite |
 | `DATABASE_URL` | `mysql+pymysql://root:password@localhost:3306/customer_service` | 数据库连接；不会因连接失败自动切换 |
 | `JWT_SECRET` | 开发默认值（告警） | JWT 签名密钥，生产必须设置 |
@@ -132,8 +132,8 @@ SSE 事件序列：`token`（增量输出）→ `tool`（工具状态）→ `sen
 
 ## 常见问题
 
-**聊天等 AI 功能报“聊天模型不可用：未配置 DASHSCOPE_API_KEY”**
-该 Key 未配置时后端可正常启动（日志输出告警），但 AI 功能不可用、非 AI 接口正常；在 `.env` 或环境变量中设置有效的通义千问 API Key（[获取地址](https://dashscope.console.aliyun.com/)）后重启即可。
+**聊天等 AI 功能返回 `MODEL_NOT_CONFIGURED`**
+确认 `LLM_CREDENTIAL_MASTER_KEY` 有效，并由管理员在初始化向导中创建 Endpoint、加密凭据、通过完整能力测试并绑定主聊天与 embedding 用途。非 AI 接口在初始化前仍可使用。
 
 **Docker 下 SSE 消息不流式/卡住**
 nginx 已对 `/api` 设置 `proxy_buffering off`、`proxy_read_timeout 3600s` 与 HTTP/1.1 长连接；若自建反向代理，需做同样配置（后端响应亦携带 `X-Accel-Buffering: no`）。

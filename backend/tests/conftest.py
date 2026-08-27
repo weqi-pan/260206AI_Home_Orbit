@@ -35,5 +35,5 @@ def client(app):
 
 
 @pytest.fixture(autouse=True)
-def no_dashscope_key(monkeypatch):
-    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+def no_model_master_key(monkeypatch):
+    monkeypatch.delenv("LLM_CREDENTIAL_MASTER_KEY", raising=False)

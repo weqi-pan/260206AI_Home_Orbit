@@ -1,21 +1,20 @@
-import os
-
 from langchain_core.messages import AIMessage, AIMessageChunk
+
+from backend.app.models.adapters import content_text
 
 
 class UnavailableAgentRunner:
     def stream(self, messages, context):
-        if not os.getenv("DASHSCOPE_API_KEY"):
-            raise RuntimeError("聊天模型不可用：未配置 DASHSCOPE_API_KEY")
         from backend.agent.deep_agent import create_deep_agent
-        agent = create_deep_agent()
+        chat_model = context.get("chat_model")
+        agent = create_deep_agent(chat_model) if chat_model is not None else create_deep_agent()
         for mode, chunk in agent.stream({"messages": messages}, stream_mode=["messages", "custom"], context=context):
             if mode == "messages":
                 message = chunk[0] if isinstance(chunk, tuple) else chunk
                 if not isinstance(message, (AIMessageChunk, AIMessage)):
                     continue
-                content = getattr(message, "content", "")
-                if isinstance(content, str) and content:
+                content = content_text(getattr(message, "content", ""))
+                if content:
                     yield {"event": "token", "data": {"content": content}}
             elif mode == "custom" and isinstance(chunk, dict):
                 yield {"event": "tool", "data": chunk}

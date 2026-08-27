@@ -88,7 +88,7 @@ def test_sync_knowledge_vectors_warns_and_never_blocks_startup_when_unavailable(
 
     class UnavailableVectorService:
         def has_file(self, file_id):
-            raise VectorStoreUnavailable("向量库不可用：未配置 DASHSCOPE_API_KEY")
+            raise VectorStoreUnavailable("向量库不可用：MODEL_NOT_CONFIGURED")
 
     paths = _write_knowledge_files(settings, ["bootstrap-sync-nokey.txt"])
     try:

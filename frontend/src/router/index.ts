@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { fetchSetupStatus } from '../api/platform'
+import { fetchSetupStatus } from '../api/setup'
 
 declare module 'vue-router' {
   interface RouteMeta {

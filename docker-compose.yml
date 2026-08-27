@@ -28,7 +28,7 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:-change-me}@mysql:3306/customer_service
       APP_MODE: production
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      LLM_CREDENTIAL_MASTER_KEY: ${LLM_CREDENTIAL_MASTER_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-development-only-change-this-secret}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-Admin@123}
       DEMO_INITIAL_PASSWORD: ${DEMO_INITIAL_PASSWORD:-Demo@1234}

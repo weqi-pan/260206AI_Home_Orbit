@@ -101,6 +101,7 @@ def test_setup_status_is_stable_and_non_ai_household_api_remains_available(clien
         "configured_purposes": [],
         "missing_purposes": ["primary_chat", "embedding"],
         "can_configure": False,
+        "master_key_valid": False,
     }
     assert household.status_code == 200
 
@@ -327,7 +328,7 @@ def test_empty_database_upgrades_through_frozen_alembic_chain(tmp_path):
     assert next(column for column in inspector.get_columns("agent_deployments") if column["name"] == "household_id")["nullable"] is False
     assert {foreign_key["referred_table"] for foreign_key in inspector.get_foreign_keys("agent_deployments")} == {"households", "agent_versions"}
     with engine.connect() as connection:
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "20260827_0001"
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "20260827_0002"
 
 
 def test_reset_script_requires_explicit_confirmation(tmp_path):

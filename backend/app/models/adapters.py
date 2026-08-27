@@ -1,0 +1,114 @@
+import json
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass(frozen=True)
+class StreamEvent:
+    type: str
+    text: str | None = None
+    tool: dict[str, Any] | None = None
+    structured: Any = None
+
+
+def content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            block.get("text", "") if isinstance(block, dict) and block.get("type") in {"text", "output_text"} else ""
+            for block in content
+        )
+    return ""
+
+
+class ModelAdapter:
+    def __init__(self, protocol: str, model: str, chat_transport=None, embedding_transport=None):
+        self.protocol = protocol
+        self.model = model
+        self.chat_transport = chat_transport
+        self.embedding_transport = embedding_transport
+
+    def generate(self, messages) -> StreamEvent:
+        result = self.chat_transport.generate(model=self.model, messages=messages)
+        return StreamEvent("text", text=content_text(result.get("content")))
+
+    def stream_text(self, messages, cancel_event) -> StreamEvent:
+        text = "".join(content_text(chunk.get("content")) for chunk in self.chat_transport.stream(
+            model=self.model, messages=messages, cancel_event=cancel_event
+        ))
+        return StreamEvent("text", text=text)
+
+    def tool_call(self, messages) -> StreamEvent:
+        result = self.chat_transport.generate(
+            model=self.model,
+            messages=messages,
+            tools=[{"name": "echo", "description": "Returns a value without side effects", "parameters": {"type": "object"}}],
+        )
+        calls = result.get("tool_calls") or []
+        if not calls:
+            raise RuntimeError("TOOL_CALL_MISSING")
+        return StreamEvent("tool", tool=calls[0])
+
+    def structured_output(self, messages) -> StreamEvent:
+        result = self.chat_transport.generate(model=self.model, messages=messages, structured_schema={"type": "object"})
+        return StreamEvent("structured", structured=json.loads(content_text(result.get("content"))))
+
+    def embed(self, texts):
+        if not self.embedding_transport:
+            raise RuntimeError("EMBEDDING_UNAVAILABLE")
+        return self.embedding_transport.embed(model=self.model, texts=texts)
+
+
+class LangChainChatTransport:
+    def __init__(self, chat_model):
+        self.chat_model = chat_model
+
+    def generate(self, *, model, messages, tools=None, structured_schema=None):
+        runnable = self.chat_model
+        if tools:
+            runnable = runnable.bind_tools(tools)
+        if structured_schema:
+            runnable = runnable.with_structured_output(structured_schema, include_raw=True)
+            result = runnable.invoke(messages)
+            parsed = result.get("parsed") if isinstance(result, dict) else result
+            return {"content": json.dumps(parsed), "tool_calls": []}
+        result = runnable.invoke(messages)
+        return {"content": getattr(result, "content", ""), "tool_calls": getattr(result, "tool_calls", [])}
+
+    def stream(self, *, model, messages, cancel_event):
+        iterator = self.chat_model.stream(messages)
+        try:
+            for chunk in iterator:
+                if cancel_event.is_set():
+                    break
+                yield {"content": getattr(chunk, "content", "")}
+        finally:
+            close = getattr(iterator, "close", None)
+            if close:
+                close()
+
+
+class LangChainEmbeddingTransport:
+    def __init__(self, embeddings):
+        self.embeddings = embeddings
+
+    def embed(self, *, model, texts):
+        return self.embeddings.embed_documents(texts)
+
+
+def build_langchain_chat(protocol: str, *, api_key: str, model: str, base_url: str, timeout: int, max_retries: int, temperature: float, max_tokens: int | None, use_responses_api: bool = False):
+    if protocol == "openai_compatible":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(api_key=api_key, model=model, base_url=base_url, timeout=timeout, max_retries=max_retries,
+                          temperature=temperature, max_tokens=max_tokens, use_responses_api=use_responses_api)
+    if protocol == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+        return ChatAnthropic(api_key=api_key, model=model, base_url=base_url, timeout=timeout, max_retries=max_retries,
+                             temperature=temperature, max_tokens=max_tokens or 1024)
+    raise ValueError("Unsupported model protocol")
+
+
+def build_langchain_embeddings(*, api_key: str, model: str, base_url: str, dimensions: int | None):
+    from langchain_openai import OpenAIEmbeddings
+    return OpenAIEmbeddings(api_key=api_key, model=model, base_url=base_url, dimensions=dimensions)

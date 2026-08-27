@@ -176,7 +176,7 @@ def test_chat_runtime_injects_lazy_vector_store_and_rag_has_clear_key_fallback(c
         def stream(self, messages, context):
             assert context["vector_store_service"] is app.state.vector_store_service
             fallback = rag_summarize.func(query="售后", runtime=type("Runtime", (), {"context": context})())
-            assert "DASHSCOPE_API_KEY" in fallback
+            assert "MODEL_NOT_CONFIGURED" in fallback
             yield {"event": "token", "data": {"content": "完成"}}
 
     app.state.agent_runner = ContextRunner()
@@ -361,8 +361,8 @@ def test_missing_api_key_does_not_block_non_ai_api_and_chat_returns_error(client
         "POST", f"/api/chat/sessions/{chat_id}/chat", headers=bearer(token), json={"message": "你好"}
     ) as response:
         body = "\n".join(response.iter_lines())
-    assert "event: error" in body
-    assert "DASHSCOPE_API_KEY" in body
+    assert response.status_code == 503
+    assert '"code":"MODEL_NOT_CONFIGURED"' in body
 
 
 def test_message_feedback_enforces_session_owner(client, app, settings):
