@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     chroma_path: Path = BACKEND_DATA_ROOT / "chroma"
     main_model_name: str = "qwen3-max"
     aux_model_name: str = "qwen-flash"
+    followup_timeout_seconds: float = 4.0
 
     model_config = SettingsConfigDict(
         env_file=".env",

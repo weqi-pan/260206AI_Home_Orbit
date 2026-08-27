@@ -1,9 +1,10 @@
+import asyncio
 import json
 import logging
 import time
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
+from concurrent.futures import Future, ThreadPoolExecutor
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
@@ -19,7 +20,8 @@ logger = logging.getLogger(__name__)
 AUX_EXECUTOR = ThreadPoolExecutor(max_workers=8)
 TITLE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="chat-title")
 SENTIMENT_DEADLINE_SECONDS = 3.0
-AUX_TIMEOUT_SECONDS = 0.25
+DEFAULT_FOLLOWUP_TIMEOUT_SECONDS = 4.0
+SENTIMENT_DISCONNECT_GRACE_SECONDS = 0.5
 
 _pending_title_futures: set[Future] = set()
 
@@ -133,7 +135,7 @@ def feedback(message_id: int, payload: FeedbackRequest, account: Account = Depen
 
 @router.post("/sessions/{session_id}/chat")
 def chat(session_id: str, payload: ChatRequest, request: Request, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
-    chat_session = owned_session(db, session_id, account.id)
+    owned_session(db, session_id, account.id)
     previous_count = db.scalar(select(ConversationHistory.id).where(ConversationHistory.session_id == session_id).limit(1))
     user_message = ConversationHistory(session_id=session_id, user_id=account.user_id, role="user", content=payload.message)
     db.add(user_message)
@@ -143,52 +145,78 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
     context = {"account_id": account.id, "user_id": account.user_id, "city": account.user.city if account.user else None,
                "session_id": session_id, "session_factory": request.app.state.database.session_factory,
                "vector_store_service": request.app.state.vector_store_service}
+    return EventSourceResponse(
+        chat_event_stream(request.app, session_id, account, payload.message, messages, context, user_message.id, previous_count is None),
+        ping=15,
+        headers={"X-Accel-Buffering": "no"},
+    )
 
-    def generate():
-        answer = ""
-        started = time.monotonic()
-        sentiment_service = getattr(request.app.state, "sentiment_service", None) or get_sentiment_service()
-        sentiment_future = AUX_EXECUTOR.submit(sentiment_service.analyze, payload.message)
+def chat_event_stream(app, session_id, account, message, messages, context, user_message_id, first_message):
+    answer = ""
+    started = time.monotonic()
+    sentiment_service = getattr(app.state, "sentiment_service", None) or get_sentiment_service()
+    sentiment_future = AUX_EXECUTOR.submit(sentiment_service.analyze, message)
+    try:
+        runner = getattr(app.state, "agent_runner", None) or get_agent_runner()
+        for event in runner.stream(messages, context):
+            if event.get("event") == "token":
+                answer += event.get("data", {}).get("content", "")
+            yield {"event": event["event"], "data": json.dumps(event.get("data", {}), ensure_ascii=False)}
         try:
-            runner = getattr(request.app.state, "agent_runner", None) or get_agent_runner()
-            for event in runner.stream(messages, context):
-                if event.get("event") == "token":
-                    answer += event.get("data", {}).get("content", "")
-                yield {"event": event["event"], "data": json.dumps(event.get("data", {}), ensure_ascii=False)}
-            try:
-                remaining = max(0, SENTIMENT_DEADLINE_SECONDS - (time.monotonic() - started))
-                sentiment = sentiment_future.result(timeout=remaining)
-            except (TimeoutError, Exception):
-                sentiment = {"label": "neutral", "score": 0.0}
-            with request.app.state.database.session_factory.begin() as write_db:
-                stored_user = write_db.get(ConversationHistory, user_message.id)
+            remaining = max(0, SENTIMENT_DEADLINE_SECONDS - (time.monotonic() - started))
+            sentiment = sentiment_future.result(timeout=remaining)
+        except Exception:
+            sentiment = {"label": "neutral", "score": 0.0}
+        with app.state.database.session_factory.begin() as write_db:
+            stored_user = write_db.get(ConversationHistory, user_message_id)
+            stored_user.sentiment = sentiment.get("label", "neutral")
+            stored_user.sentiment_score = sentiment.get("score", 0)
+            assistant = ConversationHistory(session_id=session_id, user_id=account.user_id, role="assistant", content=answer)
+            write_db.add(assistant)
+            write_db.flush()
+            assistant_id = assistant.id
+        yield {"event": "sentiment", "data": json.dumps(sentiment, ensure_ascii=False)}
+        if first_message:
+            submit_title_generation(app, session_id, message, answer)
+        followup_service = getattr(app.state, "followup_service", None) or get_followup_service()
+        followup_future = AUX_EXECUTOR.submit(followup_service.generate, message, answer)
+        followup_timeout = float(getattr(getattr(app.state, "settings", None), "followup_timeout_seconds", DEFAULT_FOLLOWUP_TIMEOUT_SECONDS))
+        try:
+            questions = followup_future.result(timeout=followup_timeout)
+        except Exception:
+            questions = []
+        yield {"event": "followup", "data": json.dumps({"questions": questions}, ensure_ascii=False)}
+        yield {"event": "done", "data": json.dumps({"message_id": assistant_id})}
+    except (GeneratorExit, asyncio.CancelledError):
+        _persist_disconnected_answer(app, session_id, account.user_id, user_message_id, answer, sentiment_future)
+        raise
+    except Exception as exc:
+        stored_answer = f"{answer}\n\n[回答中断]" if answer else f"[回答生成失败] {str(exc) or '聊天服务暂不可用'}"
+        with app.state.database.session_factory.begin() as write_db:
+            stored_user = write_db.get(ConversationHistory, user_message_id)
+            if stored_user and stored_user.sentiment is None:
+                stored_user.sentiment = "neutral"
+                stored_user.sentiment_score = 0.0
+            write_db.add(ConversationHistory(
+                session_id=session_id, user_id=account.user_id, role="assistant", content=stored_answer
+            ))
+        yield {"event": "error", "data": json.dumps({"message": str(exc) or "聊天服务暂不可用"}, ensure_ascii=False)}
+
+
+def _persist_disconnected_answer(app, session_id, user_id, user_message_id, answer, sentiment_future):
+    content = f"{answer}\n\n[回答中断]" if answer else "[回答生成失败] 客户端提前断开"
+    try:
+        sentiment = sentiment_future.result(timeout=SENTIMENT_DISCONNECT_GRACE_SECONDS)
+    except Exception:
+        sentiment = {"label": "neutral", "score": 0.0}
+    try:
+        with app.state.database.session_factory.begin() as write_db:
+            stored_user = write_db.get(ConversationHistory, user_message_id)
+            if stored_user and stored_user.sentiment is None:
                 stored_user.sentiment = sentiment.get("label", "neutral")
                 stored_user.sentiment_score = sentiment.get("score", 0)
-                assistant = ConversationHistory(session_id=session_id, user_id=account.user_id, role="assistant", content=answer)
-                write_db.add(assistant)
-                write_db.flush()
-                assistant_id = assistant.id
-            yield {"event": "sentiment", "data": json.dumps(sentiment, ensure_ascii=False)}
-            if previous_count is None:
-                submit_title_generation(request.app, session_id, payload.message, answer)
-            followup_service = getattr(request.app.state, "followup_service", None) or get_followup_service()
-            followup_future = AUX_EXECUTOR.submit(followup_service.generate, payload.message, answer)
-            try:
-                questions = followup_future.result(timeout=AUX_TIMEOUT_SECONDS)
-            except (TimeoutError, Exception):
-                questions = []
-            yield {"event": "followup", "data": json.dumps({"questions": questions}, ensure_ascii=False)}
-            yield {"event": "done", "data": json.dumps({"message_id": assistant_id})}
-        except Exception as exc:
-            stored_answer = f"{answer}\n\n[回答中断]" if answer else f"[回答生成失败] {str(exc) or '聊天服务暂不可用'}"
-            with request.app.state.database.session_factory.begin() as write_db:
-                stored_user = write_db.get(ConversationHistory, user_message.id)
-                if stored_user and stored_user.sentiment is None:
-                    stored_user.sentiment = "neutral"
-                    stored_user.sentiment_score = 0.0
-                write_db.add(ConversationHistory(
-                    session_id=session_id, user_id=account.user_id, role="assistant", content=stored_answer
-                ))
-            yield {"event": "error", "data": json.dumps({"message": str(exc) or "聊天服务暂不可用"}, ensure_ascii=False)}
-
-    return EventSourceResponse(generate(), ping=15, headers={"X-Accel-Buffering": "no"})
+            write_db.add(ConversationHistory(
+                session_id=session_id, user_id=user_id, role="assistant", content=content
+            ))
+    except Exception:
+        logger.exception("客户端断开兜底持久化失败 session_id=%s", session_id)

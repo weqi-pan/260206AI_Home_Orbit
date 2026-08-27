@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 
 class FakeCollection:
@@ -62,3 +63,25 @@ def test_vector_store_rebuilds_files_and_approved_faqs(tmp_path: Path):
         {"where": {"faq_id": "7"}},
     ]
     assert [document.metadata["source_type"] for document in store.documents] == ["kb", "faq"]
+
+
+def test_vector_store_has_file_checks_collection_ids():
+    from backend.rag.vector_store import VectorStoreService
+
+    class QueryableCollection(FakeCollection):
+        def __init__(self, ids):
+            super().__init__()
+            self.ids = ids
+            self.queries = []
+
+        def get(self, **kwargs):
+            self.queries.append(kwargs)
+            return {"ids": self.ids}
+
+    present = SimpleNamespace(_collection=QueryableCollection(["kb:file-1:0"]))
+    service = VectorStoreService(vector_store=present)
+    assert service.has_file("file-1") is True
+    assert present._collection.queries == [{"where": {"source_file_id": "file-1"}, "limit": 1}]
+
+    empty = SimpleNamespace(_collection=QueryableCollection([]))
+    assert VectorStoreService(vector_store=empty).has_file("file-1") is False

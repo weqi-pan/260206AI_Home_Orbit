@@ -37,8 +37,12 @@ export function deleteKnowledgeFile(fileId: string) {
   return http.delete<void>(`/knowledge/files/${encodeURIComponent(fileId)}`)
 }
 
+export const REBUILD_TIMEOUT_MS = 300000
+
 export function rebuildVectorStore() {
-  return http.post<{ status: string }>('/knowledge/rebuild').then((r) => r.data)
+  return http
+    .post<{ status: string }>('/knowledge/rebuild', undefined, { timeout: REBUILD_TIMEOUT_MS })
+    .then((r) => r.data)
 }
 
 export const FAQ_GENERATION_TIMEOUT_MS = 120000

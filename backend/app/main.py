@@ -1,13 +1,46 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
 
 from backend.app.api import admin, auth, chat, devices, knowledge, tickets
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.seed import seed_database
 from backend.app.db.session import create_database
-from backend.rag.vector_store import VectorStoreService
+from backend.app.services.ticket_summary import TicketSummaryService
+from backend.rag.vector_store import VectorStoreService, VectorStoreUnavailable
+
+
+logger = logging.getLogger(__name__)
+
+
+def sync_knowledge_vectors(database, vector_service, settings):
+    """以 knowledge_files(active) 为准补偿向量库：缺失的入向量库，文件缺失的跳过；任何失败不阻塞启动。"""
+    from backend.app.api.knowledge import _knowledge_file_path
+    from backend.app.db.models import KnowledgeFile
+
+    try:
+        with database.session_factory() as session:
+            items = list(session.scalars(select(KnowledgeFile).where(KnowledgeFile.status == "active")).all())
+    except Exception:
+        logger.warning("知识库向量同步跳过：读取 knowledge_files 失败", exc_info=True)
+        return
+    for item in items:
+        try:
+            path = _knowledge_file_path(settings, item)
+            if path is None:
+                logger.warning("知识库向量同步跳过：源文件缺失 filename=%s", item.filename)
+                continue
+            if not vector_service.has_file(item.id):
+                vector_service.add_file(item.id, path, item.filename)
+                logger.info("知识库向量同步：已索引 filename=%s", item.filename)
+        except VectorStoreUnavailable as exc:
+            logger.warning("知识库向量同步跳过：%s", exc)
+            return
+        except Exception:
+            logger.warning("知识库向量同步单文件失败 filename=%s", item.filename, exc_info=True)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -21,6 +54,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.database = database
         app.state.settings = app_settings
         app.state.vector_store_service = VectorStoreService(app_settings.chroma_path)
+        app.state.ticket_summary_service = TicketSummaryService()
+        sync_knowledge_vectors(database, app.state.vector_store_service, app_settings)
         yield
         database.engine.dispose()
 

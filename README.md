@@ -119,7 +119,7 @@ SSE 事件序列：`token`（增量输出）→ `tool`（工具状态）→ `sen
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `DASHSCOPE_API_KEY` | 无（必填） | 通义千问 API Key，缺失时后端启动即报错 |
+| `DASHSCOPE_API_KEY` | 无 | 通义千问 API Key；缺失时启动仅告警，AI 功能（聊天/情绪/标题/摘要/FAQ/向量检索）不可用，非 AI 接口正常 |
 | `DATABASE_URL` | `mysql+pymysql://root:password@localhost:3306/customer_service` | 主数据库；连接失败自动降级 SQLite |
 | `SQLITE_FALLBACK_URL` | `sqlite:///backend/data/customer_service.db` | SQLite 兜底库位置 |
 | `JWT_SECRET` | 开发默认值（告警） | JWT 签名密钥，生产必须设置 |
@@ -127,11 +127,12 @@ SSE 事件序列：`token`（增量输出）→ `tool`（工具状态）→ `sen
 | `DEMO_INITIAL_PASSWORD` | `Demo@1234` | demo 种子初始密码 |
 | `CORS_ORIGINS` | `http://localhost:5173` | 允许的跨域来源，逗号分隔 |
 | `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` | `change-me-root` / `change-me` | docker-compose 中 MySQL 密码 |
+| `FOLLOWUP_TIMEOUT_SECONDS` | `4` | SSE 追问生成等待秒数，超时降级为空数组 |
 
 ## 常见问题
 
-**启动报“聊天模型不可用：未配置 DASHSCOPE_API_KEY”**
-在 `.env` 或环境变量中设置有效的通义千问 API Key（[获取地址](https://dashscope.console.aliyun.com/)）。
+**聊天等 AI 功能报“聊天模型不可用：未配置 DASHSCOPE_API_KEY”**
+该 Key 未配置时后端可正常启动（日志输出告警），但 AI 功能不可用、非 AI 接口正常；在 `.env` 或环境变量中设置有效的通义千问 API Key（[获取地址](https://dashscope.console.aliyun.com/)）后重启即可。
 
 **Docker 下 SSE 消息不流式/卡住**
 nginx 已对 `/api` 设置 `proxy_buffering off`、`proxy_read_timeout 3600s` 与 HTTP/1.1 长连接；若自建反向代理，需做同样配置（后端响应亦携带 `X-Accel-Buffering: no`）。

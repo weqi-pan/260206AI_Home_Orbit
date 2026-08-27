@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -60,7 +61,7 @@ def restock(model_id: str, db: Session = Depends(get_db), account: Account = Dep
             item = db.scalar(select(RestockNotification).where(RestockNotification.account_id == account.id, RestockNotification.model_id == model_id))
         else:
             db.refresh(item)
-    return __import__("fastapi").responses.JSONResponse(
+    return JSONResponse(
         status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         content={"id": item.id, "account_id": item.account_id, "model_id": item.model_id, "status": item.status},
     )

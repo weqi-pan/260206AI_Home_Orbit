@@ -53,6 +53,10 @@ class VectorStoreService:
     def delete_file(self, file_id):
         self._get_store()._collection.delete(where={"source_file_id": str(file_id)})
 
+    def has_file(self, file_id):
+        result = self._get_store()._collection.get(where={"source_file_id": str(file_id)}, limit=1)
+        return bool(result.get("ids"))
+
     def add_faq(self, faq_id, question, answer, source_file_id):
         metadata = {"source_file_id": str(source_file_id or ""), "source_type": "faq", "filename": "FAQ", "faq_id": str(faq_id)}
         store = self._get_store()

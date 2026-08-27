@@ -171,6 +171,26 @@ def test_faq_generation_falls_back_to_bootstrap_and_approved_review_is_idempoten
         bootstrap.unlink(missing_ok=True)
 
 
+def test_generate_faq_parse_failure_returns_4xx_with_clear_message(client, app, settings):
+    from backend.app.services.faq_gen import FaqGenerationError
+
+    class BrokenFaqGenerator:
+        def generate(self, path):
+            raise FaqGenerationError("模型未返回有效的FAQ JSON数组")
+
+    token = admin_token(client, settings)
+    app.state.vector_store_service = FakeVectorStore()
+    app.state.faq_generator = BrokenFaqGenerator()
+    uploaded = client.post(
+        "/api/knowledge/files", headers=bearer(token), files={"file": ("broken-faq.txt", b"content", "text/plain")}
+    ).json()
+
+    response = client.post(f"/api/knowledge/files/{uploaded['id']}/generate-faq", headers=bearer(token))
+
+    assert response.status_code == 400
+    assert "FAQ" in response.json()["detail"]
+
+
 def test_rebuild_passes_active_files_and_approved_faqs(client, app, settings):
     token = admin_token(client, settings)
     vector = FakeVectorStore()

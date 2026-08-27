@@ -41,3 +41,33 @@ def test_faq_generator_accepts_injected_model_and_parses_pairs(tmp_path):
     service = FaqGenerator(FakeModel('[{"question":"如何维护？","answer":"定期清洁。"}]'))
 
     assert service.generate(path) == [{"question": "如何维护？", "answer": "定期清洁。"}]
+
+
+def test_faq_generator_strips_markdown_fences_and_raises_clear_error(tmp_path):
+    import pytest
+    from backend.app.services.faq_gen import FaqGenerationError, FaqGenerator
+
+    path = tmp_path / "faq.txt"
+    path.write_text("维护知识", encoding="utf-8")
+    fenced = '```json\n[{"question":"如何维护？","answer":"定期清洁。"}]\n```'
+    assert FaqGenerator(FakeModel(fenced)).generate(path) == [{"question": "如何维护？", "answer": "定期清洁。"}]
+
+    noisy = f'好的，以下是生成的FAQ：\n{fenced}\n请查收。'
+    assert FaqGenerator(FakeModel(noisy)).generate(path) == [{"question": "如何维护？", "answer": "定期清洁。"}]
+
+    with pytest.raises(FaqGenerationError):
+        FaqGenerator(FakeModel("抱歉，无法完成该任务")).generate(path)
+    with pytest.raises(FaqGenerationError):
+        FaqGenerator(FakeModel('{"question":"不是数组","answer":"格式错误"}')).generate(path)
+    with pytest.raises(FaqGenerationError):
+        FaqGenerator(FakeModel("[{\"question\": 坏JSON]")).generate(path)
+
+
+def test_ticket_summary_service_summarizes_and_degrades_to_truncation(tmp_path):
+    from backend.app.services.ticket_summary import TicketSummaryService
+
+    assert TicketSummaryService(FakeModel("  一句话摘要  ")).summarize("工单内容") == "一句话摘要"
+
+    no_key = TicketSummaryService()
+    long_text = "字" * 500
+    assert no_key.summarize(long_text) == "字" * 200

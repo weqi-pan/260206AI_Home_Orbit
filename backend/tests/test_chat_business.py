@@ -214,6 +214,8 @@ def test_chat_stream_error_persists_partial_or_explicit_placeholder(client, app,
 
 
 def test_chat_auxiliary_services_are_bounded_and_sentiment_deadline_starts_with_task(client, app, settings):
+    settings.followup_timeout_seconds = 0.3
+
     class SlowRunner:
         def stream(self, messages, context):
             time.sleep(2.8)
@@ -243,6 +245,76 @@ def test_chat_auxiliary_services_are_bounded_and_sentiment_deadline_starts_with_
     assert '"label": "neutral"' in response.text
     assert '"questions": []' in response.text
     join_title_futures()
+
+
+def test_chat_followup_waits_configurable_extended_timeout(client, app, settings):
+    class SlowFollowup:
+        def generate(self, user_text, answer):
+            time.sleep(1.2)
+            return ["慢速追问"]
+
+    app.state.agent_runner = FakeAgentRunner()
+    app.state.sentiment_service = FakeSentiment()
+    app.state.followup_service = SlowFollowup()
+    token = login(client, "demo", settings.demo_initial_password)
+    chat_id = client.post("/api/chat/sessions", headers=bearer(token), json={}).json()["id"]
+
+    started = time.monotonic()
+    with client.stream(
+        "POST", f"/api/chat/sessions/{chat_id}/chat", headers=bearer(token), json={"message": "追问测试"}
+    ) as response:
+        body = "\n".join(response.iter_lines())
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 200
+    assert "慢速追问" in body
+    assert "event: followup" in body
+    assert "event: done" in body
+    assert elapsed < settings.followup_timeout_seconds + 2
+
+
+def test_chat_stream_close_persists_partial_answer_or_placeholder_with_sentiment(client, app, settings):
+    from types import SimpleNamespace
+
+    from backend.app.api.chat import chat_event_stream
+    from backend.app.db.models import ConversationHistory
+
+    class ToolOnlyRunner:
+        def stream(self, messages, context):
+            yield {"event": "tool", "data": {"name": "search_devices", "status": "completed"}}
+
+    app.state.sentiment_service = FakeSentiment()
+    token = login(client, "demo", settings.demo_initial_password)
+    for runner, expected in [(FakeAgentRunner(), "您好\n\n[回答中断]"), (ToolOnlyRunner(), "[回答生成失败] 客户端提前断开")]:
+        app.state.agent_runner = runner
+        chat_id = client.post("/api/chat/sessions", headers=bearer(token), json={}).json()["id"]
+        with app.state.database.session_factory.begin() as session:
+            user_message = ConversationHistory(session_id=chat_id, user_id="1001", role="user", content="中断测试")
+            session.add(user_message)
+            session.flush()
+            message_id = user_message.id
+
+        generator = chat_event_stream(
+            app, chat_id, SimpleNamespace(user_id="1001"), "中断测试",
+            [{"role": "user", "content": "中断测试"}],
+            {"account_id": "acc-1", "user_id": "1001", "city": "上海", "session_id": chat_id}, message_id, False,
+        )
+        next(generator)
+        generator.close()
+
+        with app.state.database.session_factory() as session:
+            assistant = session.scalar(select(ConversationHistory).where(
+                ConversationHistory.session_id == chat_id, ConversationHistory.role == "assistant"
+            ))
+            assert assistant is not None
+            assert assistant.content == expected
+            assert session.get(ConversationHistory, message_id).sentiment == "negative"
+
+
+def test_production_lifespan_attaches_ticket_summary_service(client, app):
+    from backend.app.services.ticket_summary import TicketSummaryService
+
+    assert isinstance(getattr(app.state, "ticket_summary_service", None), TicketSummaryService)
 
 
 def test_missing_api_key_does_not_block_non_ai_api_and_chat_returns_error(client, settings):

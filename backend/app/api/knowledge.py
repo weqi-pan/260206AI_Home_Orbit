@@ -1,7 +1,7 @@
 import hashlib
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_db, require_admin
 from backend.app.db.models import Account, FaqPair, KnowledgeFile, utcnow
-from backend.app.services.faq_gen import FaqGenerator
+from backend.app.services.faq_gen import FaqGenerationError, FaqGenerator
 from backend.rag.vector_store import VectorStoreService, VectorStoreUnavailable
 
 
@@ -144,8 +144,12 @@ def generate_faq(file_id: str, request: Request, db: Session = Depends(get_db)):
     path = _knowledge_file_path(request.app.state.settings, item)
     if not path:
         raise HTTPException(status_code=409, detail="知识文件源文件不存在，请重新上传或重建")
+    try:
+        pairs = service.generate(path)
+    except FaqGenerationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     result = []
-    for pair in service.generate(path):
+    for pair in pairs:
         faq = FaqPair(question=pair["question"], answer=pair["answer"], source_file_id=item.id)
         db.add(faq)
         db.flush()
