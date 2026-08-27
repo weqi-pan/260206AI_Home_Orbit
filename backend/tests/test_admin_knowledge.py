@@ -191,6 +191,24 @@ def test_generate_faq_parse_failure_returns_4xx_with_clear_message(client, app, 
     assert "FAQ" in response.json()["detail"]
 
 
+def test_generate_faq_provider_or_missing_key_failure_returns_503_not_500(client, app, settings):
+    class NoKeyFaqGenerator:
+        def generate(self, path):
+            raise RuntimeError("聊天模型不可用：未配置 DASHSCOPE_API_KEY")
+
+    token = admin_token(client, settings)
+    app.state.vector_store_service = FakeVectorStore()
+    app.state.faq_generator = NoKeyFaqGenerator()
+    uploaded = client.post(
+        "/api/knowledge/files", headers=bearer(token), files={"file": ("nokey-faq.txt", b"content", "text/plain")}
+    ).json()
+
+    response = client.post(f"/api/knowledge/files/{uploaded['id']}/generate-faq", headers=bearer(token))
+
+    assert response.status_code == 503
+    assert "DASHSCOPE_API_KEY" in response.json()["detail"]
+
+
 def test_rebuild_passes_active_files_and_approved_faqs(client, app, settings):
     token = admin_token(client, settings)
     vector = FakeVectorStore()

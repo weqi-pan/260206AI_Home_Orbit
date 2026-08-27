@@ -153,6 +153,7 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
 
 def chat_event_stream(app, session_id, account, message, messages, context, user_message_id, first_message):
     answer = ""
+    persisted_assistant_id = None
     started = time.monotonic()
     sentiment_service = getattr(app.state, "sentiment_service", None) or get_sentiment_service()
     sentiment_future = AUX_EXECUTOR.submit(sentiment_service.analyze, message)
@@ -175,6 +176,7 @@ def chat_event_stream(app, session_id, account, message, messages, context, user
             write_db.add(assistant)
             write_db.flush()
             assistant_id = assistant.id
+        persisted_assistant_id = assistant_id
         yield {"event": "sentiment", "data": json.dumps(sentiment, ensure_ascii=False)}
         if first_message:
             submit_title_generation(app, session_id, message, answer)
@@ -188,7 +190,7 @@ def chat_event_stream(app, session_id, account, message, messages, context, user
         yield {"event": "followup", "data": json.dumps({"questions": questions}, ensure_ascii=False)}
         yield {"event": "done", "data": json.dumps({"message_id": assistant_id})}
     except (GeneratorExit, asyncio.CancelledError):
-        _persist_disconnected_answer(app, session_id, account.user_id, user_message_id, answer, sentiment_future)
+        _persist_disconnected_answer(app, session_id, account.user_id, user_message_id, answer, sentiment_future, persisted_assistant_id)
         raise
     except Exception as exc:
         stored_answer = f"{answer}\n\n[回答中断]" if answer else f"[回答生成失败] {str(exc) or '聊天服务暂不可用'}"
@@ -203,7 +205,8 @@ def chat_event_stream(app, session_id, account, message, messages, context, user
         yield {"event": "error", "data": json.dumps({"message": str(exc) or "聊天服务暂不可用"}, ensure_ascii=False)}
 
 
-def _persist_disconnected_answer(app, session_id, user_id, user_message_id, answer, sentiment_future):
+def _persist_disconnected_answer(app, session_id, user_id, user_message_id, answer, sentiment_future, persisted_assistant_id=None):
+    """客户端断开兜底：assistant 已持久化则只补写 sentiment，否则持久化部分回答或明确占位。"""
     content = f"{answer}\n\n[回答中断]" if answer else "[回答生成失败] 客户端提前断开"
     try:
         sentiment = sentiment_future.result(timeout=SENTIMENT_DISCONNECT_GRACE_SECONDS)
@@ -215,8 +218,9 @@ def _persist_disconnected_answer(app, session_id, user_id, user_message_id, answ
             if stored_user and stored_user.sentiment is None:
                 stored_user.sentiment = sentiment.get("label", "neutral")
                 stored_user.sentiment_score = sentiment.get("score", 0)
-            write_db.add(ConversationHistory(
-                session_id=session_id, user_id=user_id, role="assistant", content=content
-            ))
+            if persisted_assistant_id is None:
+                write_db.add(ConversationHistory(
+                    session_id=session_id, user_id=user_id, role="assistant", content=content
+                ))
     except Exception:
         logger.exception("客户端断开兜底持久化失败 session_id=%s", session_id)

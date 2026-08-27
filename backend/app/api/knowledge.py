@@ -148,6 +148,8 @@ def generate_faq(file_id: str, request: Request, db: Session = Depends(get_db)):
         pairs = service.generate(path)
     except FaqGenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc) or "FAQ生成服务暂不可用") from exc
     result = []
     for pair in pairs:
         faq = FaqPair(question=pair["question"], answer=pair["answer"], source_file_id=item.id)

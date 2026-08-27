@@ -317,6 +317,41 @@ def test_production_lifespan_attaches_ticket_summary_service(client, app):
     assert isinstance(getattr(app.state, "ticket_summary_service", None), TicketSummaryService)
 
 
+def test_chat_stream_close_after_persist_does_not_duplicate_assistant_message(client, app, settings):
+    from types import SimpleNamespace
+
+    from backend.app.api.chat import chat_event_stream
+    from backend.app.db.models import ConversationHistory
+
+    app.state.agent_runner = FakeAgentRunner()
+    app.state.sentiment_service = FakeSentiment()
+    app.state.followup_service = FakeFollowup()
+    token = login(client, "demo", settings.demo_initial_password)
+    chat_id = client.post("/api/chat/sessions", headers=bearer(token), json={}).json()["id"]
+    with app.state.database.session_factory.begin() as session:
+        user_message = ConversationHistory(session_id=chat_id, user_id="1001", role="user", content="断开测试")
+        session.add(user_message)
+        session.flush()
+        message_id = user_message.id
+
+    generator = chat_event_stream(
+        app, chat_id, SimpleNamespace(user_id="1001"), "断开测试",
+        [{"role": "user", "content": "断开测试"}],
+        {"account_id": "acc-1", "user_id": "1001", "city": "上海", "session_id": chat_id}, message_id, False,
+    )
+    for event in generator:
+        if event["event"] == "sentiment":
+            break
+    generator.close()
+
+    with app.state.database.session_factory() as session:
+        assistants = session.scalars(select(ConversationHistory).where(
+            ConversationHistory.session_id == chat_id, ConversationHistory.role == "assistant"
+        )).all()
+        assert [item.content for item in assistants] == ["您好，已处理"]
+        assert session.get(ConversationHistory, message_id).sentiment == "negative"
+
+
 def test_missing_api_key_does_not_block_non_ai_api_and_chat_returns_error(client, settings):
     token = login(client, "demo", settings.demo_initial_password)
     chat_id = client.post("/api/chat/sessions", headers=bearer(token), json={}).json()["id"]
