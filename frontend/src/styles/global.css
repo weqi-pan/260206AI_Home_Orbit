@@ -1,0 +1,94 @@
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  color: #303133;
+  background: #f5f7fa;
+}
+
+.md-body {
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.md-body p {
+  margin: 0 0 8px;
+}
+
+.md-body p:last-child {
+  margin-bottom: 0;
+}
+
+.md-body pre.hljs {
+  margin: 0 0 8px;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.md-body code {
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+  font-size: 13px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(175, 184, 193, 0.2);
+}
+
+.md-body pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.md-body blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid #dcdfe6;
+  color: #606266;
+}
+
+.md-body table {
+  margin: 8px 0;
+  border-collapse: collapse;
+}
+
+.md-body th,
+.md-body td {
+  padding: 4px 10px;
+  border: 1px solid #dcdfe6;
+}
+
+.md-body ul,
+.md-body ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.md-body a {
+  color: #409eff;
+}
+
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
