@@ -23,15 +23,16 @@ def _parse_pairs(content):
     try:
         pairs = json.loads(text[start : end + 1])
     except json.JSONDecodeError as exc:
-        raise FaqGenerationError(f"FAQ结果JSON解析失败：{exc}") from exc
+        raise FaqGenerationError("FAQ_RESULT_INVALID_JSON") from exc
     if not isinstance(pairs, list):
         raise FaqGenerationError("FAQ结果必须是JSON数组")
     return pairs
 
 
 class FaqGenerator:
-    def __init__(self, model=None):
+    def __init__(self, model=None, model_resolver=None):
         self._model = model
+        self._model_resolver = model_resolver
 
     def generate(self, path):
         path = Path(path)
@@ -40,7 +41,7 @@ class FaqGenerator:
             text = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
         else:
             text = path.read_text(encoding="utf-8")
-        model = self._model or get_chat_model()
+        model = self._model or (self._model_resolver("review_model") if self._model_resolver else get_chat_model())
         content = model.invoke([{"role": "user", "content": f"从资料生成FAQ，仅返回question/answer对象数组：\n{text[:12000]}"}]).content
         return [{"question": str(item["question"]).strip(), "answer": str(item["answer"]).strip()} for item in _parse_pairs(content)
                 if item.get("question") and item.get("answer")]

@@ -62,6 +62,17 @@ class ModelCreate(BaseModel):
     enabled: bool = False
 
 
+class ModelUpdate(BaseModel):
+    model_name: str | None = Field(default=None, min_length=1, max_length=200)
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    max_tokens: int | None = Field(default=None, ge=1)
+    embedding_dimensions: int | None = Field(default=None, ge=1)
+    use_responses_api: bool | None = None
+    requests_per_minute: int | None = Field(default=None, ge=1)
+    agent_token_budget: int | None = Field(default=None, ge=1)
+    enabled: bool | None = None
+
+
 class ModelView(BaseModel):
     id: str
     endpoint_id: str

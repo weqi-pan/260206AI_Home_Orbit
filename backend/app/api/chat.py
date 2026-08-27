@@ -11,11 +11,13 @@ from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
 from backend.app.core.security import get_current_account, get_db
-from backend.app.db.models import Account, ChatSession, ConversationHistory, Ticket
+from backend.app.db.models import Account, ChatSession, ConversationHistory, HouseholdMember, Ticket
 from backend.app.services.defaults import get_agent_runner, get_followup_service, get_sentiment_service, get_title_service
 from backend.app.api.setup import setup_status
 from backend.app.models.adapters import build_langchain_chat
 from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
+from backend.app.models.quotas import QuotaExceeded, QuotaService
+from backend.app.models.execution import purpose_model_resolver
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -45,8 +47,8 @@ def _update_session_title(app, session_id: str, user_text: str, answer: str, tit
         logger.exception("会话标题生成失败 session_id=%s", session_id)
 
 
-def submit_title_generation(app, session_id: str, user_text: str, answer: str) -> Future | None:
-    title_service = getattr(app.state, "title_service", None) or get_title_service()
+def submit_title_generation(app, session_id: str, user_text: str, answer: str, model_resolver=None) -> Future | None:
+    title_service = getattr(app.state, "title_service", None) or get_title_service(model_resolver)
     future = TITLE_EXECUTOR.submit(_update_session_title, app, session_id, user_text, answer, title_service)
     _pending_title_futures.add(future)
     future.add_done_callback(_pending_title_futures.discard)
@@ -138,16 +140,28 @@ def feedback(message_id: int, payload: FeedbackRequest, account: Account = Depen
 
 @router.post("/sessions/{session_id}/chat")
 def chat(session_id: str, payload: ChatRequest, request: Request, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
+    owned_session(db, session_id, account.id)
     injected_runner = getattr(request.app.state, "agent_runner", None)
     resolved_runtime = None
-    if injected_runner is None:
+    usage_id = None
+    enforce_runtime = injected_runner is None or getattr(request.app.state, "enforce_model_runtime_for_injected_runner", False)
+    if enforce_runtime:
         if not setup_status(db, account).ready:
             raise HTTPException(status_code=503, detail={"code": "MODEL_NOT_CONFIGURED"})
+        household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
         try:
-            resolved_runtime = ModelRuntimeService(db).resolve("primary_chat")
+            resolved_runtime = ModelRuntimeService(db).resolve("primary_chat", household_id=household_id)
         except ModelRuntimeError as exc:
-            raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
-    owned_session(db, session_id, account.id)
+            status_code = 403 if exc.code == "MODEL_NOT_GRANTED" else 503
+            raise HTTPException(status_code=status_code, detail={"code": exc.code}) from exc
+        profile = resolved_runtime.snapshot.profile
+        request_budget = profile["agent_token_budget"] or profile["max_tokens"]
+        if not request_budget:
+            raise HTTPException(status_code=503, detail={"code": "MODEL_REQUEST_BUDGET_NOT_CONFIGURED"})
+        try:
+            usage_id = QuotaService(db).reserve(household_id, resolved_runtime.snapshot.model_id, request_budget).id
+        except QuotaExceeded as exc:
+            raise HTTPException(status_code=429, detail={"code": exc.code}) from exc
     previous_count = db.scalar(select(ConversationHistory.id).where(ConversationHistory.session_id == session_id).limit(1))
     user_message = ConversationHistory(session_id=session_id, user_id=account.user_id, role="user", content=payload.message)
     db.add(user_message)
@@ -157,26 +171,31 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
     context = {"account_id": account.id, "user_id": account.user_id, "city": account.user.city if account.user else None,
                 "session_id": session_id, "session_factory": request.app.state.database.session_factory,
                 "vector_store_service": request.app.state.vector_store_service}
+    if enforce_runtime:
+        context["model_resolver"] = purpose_model_resolver(request.app.state.database.session_factory, household_id)
     if resolved_runtime:
         profile = resolved_runtime.snapshot.profile
         context["model_snapshot"] = resolved_runtime.snapshot
-        context["chat_model"] = build_langchain_chat(
-            resolved_runtime.protocol, api_key=resolved_runtime.api_key, model=profile["model_name"],
-            base_url=resolved_runtime.base_url, timeout=resolved_runtime.timeout_seconds,
-            max_retries=resolved_runtime.max_retries, temperature=profile["temperature"],
-            max_tokens=profile["max_tokens"], use_responses_api=profile["use_responses_api"],
-        )
+        builder = getattr(request.app.state, "chat_model_builder", None)
+        try:
+            context["chat_model"] = builder(resolved_runtime) if builder else ModelRuntimeService(db).build_chat_model(resolved_runtime)
+        except Exception as exc:
+            if usage_id:
+                QuotaService(db).complete(usage_id, status="failed")
+            raise HTTPException(status_code=503, detail={"code": "MODEL_PROVIDER_UNAVAILABLE"}) from exc
     return EventSourceResponse(
-        chat_event_stream(request.app, session_id, account, payload.message, messages, context, user_message.id, previous_count is None),
+        chat_event_stream(request.app, session_id, account, payload.message, messages, context, user_message.id,
+                          previous_count is None, usage_id=usage_id),
         ping=15,
         headers={"X-Accel-Buffering": "no"},
     )
 
-def chat_event_stream(app, session_id, account, message, messages, context, user_message_id, first_message):
+def chat_event_stream(app, session_id, account, message, messages, context, user_message_id, first_message, usage_id=None):
     answer = ""
     persisted_assistant_id = None
     started = time.monotonic()
-    sentiment_service = getattr(app.state, "sentiment_service", None) or get_sentiment_service()
+    model_resolver = context.get("model_resolver")
+    sentiment_service = getattr(app.state, "sentiment_service", None) or get_sentiment_service(model_resolver)
     sentiment_future = AUX_EXECUTOR.submit(sentiment_service.analyze, message)
     try:
         runner = getattr(app.state, "agent_runner", None) or get_agent_runner()
@@ -200,8 +219,8 @@ def chat_event_stream(app, session_id, account, message, messages, context, user
         persisted_assistant_id = assistant_id
         yield {"event": "sentiment", "data": json.dumps(sentiment, ensure_ascii=False)}
         if first_message:
-            submit_title_generation(app, session_id, message, answer)
-        followup_service = getattr(app.state, "followup_service", None) or get_followup_service()
+            submit_title_generation(app, session_id, message, answer, model_resolver)
+        followup_service = getattr(app.state, "followup_service", None) or get_followup_service(model_resolver)
         followup_future = AUX_EXECUTOR.submit(followup_service.generate, message, answer)
         followup_timeout = float(getattr(getattr(app.state, "settings", None), "followup_timeout_seconds", DEFAULT_FOLLOWUP_TIMEOUT_SECONDS))
         try:
@@ -209,12 +228,18 @@ def chat_event_stream(app, session_id, account, message, messages, context, user
         except Exception:
             questions = []
         yield {"event": "followup", "data": json.dumps({"questions": questions}, ensure_ascii=False)}
+        if usage_id:
+            with app.state.database.session_factory() as usage_db:
+                QuotaService(usage_db).complete(usage_id)
         yield {"event": "done", "data": json.dumps({"message_id": assistant_id})}
     except (GeneratorExit, asyncio.CancelledError):
         _persist_disconnected_answer(app, session_id, account.user_id, user_message_id, answer, sentiment_future, persisted_assistant_id)
+        if usage_id:
+            with app.state.database.session_factory() as usage_db:
+                QuotaService(usage_db).complete(usage_id, status="cancelled")
         raise
     except Exception as exc:
-        stored_answer = f"{answer}\n\n[回答中断]" if answer else f"[回答生成失败] {str(exc) or '聊天服务暂不可用'}"
+        stored_answer = f"{answer}\n\n[回答中断]" if answer else "[回答生成失败] 聊天服务暂不可用"
         with app.state.database.session_factory.begin() as write_db:
             stored_user = write_db.get(ConversationHistory, user_message_id)
             if stored_user and stored_user.sentiment is None:
@@ -223,7 +248,10 @@ def chat_event_stream(app, session_id, account, message, messages, context, user
             write_db.add(ConversationHistory(
                 session_id=session_id, user_id=account.user_id, role="assistant", content=stored_answer
             ))
-        yield {"event": "error", "data": json.dumps({"message": str(exc) or "聊天服务暂不可用"}, ensure_ascii=False)}
+        if usage_id:
+            with app.state.database.session_factory() as usage_db:
+                QuotaService(usage_db).complete(usage_id, status="failed")
+        yield {"event": "error", "data": json.dumps({"code": "MODEL_EXECUTION_FAILED", "message": "聊天服务暂不可用"}, ensure_ascii=False)}
 
 
 def _persist_disconnected_answer(app, session_id, user_id, user_message_id, answer, sentiment_future, persisted_assistant_id=None):

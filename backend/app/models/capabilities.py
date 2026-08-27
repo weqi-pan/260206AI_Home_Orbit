@@ -20,6 +20,7 @@ class CapabilityTester:
     def run_chat(self) -> CapabilityEvidence:
         states = {name: "failed" for name in ("generation", "streaming", "cancellation", "tool_calling", "structured_output")}
         events = []
+        stage = "generation"
         try:
             messages = [{"role": "user", "content": "Reply with hello."}]
             generated = self.adapter.generate(messages)
@@ -27,23 +28,29 @@ class CapabilityTester:
                 raise RuntimeError("GENERATION_EMPTY")
             states["generation"] = "passed"
             events.append(generated)
+            stage = "streaming"
             streamed = self.adapter.stream_text(messages, threading.Event())
             if not streamed.text:
                 raise RuntimeError("STREAM_EMPTY")
             states["streaming"] = "passed"
             events.append(streamed)
+            stage = "cancellation"
             cancelled = threading.Event()
-            cancelled.set()
-            self.adapter.stream_text(messages, cancelled)
+            self.adapter.cancel_active_stream(messages, cancelled)
             states["cancellation"] = "passed"
+            stage = "tool_calling"
             tool = self.adapter.tool_call(messages)
             states["tool_calling"] = "passed"
             events.append(tool)
+            stage = "structured_output"
             structured = self.adapter.structured_output(messages)
             states["structured_output"] = "passed"
             events.append(structured)
         except Exception as exc:
-            return CapabilityEvidence(False, states, events, str(exc) or "CAPABILITY_TEST_FAILED")
+            return CapabilityEvidence(False, states, events, {
+                "generation": "GENERATION_FAILED", "streaming": "STREAMING_FAILED", "cancellation": "CANCELLATION_FAILED",
+                "tool_calling": "TOOL_CALLING_FAILED", "structured_output": "STRUCTURED_OUTPUT_FAILED",
+            }[stage])
         return CapabilityEvidence(True, states, events)
 
     def run_embedding(self, expected_dimensions: int | None) -> CapabilityEvidence:
@@ -52,6 +59,6 @@ class CapabilityTester:
             dimensions = len(vectors[0])
             if expected_dimensions and dimensions != expected_dimensions:
                 raise RuntimeError("EMBEDDING_DIMENSION_MISMATCH")
-        except Exception as exc:
-            return CapabilityEvidence(False, {"embedding": "failed"}, [], str(exc) or "EMBEDDING_TEST_FAILED")
+        except Exception:
+            return CapabilityEvidence(False, {"embedding": "failed"}, [], "EMBEDDING_TEST_FAILED")
         return CapabilityEvidence(True, {"embedding": "passed"}, [], dimensions=dimensions)

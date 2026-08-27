@@ -119,7 +119,7 @@ def test_upload_unexpected_vector_failure_also_compensates(client, app, settings
     )
 
     assert response.status_code == 503
-    assert "unexpected chroma failure" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "VECTOR_STORE_WRITE_FAILED"
     assert not list(Path(settings.knowledge_upload_path).glob("*"))
     with app.state.database.session_factory() as session:
         assert session.scalar(select(KnowledgeFile).where(KnowledgeFile.filename == "unexpected.txt")) is None
@@ -188,7 +188,7 @@ def test_generate_faq_parse_failure_returns_4xx_with_clear_message(client, app, 
     response = client.post(f"/api/knowledge/files/{uploaded['id']}/generate-faq", headers=bearer(token))
 
     assert response.status_code == 400
-    assert "FAQ" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "FAQ_RESULT_INVALID"
 
 
 def test_generate_faq_provider_or_missing_key_failure_returns_503_not_500(client, app, settings):
@@ -206,7 +206,7 @@ def test_generate_faq_provider_or_missing_key_failure_returns_503_not_500(client
     response = client.post(f"/api/knowledge/files/{uploaded['id']}/generate-faq", headers=bearer(token))
 
     assert response.status_code == 503
-    assert "MODEL_NOT_CONFIGURED" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "FAQ_MODEL_UNAVAILABLE"
 
 
 def test_rebuild_passes_active_files_and_approved_faqs(client, app, settings):
@@ -247,7 +247,7 @@ def test_rebuild_rejects_bootstrap_filename_outside_root_and_reports_vector_fail
         app.state.vector_store_service = FailingRebuild()
         response = client.post("/api/knowledge/rebuild", headers=bearer(token))
         assert response.status_code == 503
-        assert "source data preserved" in response.json()["detail"]
+        assert response.json()["detail"]["code"] == "VECTOR_STORE_UNAVAILABLE"
     finally:
         outside.unlink(missing_ok=True)
 

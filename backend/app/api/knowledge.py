@@ -8,7 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_db, require_admin
-from backend.app.db.models import Account, FaqPair, KnowledgeFile, utcnow
+from backend.app.db.models import Account, FaqPair, HouseholdMember, KnowledgeFile, utcnow
+from backend.app.models.execution import purpose_model_resolver
 from backend.app.services.faq_gen import FaqGenerationError, FaqGenerator
 from backend.rag.vector_store import VectorStoreService, VectorStoreUnavailable
 
@@ -90,8 +91,7 @@ async def upload(request: Request, file: UploadFile = File(...), admin: Account 
     except Exception as exc:
         db.rollback()
         path.unlink(missing_ok=True)
-        detail = str(exc) if isinstance(exc, VectorStoreUnavailable) else f"向量库写入失败：{exc}"
-        raise HTTPException(status_code=503, detail=detail) from exc
+        raise HTTPException(status_code=503, detail={"code": "VECTOR_STORE_WRITE_FAILED"}) from exc
     db.commit()
     db.refresh(item)
     return file_dict(item)
@@ -109,7 +109,7 @@ def delete_file(file_id: str, request: Request, response: Response, db: Session 
             faq.status = "rejected"
             faq.reviewed_at = utcnow()
     except VectorStoreUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail={"code": "VECTOR_STORE_UNAVAILABLE"}) from exc
     item.status = "deleted"
     db.commit()
     response.status_code = 204
@@ -129,27 +129,28 @@ def rebuild(request: Request, db: Session = Depends(get_db)):
     try:
         vector_service(request).rebuild(files=files, faqs=faqs)
     except VectorStoreUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail={"code": "VECTOR_STORE_UNAVAILABLE"}) from exc
     return {"status": "rebuilt"}
 
 
 @router.post("/files/{file_id}/generate-faq")
-def generate_faq(file_id: str, request: Request, db: Session = Depends(get_db)):
+def generate_faq(file_id: str, request: Request, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     item = db.get(KnowledgeFile, file_id)
     if not item or item.status != "active":
         raise HTTPException(status_code=404, detail="知识文件不存在")
     service = getattr(request.app.state, "faq_generator", None)
     if not service:
-        service = FaqGenerator()
+        household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == admin.id))
+        service = FaqGenerator(model_resolver=purpose_model_resolver(request.app.state.database.session_factory, household_id))
     path = _knowledge_file_path(request.app.state.settings, item)
     if not path:
         raise HTTPException(status_code=409, detail="知识文件源文件不存在，请重新上传或重建")
     try:
         pairs = service.generate(path)
     except FaqGenerationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail={"code": "FAQ_RESULT_INVALID"}) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc) or "FAQ生成服务暂不可用") from exc
+        raise HTTPException(status_code=503, detail={"code": "FAQ_MODEL_UNAVAILABLE"}) from exc
     result = []
     for pair in pairs:
         faq = FaqPair(question=pair["question"], answer=pair["answer"], source_file_id=item.id)
@@ -181,7 +182,7 @@ def review(faq_id: int, payload: ReviewRequest, request: Request, db: Session = 
         else:
             vector_service(request).delete_faq(item.id)
     except VectorStoreUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail={"code": "VECTOR_STORE_UNAVAILABLE"}) from exc
     item.status = payload.status
     item.reviewed_at = utcnow()
     db.commit()

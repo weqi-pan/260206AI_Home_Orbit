@@ -39,6 +39,21 @@ class ModelAdapter:
         ))
         return StreamEvent("text", text=text)
 
+    def cancel_active_stream(self, messages, cancel_event) -> None:
+        iterator = self.chat_transport.stream(model=self.model, messages=messages, cancel_event=cancel_event)
+        try:
+            next(iterator)
+            cancel_event.set()
+            try:
+                next(iterator)
+            except StopIteration:
+                return
+            raise RuntimeError("STREAM_CONTINUED_AFTER_CANCELLATION")
+        finally:
+            close = getattr(iterator, "close", None)
+            if close:
+                close()
+
     def tool_call(self, messages) -> StreamEvent:
         result = self.chat_transport.generate(
             model=self.model,
@@ -97,18 +112,26 @@ class LangChainEmbeddingTransport:
         return self.embeddings.embed_documents(texts)
 
 
-def build_langchain_chat(protocol: str, *, api_key: str, model: str, base_url: str, timeout: int, max_retries: int, temperature: float, max_tokens: int | None, use_responses_api: bool = False):
+def build_langchain_chat(protocol: str, *, api_key: str, model: str, base_url: str, timeout: int, max_retries: int,
+                         temperature: float, max_tokens: int | None, use_responses_api: bool = False, http_client=None):
     if protocol == "openai_compatible":
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(api_key=api_key, model=model, base_url=base_url, timeout=timeout, max_retries=max_retries,
-                          temperature=temperature, max_tokens=max_tokens, use_responses_api=use_responses_api)
+                          temperature=temperature, max_tokens=max_tokens, use_responses_api=use_responses_api,
+                          http_client=http_client)
     if protocol == "anthropic":
+        import anthropic
         from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(api_key=api_key, model=model, base_url=base_url, timeout=timeout, max_retries=max_retries,
-                             temperature=temperature, max_tokens=max_tokens or 1024)
+        result = ChatAnthropic(api_key=api_key, model=model, base_url=base_url, timeout=timeout, max_retries=max_retries,
+                               temperature=temperature, max_tokens=max_tokens or 1024)
+        if http_client is not None:
+            result.__dict__["_client"] = anthropic.Client(api_key=api_key, base_url=base_url, timeout=timeout,
+                                                          max_retries=max_retries, http_client=http_client)
+        return result
     raise ValueError("Unsupported model protocol")
 
 
-def build_langchain_embeddings(*, api_key: str, model: str, base_url: str, dimensions: int | None):
+def build_langchain_embeddings(*, api_key: str, model: str, base_url: str, dimensions: int | None, http_client=None):
     from langchain_openai import OpenAIEmbeddings
-    return OpenAIEmbeddings(api_key=api_key, model=model, base_url=base_url, dimensions=dimensions)
+    return OpenAIEmbeddings(api_key=api_key, model=model, base_url=base_url, dimensions=dimensions,
+                            http_client=http_client)

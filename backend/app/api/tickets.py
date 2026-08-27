@@ -4,7 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_current_account, get_db
-from backend.app.db.models import Account, ChatSession, Ticket
+from backend.app.db.models import Account, ChatSession, HouseholdMember, Ticket
+from backend.app.models.execution import purpose_model_resolver
+from backend.app.services.ticket_summary import TicketSummaryService
 
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -43,7 +45,10 @@ def create(payload: TicketCreate, request: Request, account: Account = Depends(g
         return ticket_dict(existing)
     try:
         service = getattr(request.app.state, "ticket_summary_service", None)
-        summary = service.summarize(payload.content) if service else payload.content[:200]
+        if service is None:
+            household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
+            service = TicketSummaryService(model_resolver=purpose_model_resolver(request.app.state.database.session_factory, household_id))
+        summary = service.summarize(payload.content)
     except Exception:
         summary = payload.content[:200]
     item = Ticket(account_id=account.id, session_id=payload.session_id, title=payload.title, summary=summary[:1000], emotion=payload.emotion, priority=payload.priority)

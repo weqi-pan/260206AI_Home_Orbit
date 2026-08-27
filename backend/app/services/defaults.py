@@ -16,17 +16,19 @@ class UnavailableAgentRunner:
                 content = content_text(getattr(message, "content", ""))
                 if content:
                     yield {"event": "token", "data": {"content": content}}
+                for tool_call in getattr(message, "tool_calls", []) or []:
+                    yield {"event": "tool", "data": {**tool_call, "type": "tool_call"}}
             elif mode == "custom" and isinstance(chunk, dict):
                 yield {"event": "tool", "data": chunk}
 
 
 def get_agent_runner(): return UnavailableAgentRunner()
-def get_sentiment_service():
+def get_sentiment_service(model_resolver=None):
     from backend.app.services.sentiment import SentimentService
-    return SentimentService()
-def get_followup_service():
+    return SentimentService(model_resolver=model_resolver)
+def get_followup_service(model_resolver=None):
     from backend.app.services.followup import FollowupService
-    return FollowupService()
-def get_title_service():
+    return FollowupService(model_resolver=model_resolver)
+def get_title_service(model_resolver=None):
     from backend.app.services.title_gen import TitleService
-    return TitleService()
+    return TitleService(model_resolver=model_resolver)

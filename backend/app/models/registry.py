@@ -37,15 +37,17 @@ class ModelRegistry:
 
     def record_capability_result(self, model_id: str, capabilities: dict[str, str], error_code=None, evidence=None):
         passed = all(value == "passed" for value in capabilities.values())
-        check = ModelHealthCheck(model_id=model_id, status="passed" if passed else "failed",
-                                 capabilities_json=json.dumps(capabilities), evidence_json=json.dumps(evidence or {}), error_code=error_code)
-        self.session.add(check)
         model = self.session.get(LlmModel, model_id)
+        endpoint = self.session.get(LlmEndpoint, model.endpoint_id)
+        check = ModelHealthCheck(model_id=model_id, status="passed" if passed else "failed",
+                                 capabilities_json=json.dumps(capabilities), evidence_json=json.dumps(evidence or {}), error_code=error_code,
+                                 endpoint_revision=endpoint.revision, model_revision=model.revision)
+        self.session.add(check)
         model.capability_flags_json = json.dumps(capabilities)
         self.session.commit()
         return check
 
-    def bind(self, purpose: str, model_id: str):
+    def validate_binding(self, purpose: str, model_id: str):
         expected_type = PURPOSE_TYPES.get(purpose)
         if not expected_type:
             raise BindingRejected("PURPOSE_INVALID")
@@ -57,13 +59,23 @@ class ModelRegistry:
             raise BindingRejected("MODEL_NOT_ENABLED")
         if any(capabilities.get(name) != "passed" for name in required):
             raise BindingRejected("MODEL_CAPABILITY_NOT_VERIFIED")
+        latest = self.session.scalar(select(ModelHealthCheck).where(ModelHealthCheck.model_id == model.id)
+                                     .order_by(ModelHealthCheck.created_at.desc(), ModelHealthCheck.id.desc()))
+        if not latest or latest.status != "passed" or latest.endpoint_revision != endpoint.revision or latest.model_revision != model.revision:
+            raise BindingRejected("MODEL_CONFIGURATION_STALE")
+        return model, endpoint
+
+    def bind(self, purpose: str, model_id: str):
+        model, endpoint = self.validate_binding(purpose, model_id)
         binding = self.session.get(ModelPurposeBinding, purpose)
         if not binding:
-            binding = ModelPurposeBinding(purpose=purpose, model_id=model_id, config_revision=1)
+            binding = ModelPurposeBinding(purpose=purpose, model_id=model_id, config_revision=1,
+                                          endpoint_revision=endpoint.revision, model_revision=model.revision)
             self.session.add(binding)
         else:
             binding.model_id = model_id
             binding.config_revision += 1
-        endpoint.revision += 1
+            binding.endpoint_revision = endpoint.revision
+            binding.model_revision = model.revision
         self.session.commit(); self.session.refresh(binding)
         return binding

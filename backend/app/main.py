@@ -10,7 +10,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db.seed import seed_database
 from backend.app.db.session import create_database, require_database_revision
 from backend.app.services.ticket_summary import TicketSummaryService
-from backend.rag.vector_store import VectorStoreService, VectorStoreUnavailable
+from backend.rag.vector_store import VectorStoreUnavailable, configured_vector_store
 
 
 logger = logging.getLogger(__name__)
@@ -56,8 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         seed_database(database.session_factory, app_settings)
         app.state.database = database
         app.state.settings = app_settings
-        app.state.vector_store_service = VectorStoreService(app_settings.chroma_path)
-        app.state.ticket_summary_service = TicketSummaryService()
+        app.state.vector_store_service = configured_vector_store(database.session_factory, app_settings.chroma_path)
         sync_knowledge_vectors(database, app.state.vector_store_service, app_settings)
         yield
         database.engine.dispose()

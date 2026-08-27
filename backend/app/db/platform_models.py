@@ -45,6 +45,7 @@ class LlmModel(Base):
     requests_per_minute: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
     agent_token_budget: Mapped[int | None] = mapped_column(Integer)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
 class ModelPurposeBinding(Base):
@@ -53,6 +54,8 @@ class ModelPurposeBinding(Base):
     purpose: Mapped[str] = mapped_column(String(32), primary_key=True)
     model_id: Mapped[str] = mapped_column(ForeignKey("llm_models.id"), nullable=False)
     config_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    endpoint_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    model_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
 class ModelHealthCheck(Base):
@@ -64,6 +67,8 @@ class ModelHealthCheck(Base):
     capabilities_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     evidence_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64))
+    endpoint_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    model_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -106,6 +111,8 @@ class ModelUsage(Base):
     model_id: Mapped[str] = mapped_column(String(36), nullable=False)
     month: Mapped[str] = mapped_column(String(7), nullable=False, index=True)
     tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    reserved_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="reserved")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

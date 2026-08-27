@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.security import get_current_account, get_db
 from backend.app.db.models import Account, LlmEndpoint, LlmModel, ModelPurposeBinding
 from backend.app.models.credentials import master_key_is_valid
+from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
 
 
 router = APIRouter(prefix="/setup", tags=["setup"])
@@ -31,14 +32,13 @@ class SetupStatus(BaseModel):
 
 def setup_status(session: Session, account: Account) -> SetupStatus:
     master_key_valid = master_key_is_valid(os.getenv("LLM_CREDENTIAL_MASTER_KEY"))
-    rows = session.execute(select(ModelPurposeBinding.purpose, LlmModel.capability_flags_json).join(
-        LlmModel, LlmModel.id == ModelPurposeBinding.model_id
-    ).join(LlmEndpoint, LlmEndpoint.id == LlmModel.endpoint_id).where(
-        ModelPurposeBinding.purpose.in_(REQUIRED_PURPOSES), LlmModel.enabled.is_(True), LlmEndpoint.enabled.is_(True)
-    )).all() if master_key_valid else []
     configured = []
-    for purpose, raw_flags in rows:
-        flags = json.loads(raw_flags or "{}")
+    for purpose in REQUIRED_PURPOSES if master_key_valid else []:
+        try:
+            resolved = ModelRuntimeService(session).resolve(purpose, require_grant=False)
+        except ModelRuntimeError:
+            continue
+        flags = resolved.snapshot.profile["capabilities"]
         if all(flags.get(name) == "passed" for name in REQUIRED_CAPABILITIES[purpose]):
             configured.append(purpose)
     missing = [purpose for purpose in REQUIRED_PURPOSES if purpose not in configured]

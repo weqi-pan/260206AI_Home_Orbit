@@ -102,10 +102,11 @@ def test_real_deep_agent_runner_emits_tool_lifecycle_without_tool_result_as_toke
     tool_events = [event["data"] for event in events if event["event"] == "tool"]
     assert "".join(tokens) == "offline harness complete"
     assert all("echo:offline" not in token for token in tokens)
-    assert [(event["name"], event["status"]) for event in tool_events] == [
+    assert [(event["name"], event["status"]) for event in tool_events if "status" in event] == [
         ("echo_tool", "start"),
         ("echo_tool", "success"),
     ]
+    assert any(event.get("type") == "tool_call" and event["name"] == "echo_tool" for event in tool_events)
 
 
 def test_monitor_tool_emits_error_event_on_real_deep_agent_tool_failure():

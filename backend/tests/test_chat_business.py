@@ -197,7 +197,7 @@ def test_chat_stream_error_persists_partial_or_explicit_placeholder(client, app,
     from backend.app.db.models import ConversationHistory
 
     token = login(client, "demo", settings.demo_initial_password)
-    for with_token, expected in [(True, "已生成部分回答\n\n[回答中断]"), (False, "[回答生成失败] agent disconnected")]:
+    for with_token, expected in [(True, "已生成部分回答\n\n[回答中断]"), (False, "[回答生成失败] 聊天服务暂不可用")]:
         app.state.agent_runner = FailingAfterTokenRunner(with_token)
         chat_id = client.post("/api/chat/sessions", headers=bearer(token), json={}).json()["id"]
         response = client.post(
@@ -311,10 +311,8 @@ def test_chat_stream_close_persists_partial_answer_or_placeholder_with_sentiment
             assert session.get(ConversationHistory, message_id).sentiment == "negative"
 
 
-def test_production_lifespan_attaches_ticket_summary_service(client, app):
-    from backend.app.services.ticket_summary import TicketSummaryService
-
-    assert isinstance(getattr(app.state, "ticket_summary_service", None), TicketSummaryService)
+def test_production_lifespan_does_not_attach_ungated_global_ticket_model(client, app):
+    assert getattr(app.state, "ticket_summary_service", None) is None
 
 
 def test_chat_stream_close_after_persist_does_not_duplicate_assistant_message(client, app, settings):

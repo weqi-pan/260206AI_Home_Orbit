@@ -131,7 +131,7 @@ def test_anthropic_embedding_profile_is_rejected(settings):
 
 def test_quota_is_household_isolated_and_returns_stable_over_limit_codes(settings):
     from backend.app.db.household_models import Household
-    from backend.app.db.models import Account
+    from backend.app.db.models import Account, LlmEndpoint, LlmModel
     from backend.app.db.session import create_database
     from backend.app.models.quotas import QuotaExceeded, QuotaService
 
@@ -145,11 +145,15 @@ def test_quota_is_household_isolated_and_returns_stable_over_limit_codes(setting
         second = Household(name="Second", created_by_account_id=owner.id)
         session.add_all([first, second])
         session.flush()
+        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Quota", base_url="https://api.openai.com/v1", enabled=True)
+        session.add(endpoint); session.flush()
+        model = LlmModel(endpoint_id=endpoint.id, model_name="chat", model_type="chat", enabled=True)
+        session.add(model); session.flush()
         quota = QuotaService(session)
-        quota.configure(first.id, monthly_limit=10, requests_per_minute=1, agent_token_budget=6)
-        quota.consume(first.id, model_id="model-a", tokens=6)
+        quota.configure(first.id, monthly_limit=10, requests_per_minute=10, agent_token_budget=6)
+        quota.consume(first.id, model_id=model.id, tokens=6)
         with pytest.raises(QuotaExceeded) as monthly:
-            quota.consume(first.id, model_id="model-a", tokens=5)
+            quota.consume(first.id, model_id=model.id, tokens=5)
         assert monthly.value.code == "HOUSEHOLD_MONTHLY_QUOTA_EXCEEDED"
         assert quota.current_usage(second.id) == 0
 
@@ -209,7 +213,7 @@ def test_setup_readiness_requires_valid_master_key_and_verified_required_binding
 
 
 def test_runtime_resolves_verified_binding_decrypts_credential_and_freezes_profile(settings, monkeypatch):
-    from backend.app.db.models import LlmCredential, LlmEndpoint, LlmModel, ModelPurposeBinding
+    from backend.app.db.models import LlmCredential, LlmEndpoint, LlmModel, ModelHealthCheck, ModelPurposeBinding
     from backend.app.db.session import create_database
     from backend.app.models.credentials import CredentialCipher
     from backend.app.models.runtime_service import ModelRuntimeService
@@ -225,9 +229,12 @@ def test_runtime_resolves_verified_binding_decrypts_credential_and_freezes_profi
         model = LlmModel(endpoint_id=endpoint.id, model_name="chat", model_type="chat", temperature=0.4, enabled=True,
                          capability_flags_json=json.dumps({name: "passed" for name in ("generation", "streaming", "cancellation", "tool_calling", "structured_output")}))
         session.add(model); session.flush()
-        session.add(ModelPurposeBinding(purpose="primary_chat", model_id=model.id, config_revision=9)); session.commit()
+        session.add(ModelHealthCheck(model_id=model.id, status="passed", capabilities_json=model.capability_flags_json,
+                                     evidence_json="{}", endpoint_revision=endpoint.revision, model_revision=model.revision))
+        session.add(ModelPurposeBinding(purpose="primary_chat", model_id=model.id, config_revision=9,
+                                        endpoint_revision=endpoint.revision, model_revision=model.revision)); session.commit()
 
-        resolved = ModelRuntimeService(session).resolve("primary_chat")
+        resolved = ModelRuntimeService(session).resolve("primary_chat", require_grant=False)
         snapshot = resolved.snapshot
         model.temperature = 1.2; session.commit()
 
@@ -275,8 +282,8 @@ def test_setup_not_ready_when_required_binding_has_incomplete_capability_flags(c
     login = client.post("/api/auth/login", json={"username": "admin", "password": "AdminTest@123"}).json()
     status = client.get("/api/setup/status", headers={"Authorization": f"Bearer {login['access_token']}"}).json()
     assert status["ready"] is False
-    assert status["configured_purposes"] == ["embedding"]
-    assert status["missing_purposes"] == ["primary_chat"]
+    assert status["configured_purposes"] == []
+    assert status["missing_purposes"] == ["primary_chat", "embedding"]
 
 
 def test_model_grants_are_household_scoped_and_idempotent(client, app):
@@ -311,7 +318,9 @@ def test_model_profile_rate_limit_returns_stable_code(settings):
         session.add(endpoint); session.flush()
         model = LlmModel(endpoint_id=endpoint.id, model_name="chat", model_type="chat", requests_per_minute=1, enabled=True)
         session.add(model); session.flush()
-        QuotaService(session).consume(household.id, model.id, 1)
+        quota = QuotaService(session)
+        quota.configure(household.id, monthly_limit=100, requests_per_minute=10, agent_token_budget=10)
+        quota.consume(household.id, model.id, 1)
         with pytest.raises(QuotaExceeded) as exc:
-            QuotaService(session).consume(household.id, model.id, 1)
+            quota.consume(household.id, model.id, 1)
         assert exc.value.code == "MODEL_RATE_LIMIT_EXCEEDED"

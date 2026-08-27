@@ -9,13 +9,16 @@ class VectorStoreUnavailable(RuntimeError):
 
 
 class VectorStoreService:
-    def __init__(self, persist_directory=None, vector_store=None, vector_store_factory=None):
+    def __init__(self, persist_directory=None, vector_store=None, vector_store_factory=None, store_resolver=None):
         self.persist_directory = Path(persist_directory or "backend/data/chroma")
         self._vector_store = vector_store
         self._factory = vector_store_factory
+        self._resolver = store_resolver
         self.splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
 
     def _get_store(self):
+        if self._resolver:
+            return self._resolver()
         if self._vector_store is not None:
             return self._vector_store
         try:
@@ -32,8 +35,9 @@ class VectorStoreService:
     def add_file(self, file_id, path, filename):
         path = Path(path)
         if path.suffix.lower() == ".pdf":
-            from langchain_community.document_loaders import PyPDFLoader
-            documents = PyPDFLoader(str(path)).load()
+            from pypdf import PdfReader
+            documents = [Document(page_content=page.extract_text() or "", metadata={"page": index})
+                         for index, page in enumerate(PdfReader(str(path)).pages)]
         else:
             documents = [Document(page_content=path.read_text(encoding="utf-8"))]
         chunks = self.splitter.split_documents(documents)
@@ -70,3 +74,31 @@ class VectorStoreService:
 
     def search(self, query, k=4):
         return self._get_store().similarity_search(query, k=k)
+
+
+def configured_vector_store(session_factory, persist_directory, runtime_factory=None, embedding_builder=None, store_factory=None):
+    from backend.app.db.models import ActiveEmbeddingCollection
+    from backend.app.models.adapters import build_langchain_embeddings
+    from backend.app.models.endpoint_security import safe_http_client
+    from backend.app.models.runtime_service import ModelRuntimeService
+
+    def resolve_store():
+        with session_factory() as session:
+            pointer = session.get(ActiveEmbeddingCollection, "knowledge")
+            if pointer is None:
+                raise VectorStoreUnavailable("MODEL_NOT_CONFIGURED")
+            runtime = (runtime_factory or ModelRuntimeService)(session).resolve("embedding", require_grant=False)
+            if runtime.snapshot.model_id != pointer.model_id:
+                raise VectorStoreUnavailable("EMBEDDING_COLLECTION_STALE")
+            profile = runtime.snapshot.profile
+            embeddings = embedding_builder(runtime) if embedding_builder else build_langchain_embeddings(
+                api_key=runtime.api_key, model=profile["model_name"], base_url=runtime.base_url,
+                dimensions=profile["embedding_dimensions"], http_client=safe_http_client(),
+            )
+            if store_factory:
+                return store_factory(pointer.collection_name, embeddings, persist_directory)
+            from langchain_chroma import Chroma
+            return Chroma(collection_name=pointer.collection_name, embedding_function=embeddings,
+                          persist_directory=str(persist_directory))
+
+    return VectorStoreService(persist_directory=persist_directory, store_resolver=resolve_store)

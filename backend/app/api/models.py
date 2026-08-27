@@ -6,13 +6,14 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_db, require_admin
-from backend.app.db.models import Household, LlmCredential, LlmEndpoint, LlmModel, ModelGrant, ModelPurposeBinding
+from backend.app.db.models import FaqPair, Household, KnowledgeFile, LlmCredential, LlmEndpoint, LlmModel, ModelGrant, ModelPurposeBinding
+from backend.app.models.collections import DatabaseCollectionSwitchService
 from backend.app.models.credentials import CredentialCipher, InvalidMasterKey
 from backend.app.models.endpoint_security import UnsafeEndpointUrl, validate_endpoint_url
 from backend.app.models.quotas import QuotaService
 from backend.app.models.registry import BindingRejected, ModelRegistry, RegistryValidationError
 from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
-from backend.app.models.schemas import EndpointCreate, EndpointUpdate, ModelCreate, PurposeBindingRequest, QuotaRequest
+from backend.app.models.schemas import EndpointCreate, EndpointUpdate, ModelCreate, ModelUpdate, PurposeBindingRequest, QuotaRequest
 
 
 router = APIRouter(prefix="/models", tags=["models"], dependencies=[Depends(require_admin)])
@@ -92,6 +93,8 @@ def update_endpoint(endpoint_id: str, payload: EndpointUpdate, db: Session = Dep
         raise HTTPException(status_code=409, detail={"code": "CREDENTIAL_REENTRY_REQUIRED"})
     for key, value in values.items(): setattr(item, key, value)
     item.revision += 1
+    for model in db.scalars(select(LlmModel).where(LlmModel.endpoint_id == item.id)).all():
+        model.capability_flags_json = "{}"
     db.commit(); db.refresh(item)
     return endpoint_view(item, credential)
 
@@ -107,6 +110,19 @@ def create_model(payload: ModelCreate, db: Session = Depends(get_db)):
         item = ModelRegistry(db).create_model(**payload.model_dump())
     except RegistryValidationError as exc:
         raise HTTPException(status_code=422, detail={"code": exc.code}) from exc
+    return model_view(item)
+
+
+@router.patch("/profiles/{model_id}")
+def update_model(model_id: str, payload: ModelUpdate, db: Session = Depends(get_db)):
+    item = db.get(LlmModel, model_id)
+    if not item:
+        raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND"})
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(item, key, value)
+    item.revision += 1
+    item.capability_flags_json = "{}"
+    db.commit(); db.refresh(item)
     return model_view(item)
 
 
@@ -132,10 +148,35 @@ def list_bindings(db: Session = Depends(get_db)):
 
 
 @router.put("/bindings/{purpose}")
-def bind_purpose(purpose: str, payload: PurposeBindingRequest, db: Session = Depends(get_db)):
+def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request, db: Session = Depends(get_db)):
     if purpose != payload.purpose: raise HTTPException(status_code=422, detail={"code": "PURPOSE_MISMATCH"})
-    try: item = ModelRegistry(db).bind(purpose, payload.model_id)
+    registry = ModelRegistry(db)
+    try:
+        model, _ = registry.validate_binding(purpose, payload.model_id)
+        if purpose == "embedding":
+            from backend.app.api.knowledge import _knowledge_file_path
+            from backend.rag.vector_store import VectorStoreService
+            files = []
+            for knowledge in db.scalars(select(KnowledgeFile).where(KnowledgeFile.status == "active")).all():
+                path = _knowledge_file_path(request.app.state.settings, knowledge)
+                if path:
+                    files.append((knowledge.id, path, knowledge.filename))
+            faqs = [(item.id, item.question, item.answer, item.source_file_id)
+                    for item in db.scalars(select(FaqPair).where(FaqPair.status == "approved")).all()]
+            factory = getattr(request.app.state, "embedding_store_factory", None)
+            if factory is None:
+                embeddings = ModelRuntimeService(db).build_embeddings_for_model(model)
+                from langchain_chroma import Chroma
+                factory = lambda collection_name, model_id: Chroma(
+                    collection_name=collection_name, embedding_function=embeddings,
+                    persist_directory=str(request.app.state.settings.chroma_path),
+                )
+            switch = DatabaseCollectionSwitchService(db, factory)
+            switch.rebuild(model.id, lambda store: VectorStoreService(vector_store=store).rebuild(files=files, faqs=faqs), commit=False)
+        item = registry.bind(purpose, payload.model_id)
     except BindingRejected as exc: raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    except ModelRuntimeError as exc: raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
+    except Exception as exc: raise HTTPException(status_code=503, detail={"code": "EMBEDDING_REBUILD_FAILED"}) from exc
     return {"purpose": item.purpose, "model_id": item.model_id, "config_revision": item.config_revision}
 
 
