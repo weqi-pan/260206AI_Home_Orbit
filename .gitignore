@@ -1,7 +1,6 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 .pytest_cache/
 backend/tests/.tmp/
 .mypy_cache/
@@ -10,7 +9,6 @@ backend/tests/.tmp/
 # Virtual environments
 .venv/
 venv/
-env/
 
 # Environment and secrets
 .env
@@ -21,24 +19,14 @@ env/
 .idea/
 .vscode/
 
-# Runtime output
+# Runtime output（backend/data/：知识库上传、Chroma 向量库、SQLite 兜底库）
 logs/
 *.log
-md5.text
-data/external/*
-!data/external/records.csv
-data/*.db
-data/*.db-*
 backend/data/
 
-# Vector databases and generated indexes
+# Vector databases
 chroma_db/
 **/chroma_db/
-
-# Local notebooks and experiments
-test/
-*_test.py
-*.ipynb
 
 # OS files
 .DS_Store
