@@ -45,7 +45,7 @@ def approve(approval_id: str, payload: ApprovalDecisionRequest, account: Account
     if payload.expires_at <= utcnow():
         raise HTTPException(422, detail={"code": "APPROVAL_EXPIRED"})
     row.status = "approved"; row.approved_by_account_id = account.id; row.expires_at = payload.expires_at
-    db.commit(); audit_approval(db, row, "approval_approved")
+    audit_approval(db, row, "approval_approved"); db.commit()
     return {"id": row.id, "status": row.status, "expires_at": row.expires_at}
 
 
@@ -54,7 +54,7 @@ def reject(approval_id: str, account: Account = Depends(get_current_account), db
     row = _owned(db, approval_id, account.id)
     if row.status != "pending":
         raise HTTPException(409, detail={"code": "APPROVAL_STATE_CONFLICT"})
-    row.status = "rejected"; row.approved_by_account_id = account.id; db.commit(); audit_approval(db, row, "approval_rejected")
+    row.status = "rejected"; row.approved_by_account_id = account.id; audit_approval(db, row, "approval_rejected"); db.commit()
     return {"id": row.id, "status": row.status}
 
 

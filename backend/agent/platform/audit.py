@@ -21,7 +21,7 @@ class ToolAuditService:
         self.session = session
 
     def record(self, *, context, tool_id, tool_version, status, started_at, idempotency_key,
-               arguments, result=None, error_code=None):
+               arguments, result=None, error_code=None, commit=True):
         finished_at = utcnow()
         row = ToolExecution(
             household_id=context.household_id, run_id=context.run_id, tool_id=tool_id,
@@ -36,5 +36,7 @@ class ToolAuditService:
             duration_ms=max(0, int((finished_at - started_at).total_seconds() * 1000)),
             redaction_schema_version=1,
         )
-        self.session.add(row); self.session.commit()
+        self.session.add(row)
+        if commit: self.session.commit()
+        else: self.session.flush()
         return row

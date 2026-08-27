@@ -90,21 +90,70 @@ class SnapshotCompiler:
         self.session, self.checkpointer = session, checkpointer
         self.model_factory = model_factory or (lambda _deployment: None)
 
-    def _validate_node(self, node):
-        definition = validate_agent_definition(node["agent_version"]["definition"])
-        canonical = normalize_json(definition)
-        if _hash_json(canonical) != node["agent_version"]["config_hash"]:
-            raise PlatformToolError("SNAPSHOT_HASH_INVALID")
-        for skill in node.get("skills", []):
-            safe = validate_skill_definition(skill["definition"])
-            if _hash_json(normalize_json(safe)) != skill["config_hash"]:
-                raise PlatformToolError("SNAPSHOT_HASH_INVALID")
-        for child in node.get("children", []): self._validate_node(child)
+    def _validate_node(self, node, household_id):
+        try:
+            required = {"deployment", "agent", "agent_version", "skills", "tools", "installation",
+                        "workflow", "budget", "model", "consent", "grants", "children"}
+            if not isinstance(node, dict) or set(node) != required:
+                raise ValueError
+            deployment, version, installation = node["deployment"], node["agent_version"], node["installation"]
+            definition = validate_agent_definition(version["definition"])
+            if _hash_json(normalize_json(definition)) != version["config_hash"]:
+                raise ValueError
+            live_version = self.session.get(AgentVersion, version["id"])
+            live_agent = self.session.get(AgentDefinition, node["agent"]["id"])
+            if (not live_version or live_version.household_id != household_id or
+                    live_version.agent_id != node["agent"]["id"] or not live_agent or
+                    live_agent.household_id != household_id or live_agent.name != node["agent"]["name"]):
+                raise ValueError
+            if node["workflow"] != definition.get("workflow") or node["budget"] != definition.get("budgets", {}):
+                raise ValueError
+            if installation != {"id": installation["id"], "household_id": household_id,
+                                "deployment_id": deployment["id"], "agent_version_id": version["id"],
+                                "status": "installed"}:
+                raise ValueError
+            expected_grants = {}
+            for tool in node["tools"]:
+                tool_row = self.session.get(ToolDefinition, tool["tool_id"])
+                permission = self.session.get(InstallationPermission, tool["permission_id"])
+                binding = self.session.scalar(select(AgentToolBinding.id).where(
+                    AgentToolBinding.household_id == household_id,
+                    AgentToolBinding.agent_version_id == version["id"],
+                    AgentToolBinding.tool_id == tool["tool_id"]))
+                if (not tool_row or tool_row.key != tool["key"] or tool_row.version != tool["version"] or
+                        tool_row.risk_level != tool["risk_level"] or tool["installation_id"] != installation["id"] or
+                        not permission or permission.household_id != household_id or
+                        permission.installation_id != installation["id"] or permission.tool_id != tool["tool_id"] or
+                        permission.tool_version != tool["version"] or
+                        permission.granted_by_account_id != tool["granted_by_account_id"] or not binding):
+                    raise ValueError
+                expected_grants[tool["key"]] = {"version": tool["version"], "risk_level": tool["risk_level"],
+                                                "permission_id": tool["permission_id"]}
+            if node["grants"] != expected_grants:
+                raise ValueError
+            for skill in node["skills"]:
+                safe = validate_skill_definition(skill["definition"])
+                if _hash_json(normalize_json(safe)) != skill["config_hash"]:
+                    raise ValueError
+                live = self.session.get(SkillVersion, skill["id"])
+                binding = self.session.scalar(select(AgentSkillBinding.id).where(
+                    AgentSkillBinding.household_id == household_id,
+                    AgentSkillBinding.agent_version_id == version["id"],
+                    AgentSkillBinding.skill_version_id == skill["id"]))
+                if not live or live.household_id != household_id or live.skill_id != skill["skill_id"] or not binding:
+                    raise ValueError
+            for child in node["children"]:
+                self._validate_node(child, household_id)
+            declared_children = tuple(definition.get("child_deployments", []))
+            if tuple(child["deployment"]["id"] for child in node["children"]) != declared_children:
+                raise ValueError
+        except (KeyError, TypeError, ValueError, PlatformToolError) as exc:
+            raise PlatformToolError("SNAPSHOT_INVALID") from exc
 
     def validate_and_load(self, snapshot, context):
         if not isinstance(snapshot, dict) or snapshot.get("deployment", {}).get("id") != context.deployment_id:
             raise PlatformToolError("SNAPSHOT_INVALID")
-        self._validate_node(snapshot)
+        self._validate_node(snapshot, context.household_id)
         return _freeze(snapshot)
 
     def validate_safety(self, snapshot, context):
@@ -112,11 +161,18 @@ class SnapshotCompiler:
         if not deployment or deployment.household_id != context.household_id or deployment.revision != snapshot["deployment"]["revision"] or deployment.agent_version_id != snapshot["agent_version"]["id"]:
             raise PlatformToolError("VERSION_CHANGED")
         installation = self.session.get(AgentInstallation, snapshot["installation"]["id"])
-        if not installation or installation.status != "installed" or installation.authority_slot != "active":
+        if (not installation or installation.household_id != context.household_id or
+                installation.deployment_id != snapshot["deployment"]["id"] or
+                installation.agent_version_id != snapshot["agent_version"]["id"] or
+                installation.status != "installed" or installation.authority_slot != "active"):
             raise PlatformToolError("VERSION_CHANGED")
         for tool in snapshot.get("tools", []):
             permission = self.session.get(InstallationPermission, tool["permission_id"])
-            if not permission or permission.installation_id != installation.id or permission.tool_id != tool["tool_id"] or permission.tool_version != tool["version"]:
+            definition = self.session.get(ToolDefinition, tool["tool_id"])
+            if (not permission or permission.household_id != context.household_id or
+                    permission.installation_id != installation.id or permission.tool_id != tool["tool_id"] or
+                    permission.tool_version != tool["version"] or not definition or definition.key != tool["key"] or
+                    definition.version != tool["version"] or definition.risk_level != tool["risk_level"]):
                 raise PlatformToolError("PERMISSION_REQUIRED")
         for child in snapshot.get("children", []): self.validate_safety(child, type(context)(**{
             **context.__dict__, "deployment_id": child["deployment"]["id"],

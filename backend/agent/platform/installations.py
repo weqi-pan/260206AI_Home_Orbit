@@ -15,10 +15,13 @@ class InstallationService:
         if not deployment:
             raise RuntimeError("PERMISSION_REQUIRED")
         row = self.session.scalar(select(AgentInstallation).where(AgentInstallation.household_id == self.household_id,
-                                                                  AgentInstallation.deployment_id == deployment_id))
+            AgentInstallation.deployment_id == deployment_id,
+            AgentInstallation.agent_version_id == deployment.agent_version_id,
+            AgentInstallation.status == "installed", AgentInstallation.authority_slot == "active"
+        ).order_by(AgentInstallation.id))
         if row is None:
             row = AgentInstallation(household_id=self.household_id, deployment_id=deployment.id,
-                                    agent_version_id=deployment.agent_version_id)
+                agent_version_id=deployment.agent_version_id, status="installed", authority_slot="active")
             self.session.add(row); self.session.commit(); self.session.refresh(row)
         return row
 
@@ -37,7 +40,11 @@ class InstallationService:
 
     def grant(self, installation_id, tool_id, tool_version):
         installation = self.session.scalar(select(AgentInstallation).where(AgentInstallation.id == installation_id,
-                                                                           AgentInstallation.household_id == self.household_id))
+            AgentInstallation.household_id == self.household_id, AgentInstallation.status == "installed",
+            AgentInstallation.authority_slot == "active").join(AgentDeployment,
+                AgentDeployment.id == AgentInstallation.deployment_id).where(
+                    AgentDeployment.household_id == self.household_id,
+                    AgentDeployment.agent_version_id == AgentInstallation.agent_version_id))
         tool = self.session.get(ToolDefinition, tool_id)
         if not installation or not tool or tool.version != tool_version:
             raise RuntimeError("PERMISSION_REQUIRED")
@@ -60,6 +67,12 @@ class InstallationService:
         self.session.commit(); return row
 
     def authorized_tool_ids(self, installation_id):
-        return set(self.session.scalars(select(InstallationPermission.tool_id).where(
+        return set(self.session.scalars(select(InstallationPermission.tool_id).join(
+            AgentInstallation, AgentInstallation.id == InstallationPermission.installation_id).join(
+                AgentDeployment, AgentDeployment.id == AgentInstallation.deployment_id).where(
             InstallationPermission.household_id == self.household_id,
-            InstallationPermission.installation_id == installation_id)).all())
+            InstallationPermission.installation_id == installation_id,
+            AgentInstallation.household_id == self.household_id, AgentInstallation.status == "installed",
+            AgentInstallation.authority_slot == "active",
+            AgentDeployment.household_id == self.household_id,
+            AgentDeployment.agent_version_id == AgentInstallation.agent_version_id)).all())

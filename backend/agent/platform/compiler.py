@@ -104,6 +104,7 @@ class CompiledAgent:
                     for branch in _node["branches"]:
                         branch_node = nodes[branch]
                         if branch_node["type"] == "respond":
+                            context.budget.consume_tokens(max(1, len(branch_node.get("text", "")) // 4))
                             events.append({"event": "token", "data": {"content": branch_node.get("text", "")}})
                         else: raise PlatformToolError("WORKFLOW_PARALLEL_BRANCH_INVALID")
                     return {**state, "events": events}

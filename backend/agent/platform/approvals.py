@@ -22,7 +22,7 @@ def audit_approval(session, row, status, error_code=None):
         deployment_id=run.deployment_id, deployment_revision=run.deployment_revision)
     ToolAuditService(session).record(context=context, tool_id=row.tool_id, tool_version=row.tool_version,
         status=status, error_code=error_code, started_at=utcnow(), idempotency_key=f"{row.idempotency_key}:{status}",
-        arguments={}, result={})
+        arguments={}, result={}, commit=False)
 
 
 class ApprovalResumeService:
@@ -46,8 +46,9 @@ class ApprovalResumeService:
             if row.status == "executing":
                 if row.claimed_at and row.claimed_at <= utcnow() - __import__("datetime").timedelta(minutes=5):
                     row.status = "retryable"; row.error_code = "EXECUTION_LEASE_EXPIRED"
-                    row.error_detail = None; session.commit()
+                    row.error_detail = None
                     audit_approval(session, row, "approval_retryable", row.error_code)
+                    session.commit()
                     raise PlatformToolError("APPROVAL_RETRY_REQUIRED")
                 raise PlatformToolError("APPROVAL_IN_PROGRESS")
             if row.status == "retryable":
@@ -84,19 +85,24 @@ class ApprovalResumeService:
             result = self.side_effect(arguments, context)
         except Exception:
             with self.session_factory() as session:
-                row = session.scalar(select(ApprovalRequest).where(ApprovalRequest.id == approval_id).with_for_update())
-                if row and row.status == "executing" and row.result_json is None:
-                    row.status = "retryable"; row.error_code = "SIDE_EFFECT_FAILED"; row.error_detail = None
-                    run = session.get(AgentRun, row.run_id)
-                    if run:
-                        run.status = "retry_required"; run.error_code = "APPROVAL_RETRY_REQUIRED"; run.finished_at = utcnow()
-                    session.commit(); audit_approval(session, row, "approval_retryable", row.error_code)
+                try:
+                    row = session.scalar(select(ApprovalRequest).where(ApprovalRequest.id == approval_id).with_for_update())
+                    if row and row.status == "executing" and row.result_json is None:
+                        row.status = "retryable"; row.error_code = "SIDE_EFFECT_FAILED"; row.error_detail = None
+                        run = session.get(AgentRun, row.run_id)
+                        if run:
+                            run.status = "retry_required"; run.error_code = "APPROVAL_RETRY_REQUIRED"; run.finished_at = utcnow()
+                        audit_approval(session, row, "approval_retryable", row.error_code)
+                        session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
             raise PlatformToolError("APPROVAL_RETRY_REQUIRED")
         with self.session_factory() as session:
             row = session.scalar(select(ApprovalRequest).where(ApprovalRequest.id == approval_id).with_for_update())
             if row.result_json is None:
                 row.result_json = json.dumps(result, ensure_ascii=False, sort_keys=True)
                 row.status = "consumed"; row.consumed_at = utcnow(); row.error_code = None; row.error_detail = None
-                session.commit()
                 audit_approval(session, row, "approval_consumed")
+                session.commit()
             return json.loads(row.result_json)

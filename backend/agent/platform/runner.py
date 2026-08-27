@@ -140,5 +140,7 @@ class DeploymentAgentRunner(PlatformAgentRunner):
         except Exception as exc:
             code = getattr(exc, "code", None) or "AGENT_RUN_FAILED"
             status = "retry_required" if code == "APPROVAL_RETRY_REQUIRED" else "failed"
-            self._persist(context, status, code, finished=True); raise
+            self._persist(context, status, code, finished=True)
+            yield {"event": "run", "data": {"run_id": context.run_id, "status": status, "error_code": code}}
+            return
         finally: self._persist_budget(context)

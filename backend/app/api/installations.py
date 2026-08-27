@@ -40,7 +40,8 @@ def install(payload: InstallationRequest, account: Account = Depends(get_current
 @router.put("/{installation_id}/permissions", status_code=201)
 def grant_permission(installation_id: str, payload: InstallationPermissionRequest,
                      account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
-    installation = db.get(AgentInstallation, installation_id)
+    installation = db.scalar(select(AgentInstallation).where(AgentInstallation.id == installation_id,
+        AgentInstallation.status == "installed", AgentInstallation.authority_slot == "active"))
     if not installation:
         raise HTTPException(404, detail={"code": "INSTALLATION_NOT_FOUND"})
     _manager(db, account.id, installation.household_id)
@@ -56,7 +57,8 @@ def grant_permission(installation_id: str, payload: InstallationPermissionReques
 @router.delete("/{installation_id}/permissions/{tool_id}", status_code=204)
 def revoke_permission(installation_id: str, tool_id: str, account: Account = Depends(get_current_account),
                       db: Session = Depends(get_db)):
-    installation = db.get(AgentInstallation, installation_id)
+    installation = db.scalar(select(AgentInstallation).where(AgentInstallation.id == installation_id,
+        AgentInstallation.status == "installed", AgentInstallation.authority_slot == "active"))
     if not installation:
         raise HTTPException(404, detail={"code": "INSTALLATION_NOT_FOUND"})
     _manager(db, account.id, installation.household_id)
