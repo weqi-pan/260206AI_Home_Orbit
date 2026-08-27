@@ -3,6 +3,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_db, require_admin
@@ -118,11 +119,21 @@ def update_model(model_id: str, payload: ModelUpdate, db: Session = Depends(get_
     item = db.get(LlmModel, model_id)
     if not item:
         raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND"})
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    values = payload.model_dump(exclude_unset=True)
+    effective_max_tokens = values.get("max_tokens", item.max_tokens)
+    effective_agent_budget = values.get("agent_token_budget", item.agent_token_budget)
+    if item.model_type == "chat" and effective_max_tokens is None and effective_agent_budget is None:
+        raise HTTPException(status_code=422, detail={"code": "MODEL_REQUEST_BUDGET_REQUIRED"})
+    for key, value in values.items():
         setattr(item, key, value)
     item.revision += 1
     item.capability_flags_json = "{}"
-    db.commit(); db.refresh(item)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail={"code": "MODEL_PROFILE_INVALID"}) from exc
+    db.refresh(item)
     return model_view(item)
 
 
@@ -156,13 +167,34 @@ def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request,
         if purpose == "embedding":
             from backend.app.api.knowledge import _knowledge_file_path
             from backend.rag.vector_store import VectorStoreService
+            active_knowledge = db.scalars(select(KnowledgeFile).where(KnowledgeFile.status == "active")).all()
             files = []
-            for knowledge in db.scalars(select(KnowledgeFile).where(KnowledgeFile.status == "active")).all():
+            missing_file_ids = []
+            for knowledge in active_knowledge:
                 path = _knowledge_file_path(request.app.state.settings, knowledge)
-                if path:
+                try:
+                    supported = path and path.is_file() and path.suffix.lower() in {".pdf", ".txt"}
+                    if supported:
+                        with path.open("rb") as source:
+                            source.read(1)
+                except (OSError, PermissionError):
+                    supported = False
+                if not supported:
+                    missing_file_ids.append(knowledge.id)
+                else:
                     files.append((knowledge.id, path, knowledge.filename))
-            faqs = [(item.id, item.question, item.answer, item.source_file_id)
-                    for item in db.scalars(select(FaqPair).where(FaqPair.status == "approved")).all()]
+            approved_faqs = db.scalars(select(FaqPair).where(FaqPair.status == "approved")).all()
+            faqs = [(item.id, item.question, item.answer, item.source_file_id) for item in approved_faqs]
+            evidence = {
+                "expected_file_count": len(active_knowledge), "included_file_count": len(files),
+                "expected_faq_count": len(approved_faqs), "included_faq_count": len(faqs),
+                "included_file_ids": sorted(item[0] for item in files), "missing_file_ids": sorted(missing_file_ids),
+                "included_faq_ids": sorted(item[0] for item in faqs),
+            }
+            switch = DatabaseCollectionSwitchService(db, getattr(request.app.state, "embedding_store_factory", None))
+            if missing_file_ids:
+                switch.fail(model.id, "EMBEDDING_SOURCE_INCOMPLETE", evidence)
+                raise HTTPException(status_code=409, detail={"code": "EMBEDDING_SOURCE_INCOMPLETE"})
             factory = getattr(request.app.state, "embedding_store_factory", None)
             if factory is None:
                 embeddings = ModelRuntimeService(db).build_embeddings_for_model(model)
@@ -172,8 +204,11 @@ def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request,
                     persist_directory=str(request.app.state.settings.chroma_path),
                 )
             switch = DatabaseCollectionSwitchService(db, factory)
-            switch.rebuild(model.id, lambda store: VectorStoreService(vector_store=store).rebuild(files=files, faqs=faqs), commit=False)
+            build = switch.prepare(model.id, evidence)
+            switch.build(build.id, lambda store: VectorStoreService(vector_store=store).rebuild(files=files, faqs=faqs), commit=False)
         item = registry.bind(purpose, payload.model_id)
+    except HTTPException:
+        raise
     except BindingRejected as exc: raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     except ModelRuntimeError as exc: raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
     except Exception as exc: raise HTTPException(status_code=503, detail={"code": "EMBEDDING_REBUILD_FAILED"}) from exc

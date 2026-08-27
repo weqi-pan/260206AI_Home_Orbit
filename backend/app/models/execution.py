@@ -13,6 +13,8 @@ class BudgetedModel:
             service = ModelRuntimeService(session)
             resolved = service.resolve(self.purpose, self.household_id)
             budget = resolved.snapshot.profile["agent_token_budget"] or resolved.snapshot.profile["max_tokens"]
+            if budget is None or budget <= 0:
+                raise RuntimeError("MODEL_REQUEST_BUDGET_NOT_CONFIGURED")
             usage = QuotaService(session).reserve(self.household_id, resolved.snapshot.model_id, budget)
             try:
                 result = service.build_chat_model(resolved).invoke(messages)

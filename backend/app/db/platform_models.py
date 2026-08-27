@@ -122,6 +122,8 @@ class EmbeddingCollectionBuild(Base):
     model_id: Mapped[str] = mapped_column(ForeignKey("llm_models.id"), nullable=False)
     collection_name: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="building")
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    error_code: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

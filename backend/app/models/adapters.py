@@ -1,4 +1,6 @@
 import json
+import queue
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -93,15 +95,51 @@ class LangChainChatTransport:
 
     def stream(self, *, model, messages, cancel_event):
         iterator = self.chat_model.stream(messages)
+        output = queue.Queue()
+        finished = object()
+
+        def consume():
+            try:
+                for chunk in iterator:
+                    output.put(("chunk", chunk))
+            except Exception as exc:
+                output.put(("error", exc))
+            finally:
+                output.put(("done", finished))
+
+        worker = threading.Thread(target=consume, name="model-stream-reader", daemon=True)
+        worker.start()
         try:
-            for chunk in iterator:
+            while True:
                 if cancel_event.is_set():
-                    break
-                yield {"content": getattr(chunk, "content", "")}
+                    cancel_request = getattr(self.chat_model, "_runtime_cancel", None)
+                    if cancel_request:
+                        cancel_request()
+                    close = getattr(iterator, "close", None)
+                    if close:
+                        close()
+                    worker.join(timeout=0.25)
+                    if worker.is_alive():
+                        raise RuntimeError("STREAM_CANCELLATION_TIMEOUT")
+                    return
+                try:
+                    kind, value = output.get(timeout=0.02)
+                except queue.Empty:
+                    continue
+                if kind == "chunk":
+                    if not cancel_event.is_set():
+                        yield {"content": getattr(value, "content", "")}
+                elif kind == "error":
+                    raise value
+                else:
+                    worker.join(timeout=0.25)
+                    return
         finally:
-            close = getattr(iterator, "close", None)
-            if close:
-                close()
+            if cancel_event.is_set():
+                close = getattr(iterator, "close", None)
+                if close:
+                    close()
+            worker.join(timeout=0.25)
 
 
 class LangChainEmbeddingTransport:
@@ -116,9 +154,12 @@ def build_langchain_chat(protocol: str, *, api_key: str, model: str, base_url: s
                          temperature: float, max_tokens: int | None, use_responses_api: bool = False, http_client=None):
     if protocol == "openai_compatible":
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(api_key=api_key, model=model, base_url=base_url, timeout=timeout, max_retries=max_retries,
-                          temperature=temperature, max_tokens=max_tokens, use_responses_api=use_responses_api,
-                          http_client=http_client)
+        result = ChatOpenAI(api_key=api_key, model=model, base_url=base_url, timeout=timeout, max_retries=max_retries,
+                            temperature=temperature, max_tokens=max_tokens, use_responses_api=use_responses_api,
+                            http_client=http_client)
+        if http_client is not None:
+            result.__dict__["_runtime_cancel"] = http_client.close
+        return result
     if protocol == "anthropic":
         import anthropic
         from langchain_anthropic import ChatAnthropic
@@ -127,6 +168,7 @@ def build_langchain_chat(protocol: str, *, api_key: str, model: str, base_url: s
         if http_client is not None:
             result.__dict__["_client"] = anthropic.Client(api_key=api_key, base_url=base_url, timeout=timeout,
                                                           max_retries=max_retries, http_client=http_client)
+            result.__dict__["_runtime_cancel"] = http_client.close
         return result
     raise ValueError("Unsupported model protocol")
 

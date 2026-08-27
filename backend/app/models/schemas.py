@@ -61,6 +61,12 @@ class ModelCreate(BaseModel):
     agent_token_budget: int | None = Field(default=None, ge=1)
     enabled: bool = False
 
+    @model_validator(mode="after")
+    def chat_has_effective_request_budget(self):
+        if self.model_type == "chat" and self.max_tokens is None and self.agent_token_budget is None:
+            raise ValueError("chat model requires max_tokens or agent_token_budget")
+        return self
+
 
 class ModelUpdate(BaseModel):
     model_name: str | None = Field(default=None, min_length=1, max_length=200)
@@ -71,6 +77,13 @@ class ModelUpdate(BaseModel):
     requests_per_minute: int | None = Field(default=None, ge=1)
     agent_token_budget: int | None = Field(default=None, ge=1)
     enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def required_values_are_not_null(self):
+        for field in ("model_name", "temperature", "use_responses_api", "requests_per_minute", "enabled"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
 
 
 class ModelView(BaseModel):

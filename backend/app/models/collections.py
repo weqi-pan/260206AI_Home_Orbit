@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import json
 from uuid import uuid4
 
 from backend.app.db.models import ActiveEmbeddingCollection, EmbeddingCollectionBuild
@@ -43,8 +44,9 @@ class DatabaseCollectionSwitchService:
         self.session = session
         self.store_factory = store_factory
 
-    def prepare(self, model_id: str) -> EmbeddingCollectionBuild:
-        build = EmbeddingCollectionBuild(model_id=model_id, collection_name=f"knowledge-{uuid4().hex}", status="building")
+    def prepare(self, model_id: str, evidence=None) -> EmbeddingCollectionBuild:
+        build = EmbeddingCollectionBuild(model_id=model_id, collection_name=f"knowledge-{uuid4().hex}", status="building",
+                                         evidence_json=json.dumps(evidence or {}, sort_keys=True))
         self.session.add(build)
         self.session.commit()
         self.session.refresh(build)
@@ -57,6 +59,8 @@ class DatabaseCollectionSwitchService:
             rebuild_callback(store)
         except Exception:
             build.status = "failed"
+            if not build.error_code:
+                build.error_code = "EMBEDDING_REBUILD_FAILED"
             self.session.commit()
             raise
         pointer = self.session.get(ActiveEmbeddingCollection, "knowledge")
@@ -77,3 +81,11 @@ class DatabaseCollectionSwitchService:
 
     def rebuild(self, model_id: str, rebuild_callback, commit: bool = True) -> EmbeddingCollectionBuild:
         return self.build(self.prepare(model_id).id, rebuild_callback, commit=commit)
+
+    def fail(self, model_id: str, code: str, evidence: dict) -> EmbeddingCollectionBuild:
+        build = self.prepare(model_id, evidence)
+        build.status = "failed"
+        build.error_code = code
+        self.session.commit()
+        self.session.refresh(build)
+        return build
