@@ -22,6 +22,19 @@ class InstallationService:
             self.session.add(row); self.session.commit(); self.session.refresh(row)
         return row
 
+    def upgrade(self, deployment_id, agent_version_id):
+        deployment = self.session.scalar(select(AgentDeployment).where(AgentDeployment.id == deployment_id,
+                                                                       AgentDeployment.household_id == self.household_id))
+        if not deployment: raise RuntimeError("PERMISSION_REQUIRED")
+        current = self.session.scalar(select(AgentInstallation).where(AgentInstallation.household_id == self.household_id,
+            AgentInstallation.deployment_id == deployment_id, AgentInstallation.authority_slot == "active").with_for_update())
+        if current:
+            current.status = "upgraded"; current.authority_slot = None; self.session.flush()
+        deployment.agent_version_id = agent_version_id; deployment.revision += 1
+        row = AgentInstallation(household_id=self.household_id, deployment_id=deployment_id,
+            agent_version_id=agent_version_id, status="installed", authority_slot="active")
+        self.session.add(row); self.session.commit(); self.session.refresh(row); return row
+
     def grant(self, installation_id, tool_id, tool_version):
         installation = self.session.scalar(select(AgentInstallation).where(AgentInstallation.id == installation_id,
                                                                            AgentInstallation.household_id == self.household_id))

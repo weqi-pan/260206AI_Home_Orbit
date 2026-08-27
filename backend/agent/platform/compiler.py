@@ -20,18 +20,32 @@ from backend.app.db.models import AgentDefinition, AgentDeployment, AgentSkillBi
 from backend.app.models.adapters import content_text
 
 
+def build_platform_tool(authority, executor, context, session):
+    metadata = ExecutionAuthority(session).registry.resolve(authority.key).metadata
+    def execute(runtime, arguments):
+        invocation_id = getattr(runtime, "tool_call_id", None) or str(uuid.uuid4())
+        try: return executor.execute(authority.key, arguments, context, invocation_id)
+        except __import__("backend.agent.platform.policy_errors", fromlist=["ApprovalRequired"]).ApprovalRequired as exc:
+            resumed = interrupt({"approval_id": exc.approval_id, "code": "APPROVAL_REQUIRED"})
+            from backend.agent.platform.approvals import ApprovalResumeService
+            return ApprovalResumeService(lambda: session, executor.side_effect or
+                ExecutionAuthority(session).registry.resolve(authority.key).handler).claim_and_execute(
+                    resumed.get("approval_id", exc.approval_id), context, arguments)
+    if authority.key == "platform.test_high_risk":
+        def callable_tool(value: str, runtime: ToolRuntime): return execute(runtime, {"value": value})
+    else:
+        def callable_tool(runtime: ToolRuntime): return execute(runtime, {})
+    return StructuredTool.from_function(callable_tool, name=authority.key, description=metadata.description)
+
+
 class BudgetedChildRunnable:
-    def __init__(self, runnable, budget): self.runnable, self.budget = runnable, budget
+    def __init__(self, runnable, budget, child_limits=None): self.runnable, self.budget, self.child_limits = runnable, budget, child_limits or {}
     def invoke(self, *args, **kwargs):
-        self.budget.enter_delegation()
-        try: return self.runnable.invoke(*args, **kwargs)
-        finally: self.budget.exit_delegation()
+        with self.budget.enforce_child_limits(self.child_limits): return self.runnable.invoke(*args, **kwargs)
     def stream(self, *args, **kwargs):
-        self.budget.enter_delegation()
-        try: yield from self.runnable.stream(*args, **kwargs)
-        finally: self.budget.exit_delegation()
+        with self.budget.enforce_child_limits(self.child_limits): yield from self.runnable.stream(*args, **kwargs)
     def with_config(self, config):
-        return BudgetedChildRunnable(self.runnable.with_config(config), self.budget)
+        return BudgetedChildRunnable(self.runnable.with_config(config), self.budget, self.child_limits)
 
 
 @dataclass(frozen=True)
@@ -77,14 +91,12 @@ class CompiledAgent:
                             ExecutionAuthority(self.tool_executor.session).registry.resolve("platform.workflow_confirm").handler
                         ).claim_and_execute(answer.get("approval_id", exc.approval_id), context,
                                             {"message": _node["message"]})
+                    context.budget.consume_tool()
                     return append_event(state, {"event": "approval_resumed", "data": result})
                 if _kind == "delegate":
                     target = child_map.get(_node["subagent"])
                     if target is None: raise PlatformToolError("SUBAGENT_NOT_FOUND")
-                    context.budget.enter_delegation()
-                    try:
-                        result = target.invoke({"messages": [{"role": "user", "content": _node["message"]}]}, context=context)
-                    finally: context.budget.exit_delegation()
+                    result = target.invoke({"messages": [{"role": "user", "content": _node["message"]}]}, context=context)
                     return append_event(state, {"event": "delegate", "data": {"subagent": _node["subagent"],
                                                                                  "result": str(result)}})
                 if _kind == "parallel":
@@ -199,29 +211,7 @@ class AgentCompiler:
             AgentToolBinding.agent_version_id == version.id, AgentToolBinding.household_id == context.household_id)).all())
         authorities = ExecutionAuthority(self.session).tools(deployment.id, context.household_id, version.id, bound_tool_ids)
         executor = self.tool_executor_factory(self.session)
-        tools = []
-        def execute_tool(authority, runtime, arguments):
-            invocation_id = getattr(runtime, "tool_call_id", None) or str(uuid.uuid4())
-            try:
-                return executor.execute(authority.key, arguments, context, invocation_id)
-            except __import__("backend.agent.platform.policy_errors", fromlist=["ApprovalRequired"]).ApprovalRequired as exc:
-                resumed = interrupt({"approval_id": exc.approval_id, "code": "APPROVAL_REQUIRED"})
-                from backend.agent.platform.approvals import ApprovalResumeService
-                return ApprovalResumeService(lambda: self.session, executor.side_effect or
-                    ExecutionAuthority(self.session).registry.resolve(authority.key).handler).claim_and_execute(
-                        resumed.get("approval_id", exc.approval_id), context, arguments)
-
-        for authority in authorities:
-            metadata = ExecutionAuthority(self.session).registry.resolve(authority.key).metadata
-            if authority.key == "platform.test_high_risk":
-                def invoke_high_risk(value: str, runtime: ToolRuntime, _authority=authority):
-                    return execute_tool(_authority, runtime, {"value": value})
-                callable_tool = invoke_high_risk
-            else:
-                def invoke_no_arguments(runtime: ToolRuntime, _authority=authority):
-                    return execute_tool(_authority, runtime, {})
-                callable_tool = invoke_no_arguments
-            tools.append(StructuredTool.from_function(callable_tool, name=authority.key, description=metadata.description))
+        tools = [build_platform_tool(authority, executor, context, self.session) for authority in authorities]
         skill_prompt = "\n\n".join(json.loads(row.definition_json).get("instructions", "") for row in skill_rows)
         prompt = "\n\n".join(item for item in (definition.get("prompt", ""), skill_prompt) if item)
         budgets = definition.get("budgets", {})
@@ -251,7 +241,7 @@ class AgentCompiler:
             child_graph = create_secured_deep_agent(model=child.model, tools=child.tools, subagents=list(child.subagents),
                 system_prompt=child.prompt, context_schema=type(context), checkpointer=self.checkpointer, name=child_name)
             subagents.append({"name": child_name, "description": child_description,
-                              "runnable": BudgetedChildRunnable(child_graph, context.budget)})
+                              "runnable": BudgetedChildRunnable(child_graph, context.budget, child_limits=child.limits)})
             names.append(child_name)
         model = self.model_factory(deployment.id) if self.model_factory else None
         return CompiledAgent(deployment.id, version.id, prompt, workflow, tuple(tools), model, limits,

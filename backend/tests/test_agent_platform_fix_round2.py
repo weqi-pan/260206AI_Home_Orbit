@@ -173,11 +173,14 @@ def test_workflow_delegate_parallel_and_confirm_use_handlers_and_shared_budget(p
     budget = RunBudget(max_delegation_depth=1, max_tool_calls=2)
     delegated, confirmed = [], []
     workflow = {"entry": "parallel", "nodes": [
-        {"id": "parallel", "type": "parallel", "branches": ["delegate", "confirm"], "next": "end"},
-        {"id": "delegate", "type": "delegate", "subagent": "billing", "message": "help", "next": "branch_end_1"},
+        {"id": "parallel", "type": "parallel", "branches": ["reply_one", "reply_two"], "next": "delegate"},
+        {"id": "reply_one", "type": "respond", "text": "one", "next": "branch_end_1"},
         {"id": "branch_end_1", "type": "end"},
-        {"id": "confirm", "type": "confirm", "message": "approve", "next": "branch_end_2"},
+        {"id": "reply_two", "type": "respond", "text": "two", "next": "branch_end_2"},
         {"id": "branch_end_2", "type": "end"},
+        {"id": "delegate", "type": "delegate", "subagent": "billing", "message": "help", "next": "confirm"},
+        {"id": "confirm", "type": "confirm", "message": "approve", "action": "continue",
+         "tool": "platform.workflow_confirm", "next": "end"},
         {"id": "end", "type": "end"},
     ]}
     executor = WorkflowExecutor(lambda *args: None,
@@ -205,7 +208,8 @@ def test_production_workflow_confirm_interrupts_and_resumes_with_shared_budget(d
     version = db_session.get(AgentVersion, platform_seed["context"].agent_version_id)
     version.definition_json = json.dumps({"prompt": "workflow", "tools": [], "budgets": {"tool_calls": 1,
         "tokens": 50, "wall_time_seconds": 30, "delegation_depth": 1}, "workflow": {"entry": "confirm", "nodes": [
-            {"id": "confirm", "type": "confirm", "message": "continue?", "next": "reply"},
+            {"id": "confirm", "type": "confirm", "message": "continue?", "action": "continue",
+             "tool": "platform.workflow_confirm", "next": "reply"},
             {"id": "reply", "type": "respond", "text": "continued", "next": "end"},
             {"id": "end", "type": "end"}]}})
     db_session.commit()
@@ -222,7 +226,7 @@ def test_production_workflow_confirm_interrupts_and_resumes_with_shared_budget(d
     PlatformToolExecutor(db_session).approve(approval.id, context.principal_id, utcnow() + timedelta(minutes=5))
     resumed = list(compiled.resume(approval.id, context))
     assert any(event.get("data", {}).get("content") == "continued" for event in resumed)
-    assert context.budget.snapshot()["tool_calls"] == 0
+    assert context.budget.snapshot()["tool_calls"] == 1
 
 
 def test_public_approval_resume_uses_production_runner(client, app, monkeypatch):

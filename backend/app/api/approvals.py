@@ -61,8 +61,15 @@ def reject(approval_id: str, account: Account = Depends(get_current_account), db
 @router.post("/{approval_id}/resume")
 def resume(approval_id: str, request: Request, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
     approval = _owned(db, approval_id, account.id)
+    if approval.status == "retryable":
+        raise HTTPException(409, detail={"code": "APPROVAL_RETRY_REQUIRED",
+                                         "fresh_invocation_required": True})
+    if approval.status == "executing":
+        raise HTTPException(409, detail={"code": "APPROVAL_IN_PROGRESS"})
     if approval.status not in {"approved", "consumed"}:
         raise HTTPException(409, detail={"code": "APPROVAL_STATE_CONFLICT"})
+    if approval.status == "consumed":
+        return {"id": approval.id, "status": "consumed", "result": json.loads(approval.result_json or "{}")}
     run = db.get(AgentRun, approval.run_id)
     if not run:
         raise HTTPException(404, detail={"code": "RUN_NOT_FOUND"})

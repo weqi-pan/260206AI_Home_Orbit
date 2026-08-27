@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from threading import Lock
-import time
 from typing import Mapping, Protocol, runtime_checkable
 
 
@@ -35,7 +34,7 @@ class KnowledgeCapability(Protocol):
 class _BudgetState:
     values: dict = field(default_factory=lambda: {"delegation_depth": 0, "tool_calls": 0, "tokens": 0})
     lock: object = field(default_factory=Lock, repr=False)
-    started_at: float = field(default_factory=time.monotonic)
+    deadline_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -72,11 +71,13 @@ class RunBudget:
 
     def snapshot(self):
         with self.__state.lock:
-            return _freeze(dict(self.__state.values))
+            return _freeze({**self.__state.values, "deadline_at": self.__state.deadline_at})
 
     @classmethod
     def restore(cls, limits, counters):
-        state = _BudgetState(values={"delegation_depth": 0, "tool_calls": 0, "tokens": 0, **dict(counters)})
+        values = {"delegation_depth": 0, "tool_calls": 0, "tokens": 0, **dict(counters)}
+        deadline = values.pop("deadline_at", None)
+        state = _BudgetState(values=values, deadline_at=deadline)
         budget = cls(max_delegation_depth=limits.get("delegation_depth", 4),
                      max_tool_calls=limits.get("tool_calls", 16), max_tokens=limits.get("tokens", 32000),
                      wall_time_seconds=limits.get("wall_time_seconds", 120))
@@ -84,8 +85,28 @@ class RunBudget:
         return budget
 
     def check_time(self):
-        if time.monotonic() - self.__state.started_at > self.wall_time_seconds:
+        from backend.app.db.base import utcnow
+        from datetime import datetime, timedelta
+        with self.__state.lock:
+            if self.__state.deadline_at is None:
+                self.__state.deadline_at = (utcnow() + timedelta(seconds=self.wall_time_seconds)).isoformat()
+            deadline = datetime.fromisoformat(self.__state.deadline_at)
+        if utcnow() >= deadline:
             raise RuntimeError("RUN_LIMIT_EXCEEDED")
+
+    def enforce_child_limits(self, limits):
+        return ChildBudgetScope(self, limits)
+
+
+class ChildBudgetScope:
+    def __init__(self, parent, limits): self.parent, self.limits = parent, limits
+    def __enter__(self):
+        self.parent.enter_delegation()
+        snapshot = self.parent.snapshot()
+        if snapshot["tool_calls"] >= int(self.limits.get("tool_calls", self.parent.max_tool_calls)):
+            self.parent.exit_delegation(); raise RuntimeError("RUN_LIMIT_EXCEEDED")
+        return self.parent
+    def __exit__(self, *args): self.parent.exit_delegation()
 
 
 @dataclass(frozen=True)

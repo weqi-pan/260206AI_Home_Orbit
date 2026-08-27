@@ -121,7 +121,7 @@ def test_restricted_workflow_rejects_unknown_nodes_loops_and_excessive_depth():
     with pytest.raises(WorkflowRejected):
         validate_workflow({"nodes": [{"id": "x", "type": "route", "next": "x"}]})
     with pytest.raises(WorkflowRejected) as error:
-        validate_workflow({"nodes": [{"id": str(i), "type": "respond"} for i in range(65)]})
+        validate_workflow({"entry": "0", "nodes": [{"id": str(i), "type": "respond", "text": "x"} for i in range(65)]})
     assert error.value.code == "RUN_LIMIT_EXCEEDED"
 
 

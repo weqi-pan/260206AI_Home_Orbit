@@ -237,10 +237,12 @@ class AgentInstallation(TenantRow, Base):
         ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
         ForeignKeyConstraint(["agent_version_id", "household_id"], ["agent_versions.id", "agent_versions.household_id"]),
         UniqueConstraint("household_id", "deployment_id", "agent_version_id", name="uq_agent_installation_authority"),
+        UniqueConstraint("household_id", "deployment_id", "authority_slot", name="uq_agent_installation_active_slot"),
     )
     deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
     agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="installed")
+    authority_slot: Mapped[str | None] = mapped_column(String(16), nullable=True, default="active")
 
 
 class InstallationPermission(Base):
@@ -330,6 +332,9 @@ class AgentRun(TenantRow, Base):
     budget_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="running")
     error_code: Mapped[str | None] = mapped_column(String(64))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    interrupted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    resumed_at: Mapped[datetime | None] = mapped_column(DateTime)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 

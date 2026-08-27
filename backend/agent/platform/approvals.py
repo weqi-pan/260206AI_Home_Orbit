@@ -87,6 +87,9 @@ class ApprovalResumeService:
                 row = session.scalar(select(ApprovalRequest).where(ApprovalRequest.id == approval_id).with_for_update())
                 if row and row.status == "executing" and row.result_json is None:
                     row.status = "retryable"; row.error_code = "SIDE_EFFECT_FAILED"; row.error_detail = None
+                    run = session.get(AgentRun, row.run_id)
+                    if run:
+                        run.status = "retry_required"; run.error_code = "APPROVAL_RETRY_REQUIRED"; run.finished_at = utcnow()
                     session.commit(); audit_approval(session, row, "approval_retryable", row.error_code)
             raise PlatformToolError("APPROVAL_RETRY_REQUIRED")
         with self.session_factory() as session:

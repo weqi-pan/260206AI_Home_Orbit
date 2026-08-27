@@ -28,7 +28,7 @@ class ExecutionAuthority:
             AgentDeployment.id == deployment_id, AgentDeployment.household_id == household_id))
         installation = self.session.scalar(select(AgentInstallation).where(
             AgentInstallation.deployment_id == deployment_id, AgentInstallation.household_id == household_id,
-            AgentInstallation.status == "installed").order_by(AgentInstallation.id))
+            AgentInstallation.status == "installed", AgentInstallation.authority_slot == "active").order_by(AgentInstallation.id))
         if not deployment or not installation:
             raise PlatformToolError("INSTALLATION_REQUIRED")
         if deployment.agent_version_id != agent_version_id or installation.agent_version_id != agent_version_id:
