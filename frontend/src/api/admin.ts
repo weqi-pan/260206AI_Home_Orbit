@@ -52,6 +52,14 @@ export interface InventoryPayload {
   min_stock: number
 }
 
+export interface InventoryRow {
+  model_id: string
+  warehouse: string
+  stock: number
+  min_stock: number
+  updated_at: string
+}
+
 export interface AdminTicket extends TicketInfo {
   account_id: string
 }
@@ -92,6 +100,12 @@ export function updateDevice(modelId: string, payload: DevicePayload) {
 
 export function deleteDevice(modelId: string) {
   return http.delete<void>(`/admin/devices/${encodeURIComponent(modelId)}`)
+}
+
+export function fetchInventory(modelId?: string) {
+  return http
+    .get<InventoryRow[]>('/admin/inventory', { params: modelId ? { model_id: modelId } : {} })
+    .then((r) => r.data)
 }
 
 export function upsertInventory(payload: InventoryPayload) {

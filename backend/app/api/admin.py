@@ -154,6 +154,16 @@ def delete_device(model_id: str, response: Response, db: Session = Depends(get_d
     db.delete(item); db.commit(); response.status_code = 204
 
 
+@router.get("/inventory")
+def list_inventory(model_id: str | None = None, db: Session = Depends(get_db)):
+    query = select(Inventory).order_by(Inventory.model_id, Inventory.warehouse)
+    if model_id:
+        query = query.where(Inventory.model_id == model_id)
+    return [{"model_id": item.model_id, "warehouse": item.warehouse, "stock": item.stock,
+             "min_stock": item.min_stock, "updated_at": item.updated_at}
+            for item in db.scalars(query).all()]
+
+
 @router.put("/inventory")
 def inventory(payload: InventoryPayload, db: Session = Depends(get_db)):
     if not db.get(Device, payload.model_id): raise HTTPException(status_code=404, detail="设备不存在")

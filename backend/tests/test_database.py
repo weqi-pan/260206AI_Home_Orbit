@@ -91,6 +91,28 @@ def test_sqlite_engine_creates_missing_parent_directory(settings, tmp_path):
     assert database_path.exists()
 
 
+def test_default_settings_paths_are_absolute_and_do_not_create_nested_backend(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from sqlalchemy.engine import make_url
+
+    from backend.app.core.config import Settings
+    from backend.app.db.session import _engine
+
+    monkeypatch.chdir(tmp_path)
+    settings = Settings()
+
+    assert Path(settings.knowledge_upload_path).is_absolute()
+    assert Path(settings.chroma_path).is_absolute()
+    fallback_db = Path(make_url(settings.sqlite_fallback_url).database)
+    assert fallback_db.is_absolute()
+    assert fallback_db.match("*backend/data/customer_service.db")
+
+    _engine(settings.sqlite_fallback_url)
+
+    assert not (tmp_path / "backend").exists()
+
+
 def test_seed_is_idempotent_and_imports_demo_data(settings):
     from backend.app.db.models import Account, Device, DeviceUsageRecord, Inventory, User
     from backend.app.db.seed import seed_database

@@ -41,8 +41,14 @@ export function rebuildVectorStore() {
   return http.post<{ status: string }>('/knowledge/rebuild').then((r) => r.data)
 }
 
+export const FAQ_GENERATION_TIMEOUT_MS = 120000
+
 export function generateFaq(fileId: string) {
-  return http.post<FaqPairInfo[]>(`/knowledge/files/${encodeURIComponent(fileId)}/generate-faq`).then((r) => r.data)
+  return http
+    .post<FaqPairInfo[]>(`/knowledge/files/${encodeURIComponent(fileId)}/generate-faq`, undefined, {
+      timeout: FAQ_GENERATION_TIMEOUT_MS,
+    })
+    .then((r) => r.data)
 }
 
 export function fetchFaqs(status?: 'pending' | 'approved' | 'rejected') {

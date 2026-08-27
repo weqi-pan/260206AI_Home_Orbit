@@ -5,10 +5,14 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+BACKEND_DATA_ROOT = REPO_ROOT / "backend" / "data"
+
+
 class Settings(BaseSettings):
     app_name: str = "智能客服系统 API"
     database_url: str = "mysql+pymysql://root:password@localhost:3306/customer_service"
-    sqlite_fallback_url: str = "sqlite:///backend/data/customer_service.db"
+    sqlite_fallback_url: str = f"sqlite:///{(BACKEND_DATA_ROOT / 'customer_service.db').as_posix()}"
     jwt_secret: str = "development-only-change-this-secret"
     access_token_minutes: int = 120
     refresh_token_days: int = 7
@@ -16,10 +20,10 @@ class Settings(BaseSettings):
     admin_initial_password: str = "Admin@123"
     demo_initial_password: str = "Demo@1234"
     cors_origins: str = "http://localhost:5173"
-    usage_csv_path: Path = Path("data/external/records.csv")
-    knowledge_path: Path = Path("data")
-    knowledge_upload_path: Path = Path("backend/data/knowledge")
-    chroma_path: Path = Path("backend/data/chroma")
+    usage_csv_path: Path = REPO_ROOT / "data" / "external" / "records.csv"
+    knowledge_path: Path = REPO_ROOT / "data"
+    knowledge_upload_path: Path = BACKEND_DATA_ROOT / "knowledge"
+    chroma_path: Path = BACKEND_DATA_ROOT / "chroma"
     main_model_name: str = "qwen3-max"
     aux_model_name: str = "qwen-flash"
 

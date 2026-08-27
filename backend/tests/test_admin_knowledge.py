@@ -214,6 +214,31 @@ def test_rebuild_rejects_bootstrap_filename_outside_root_and_reports_vector_fail
         outside.unlink(missing_ok=True)
 
 
+def test_admin_inventory_listing_requires_admin_and_filters_by_model(client, app, settings):
+    token = admin_token(client, settings)
+    user_token = client.post(
+        "/api/auth/login", json={"username": "demo", "password": settings.demo_initial_password}
+    ).json()["access_token"]
+
+    assert client.get("/api/admin/inventory", headers=bearer(user_token)).status_code == 403
+
+    rows = client.get("/api/admin/inventory", headers=bearer(token)).json()
+    assert {(row["model_id"], row["warehouse"]) for row in rows} == {
+        ("R1-Lite", "北京仓"), ("R1-Lite", "上海仓"),
+        ("R1-Pro", "北京仓"), ("R1-Pro", "上海仓"), ("R1-Pro", "广州仓"),
+        ("RT2-Max", "上海仓"), ("RT2-Max", "广州仓"),
+    }
+    assert all(
+        set(row) == {"model_id", "warehouse", "stock", "min_stock", "updated_at"} and row["updated_at"]
+        for row in rows
+    )
+
+    filtered = client.get("/api/admin/inventory", headers=bearer(token), params={"model_id": "R1-Pro"}).json()
+    assert {row["model_id"] for row in filtered} == {"R1-Pro"}
+    assert {row["warehouse"] for row in filtered} == {"北京仓", "上海仓", "广州仓"}
+    assert sorted(row["stock"] for row in filtered) == [12, 18, 32]
+
+
 def test_admin_account_device_inventory_notification_ticket_crud_and_dashboard(client, app, settings):
     token = admin_token(client, settings)
     headers = bearer(token)

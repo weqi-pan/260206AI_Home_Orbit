@@ -29,6 +29,7 @@ data/external/*
 !data/external/records.csv
 data/*.db
 data/*.db-*
+backend/data/
 
 # Vector databases and generated indexes
 chroma_db/
