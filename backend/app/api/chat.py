@@ -1,6 +1,7 @@
 import json
+import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -14,9 +15,37 @@ from backend.app.services.defaults import get_agent_runner, get_followup_service
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+logger = logging.getLogger(__name__)
 AUX_EXECUTOR = ThreadPoolExecutor(max_workers=8)
+TITLE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="chat-title")
 SENTIMENT_DEADLINE_SECONDS = 3.0
 AUX_TIMEOUT_SECONDS = 0.25
+
+_pending_title_futures: set[Future] = set()
+
+
+def pending_title_futures() -> set[Future]:
+    return set(_pending_title_futures)
+
+
+def _update_session_title(app, session_id: str, user_text: str, answer: str, title_service) -> None:
+    try:
+        title = title_service.generate(user_text, answer)
+        if title:
+            with app.state.database.session_factory.begin() as title_db:
+                item = title_db.get(ChatSession, session_id)
+                if item:
+                    item.title = title[:100]
+    except Exception:
+        logger.exception("会话标题生成失败 session_id=%s", session_id)
+
+
+def submit_title_generation(app, session_id: str, user_text: str, answer: str) -> Future | None:
+    title_service = getattr(app.state, "title_service", None) or get_title_service()
+    future = TITLE_EXECUTOR.submit(_update_session_title, app, session_id, user_text, answer, title_service)
+    _pending_title_futures.add(future)
+    future.add_done_callback(_pending_title_futures.discard)
+    return future
 
 
 class SessionCreate(BaseModel):
@@ -141,15 +170,7 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
                 assistant_id = assistant.id
             yield {"event": "sentiment", "data": json.dumps(sentiment, ensure_ascii=False)}
             if previous_count is None:
-                title_service = getattr(request.app.state, "title_service", None) or get_title_service()
-                title_future = AUX_EXECUTOR.submit(title_service.generate, payload.message, answer)
-                try:
-                    title = title_future.result(timeout=AUX_TIMEOUT_SECONDS)
-                except (TimeoutError, Exception):
-                    title = None
-                if title:
-                    with request.app.state.database.session_factory.begin() as title_db:
-                        title_db.get(ChatSession, session_id).title = title[:100]
+                submit_title_generation(request.app, session_id, payload.message, answer)
             followup_service = getattr(request.app.state, "followup_service", None) or get_followup_service()
             followup_future = AUX_EXECUTOR.submit(followup_service.generate, payload.message, answer)
             try:

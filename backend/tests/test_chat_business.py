@@ -44,6 +44,13 @@ class FakeTitle:
         return "设备咨询"
 
 
+def join_title_futures():
+    from backend.app.api.chat import pending_title_futures
+
+    for future in list(pending_title_futures()):
+        future.result(timeout=10)
+
+
 class FailingAfterTokenRunner:
     def __init__(self, with_token=True):
         self.with_token = with_token
@@ -93,6 +100,7 @@ def test_chat_sse_emits_sequence_persists_messages_feedback_and_first_title(clie
         assert [(item.role, item.content) for item in messages] == [("user", "我很不满意"), ("assistant", "您好，已处理")]
         assert messages[0].sentiment == "negative"
         assistant_id = messages[1].id
+        join_title_futures()
         assert session.get(ChatSession, chat_id).title == "设备咨询"
 
     feedback = client.post(
@@ -100,6 +108,65 @@ def test_chat_sse_emits_sequence_persists_messages_feedback_and_first_title(clie
     )
     assert feedback.status_code == 200
     assert feedback.json()["feedback"] == "like"
+
+
+def test_chat_title_generation_is_fire_and_forget_and_updates_session(client, app, settings):
+    from backend.app.db.models import ChatSession
+
+    class SlowTitle:
+        delay = 1.2
+
+        def generate(self, user_text, answer):
+            time.sleep(self.delay)
+            return "慢速生成的标题"
+
+    app.state.agent_runner = FakeAgentRunner()
+    app.state.sentiment_service = FakeSentiment()
+    app.state.followup_service = FakeFollowup()
+    app.state.title_service = SlowTitle()
+    token = login(client, "demo", settings.demo_initial_password)
+    chat_id = client.post("/api/chat/sessions", headers=bearer(token), json={}).json()["id"]
+
+    started = time.monotonic()
+    with client.stream(
+        "POST", f"/api/chat/sessions/{chat_id}/chat", headers=bearer(token), json={"message": "标题测试"}
+    ) as response:
+        body = "\n".join(response.iter_lines())
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 200
+    assert "event: done" in body
+    assert elapsed < SlowTitle.delay
+
+    join_title_futures()
+    with app.state.database.session_factory() as session:
+        assert session.get(ChatSession, chat_id).title == "慢速生成的标题"
+
+
+def test_chat_title_failure_is_swallowed_and_default_title_kept(client, app, settings):
+    from backend.app.db.models import ChatSession
+
+    class FailingTitle:
+        def generate(self, user_text, answer):
+            raise RuntimeError("title service offline")
+
+    app.state.agent_runner = FakeAgentRunner()
+    app.state.sentiment_service = FakeSentiment()
+    app.state.followup_service = FakeFollowup()
+    app.state.title_service = FailingTitle()
+    token = login(client, "demo", settings.demo_initial_password)
+    chat_id = client.post("/api/chat/sessions", headers=bearer(token), json={}).json()["id"]
+
+    with client.stream(
+        "POST", f"/api/chat/sessions/{chat_id}/chat", headers=bearer(token), json={"message": "标题失败"}
+    ) as response:
+        body = "\n".join(response.iter_lines())
+
+    assert response.status_code == 200
+    assert "event: done" in body
+    join_title_futures()
+    with app.state.database.session_factory() as session:
+        assert session.get(ChatSession, chat_id).title == "新对话"
 
 
 def test_chat_runtime_injects_lazy_vector_store_and_rag_has_clear_key_fallback(client, app, settings):
@@ -175,6 +242,7 @@ def test_chat_auxiliary_services_are_bounded_and_sentiment_deadline_starts_with_
     assert elapsed < 4.2
     assert '"label": "neutral"' in response.text
     assert '"questions": []' in response.text
+    join_title_futures()
 
 
 def test_missing_api_key_does_not_block_non_ai_api_and_chat_returns_error(client, settings):
