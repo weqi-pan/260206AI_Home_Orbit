@@ -42,19 +42,34 @@ class ModelAdapter:
         return StreamEvent("text", text=text)
 
     def cancel_active_stream(self, messages, cancel_event) -> None:
-        iterator = self.chat_transport.stream(model=self.model, messages=messages, cancel_event=cancel_event)
-        try:
-            next(iterator)
-            cancel_event.set()
+        outcome = []
+        first_chunk = threading.Event()
+
+        def consume():
+            iterator = self.chat_transport.stream(model=self.model, messages=messages, cancel_event=cancel_event)
             try:
-                next(iterator)
-            except StopIteration:
-                return
-            raise RuntimeError("STREAM_CONTINUED_AFTER_CANCELLATION")
-        finally:
-            close = getattr(iterator, "close", None)
-            if close:
-                close()
+                for _chunk in iterator:
+                    if not first_chunk.is_set():
+                        first_chunk.set()
+                        cancel_event.wait(0.5)
+                    if cancel_event.is_set():
+                        break
+            except Exception as exc:
+                outcome.append(exc)
+            finally:
+                close = getattr(iterator, "close", None)
+                if close:
+                    close()
+
+        worker = threading.Thread(target=consume, name="model-stream-cancel-probe", daemon=True)
+        worker.start()
+        first_chunk.wait(0.05)
+        cancel_event.set()
+        worker.join(timeout=0.5)
+        if worker.is_alive():
+            raise RuntimeError("STREAM_CANCELLATION_TIMEOUT")
+        if outcome:
+            raise outcome[0]
 
     def tool_call(self, messages) -> StreamEvent:
         result = self.chat_transport.generate(
@@ -109,18 +124,27 @@ class LangChainChatTransport:
 
         worker = threading.Thread(target=consume, name="model-stream-reader", daemon=True)
         worker.start()
+
+        def bounded_cancel():
+            operations = []
+            cancel_request = getattr(self.chat_model, "_runtime_cancel", None)
+            close = getattr(iterator, "close", None)
+            for name, operation in (("http", cancel_request), ("iterator", close)):
+                if operation:
+                    thread = threading.Thread(target=operation, name=f"model-stream-close-{name}", daemon=True)
+                    thread.start()
+                    operations.append(thread)
+            deadline = __import__("time").monotonic() + 0.25
+            for thread in operations:
+                thread.join(timeout=max(0, deadline - __import__("time").monotonic()))
+            worker.join(timeout=max(0, deadline - __import__("time").monotonic()))
+            if worker.is_alive() or any(thread.is_alive() for thread in operations):
+                raise RuntimeError("STREAM_CANCELLATION_TIMEOUT")
+
         try:
             while True:
                 if cancel_event.is_set():
-                    cancel_request = getattr(self.chat_model, "_runtime_cancel", None)
-                    if cancel_request:
-                        cancel_request()
-                    close = getattr(iterator, "close", None)
-                    if close:
-                        close()
-                    worker.join(timeout=0.25)
-                    if worker.is_alive():
-                        raise RuntimeError("STREAM_CANCELLATION_TIMEOUT")
+                    bounded_cancel()
                     return
                 try:
                     kind, value = output.get(timeout=0.02)
@@ -135,11 +159,8 @@ class LangChainChatTransport:
                     worker.join(timeout=0.25)
                     return
         finally:
-            if cancel_event.is_set():
-                close = getattr(iterator, "close", None)
-                if close:
-                    close()
-            worker.join(timeout=0.25)
+            if not cancel_event.is_set():
+                worker.join(timeout=0.25)
 
 
 class LangChainEmbeddingTransport:

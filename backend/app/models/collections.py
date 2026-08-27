@@ -52,15 +52,22 @@ class DatabaseCollectionSwitchService:
         self.session.refresh(build)
         return build
 
-    def build(self, build_id: str, rebuild_callback, commit: bool = True) -> EmbeddingCollectionBuild:
+    def build(self, build_id: str, rebuild_callback, commit: bool = True, before_swap=None) -> EmbeddingCollectionBuild:
         build = self.session.get(EmbeddingCollectionBuild, build_id)
+        self.session.commit()
         try:
             store = self.store_factory(build.collection_name, build.model_id)
             rebuild_callback(store)
-        except Exception:
+            build = self.session.get(EmbeddingCollectionBuild, build_id)
+            if before_swap:
+                before_swap(build)
+        except Exception as exc:
+            self.session.rollback()
+            build = self.session.get(EmbeddingCollectionBuild, build_id)
             build.status = "failed"
-            if not build.error_code:
-                build.error_code = "EMBEDDING_REBUILD_FAILED"
+            build.error_code = getattr(exc, "code", None) or "EMBEDDING_REBUILD_FAILED"
+            if getattr(exc, "evidence", None) is not None:
+                build.evidence_json = json.dumps(exc.evidence, sort_keys=True)
             self.session.commit()
             raise
         pointer = self.session.get(ActiveEmbeddingCollection, "knowledge")

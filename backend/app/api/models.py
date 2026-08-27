@@ -14,6 +14,7 @@ from backend.app.models.endpoint_security import UnsafeEndpointUrl, validate_end
 from backend.app.models.quotas import QuotaService
 from backend.app.models.registry import BindingRejected, ModelRegistry, RegistryValidationError
 from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
+from backend.app.models.source_snapshot import EmbeddingSourceIncomplete, EmbeddingSourceSnapshotStale, capture_embedding_sources
 from backend.app.models.schemas import EndpointCreate, EndpointUpdate, ModelCreate, ModelUpdate, PurposeBindingRequest, QuotaRequest
 
 
@@ -167,34 +168,13 @@ def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request,
         if purpose == "embedding":
             from backend.app.api.knowledge import _knowledge_file_path
             from backend.rag.vector_store import VectorStoreService
-            active_knowledge = db.scalars(select(KnowledgeFile).where(KnowledgeFile.status == "active")).all()
-            files = []
-            missing_file_ids = []
-            for knowledge in active_knowledge:
-                path = _knowledge_file_path(request.app.state.settings, knowledge)
-                try:
-                    supported = path and path.is_file() and path.suffix.lower() in {".pdf", ".txt"}
-                    if supported:
-                        with path.open("rb") as source:
-                            source.read(1)
-                except (OSError, PermissionError):
-                    supported = False
-                if not supported:
-                    missing_file_ids.append(knowledge.id)
-                else:
-                    files.append((knowledge.id, path, knowledge.filename))
-            approved_faqs = db.scalars(select(FaqPair).where(FaqPair.status == "approved")).all()
-            faqs = [(item.id, item.question, item.answer, item.source_file_id) for item in approved_faqs]
-            evidence = {
-                "expected_file_count": len(active_knowledge), "included_file_count": len(files),
-                "expected_faq_count": len(approved_faqs), "included_faq_count": len(faqs),
-                "included_file_ids": sorted(item[0] for item in files), "missing_file_ids": sorted(missing_file_ids),
-                "included_faq_ids": sorted(item[0] for item in faqs),
-            }
             switch = DatabaseCollectionSwitchService(db, getattr(request.app.state, "embedding_store_factory", None))
-            if missing_file_ids:
-                switch.fail(model.id, "EMBEDDING_SOURCE_INCOMPLETE", evidence)
+            try:
+                snapshot = capture_embedding_sources(db, request.app.state.settings, _knowledge_file_path, lock=True)
+            except EmbeddingSourceIncomplete as exc:
+                switch.fail(model.id, "EMBEDDING_SOURCE_INCOMPLETE", exc.evidence)
                 raise HTTPException(status_code=409, detail={"code": "EMBEDDING_SOURCE_INCOMPLETE"})
+            db.commit()
             factory = getattr(request.app.state, "embedding_store_factory", None)
             if factory is None:
                 embeddings = ModelRuntimeService(db).build_embeddings_for_model(model)
@@ -204,11 +184,24 @@ def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request,
                     persist_directory=str(request.app.state.settings.chroma_path),
                 )
             switch = DatabaseCollectionSwitchService(db, factory)
-            build = switch.prepare(model.id, evidence)
-            switch.build(build.id, lambda store: VectorStoreService(vector_store=store).rebuild(files=files, faqs=faqs), commit=False)
+            build = switch.prepare(model.id, snapshot.evidence)
+
+            def compare_before_swap(current_build):
+                db.expire_all()
+                current = capture_embedding_sources(db, request.app.state.settings, _knowledge_file_path, lock=True)
+                evidence = json.loads(current_build.evidence_json)
+                evidence["final_source_snapshot_token"] = current.token
+                if current.token != snapshot.token:
+                    raise EmbeddingSourceSnapshotStale(evidence)
+                current_build.evidence_json = json.dumps(evidence, sort_keys=True)
+
+            switch.build(build.id, lambda store: VectorStoreService(vector_store=store).rebuild(
+                files=snapshot.files, faqs=snapshot.faqs), commit=False, before_swap=compare_before_swap)
         item = registry.bind(purpose, payload.model_id)
     except HTTPException:
         raise
+    except EmbeddingSourceSnapshotStale as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     except BindingRejected as exc: raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
     except ModelRuntimeError as exc: raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
     except Exception as exc: raise HTTPException(status_code=503, detail={"code": "EMBEDDING_REBUILD_FAILED"}) from exc
