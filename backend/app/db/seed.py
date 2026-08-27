@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
 from backend.app.core.security import hash_password
-from backend.app.db.models import Account, Device, DeviceUsageRecord, Inventory, KnowledgeFile, User
+from backend.app.db.models import Account, Device, DeviceUsageRecord, Household, HouseholdMember, Inventory, KnowledgeFile, User
 
 
 DEVICES = [
@@ -29,20 +29,33 @@ def _seed_accounts(session: Session, settings: Settings) -> None:
         user = User(user_id="1001", username="演示用户", city="上海")
         session.add(user)
         session.flush()
-    if not session.scalar(select(Account).where(Account.username == "admin")):
-        session.add(Account(
+    admin = session.scalar(select(Account).where(Account.username == "admin"))
+    if not admin:
+        admin = Account(
             username="admin",
             password_hash=hash_password(settings.admin_initial_password, settings.bcrypt_rounds),
             role="admin",
             must_change_password=True,
-        ))
-    if not session.scalar(select(Account).where(Account.username == "demo")):
-        session.add(Account(
+        )
+        session.add(admin)
+        session.flush()
+    demo = session.scalar(select(Account).where(Account.username == "demo"))
+    if not demo:
+        demo = Account(
             username="demo",
             password_hash=hash_password(settings.demo_initial_password, settings.bcrypt_rounds),
             role="user",
             user_id="1001",
-        ))
+        )
+        session.add(demo)
+        session.flush()
+    for account in (admin, demo):
+        if session.scalar(select(HouseholdMember).where(HouseholdMember.account_id == account.id)):
+            continue
+        household = Household(name=f"{account.username}的家庭", created_by_account_id=account.id)
+        session.add(household)
+        session.flush()
+        session.add(HouseholdMember(household_id=household.id, account_id=account.id, role="owner"))
 
 
 def _seed_devices(session: Session) -> None:

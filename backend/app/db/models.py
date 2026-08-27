@@ -170,3 +170,12 @@ class ConversationHistory(Base):
     sentiment_score: Mapped[float | None] = mapped_column(Float)
     feedback: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+# Staged V2 compatibility exports. New domains live in focused modules while
+# existing V1 imports continue to use backend.app.db.models.
+from backend.app.db.household_models import Household, HouseholdMember, HouseholdPreference, Invitation  # noqa: E402,F401
+from backend.app.db.platform_models import (  # noqa: E402,F401
+    AgentDefinition, AgentDeployment, AgentRun, AgentVersion, LlmCredential, LlmEndpoint,
+    LlmModel, ModelPurposeBinding, Notification, Skill, SkillVersion, ToolExecution,
+)

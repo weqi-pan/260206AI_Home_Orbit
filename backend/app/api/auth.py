@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.security import create_token, get_current_account, get_db, hash_password, verify_password
-from backend.app.db.models import Account, User
+from backend.app.db.models import Account, Household, HouseholdMember, User
 from backend.app.schemas.auth import AccessToken, AccountResponse, LoginRequest, PasswordRequest, RefreshRequest, RegisterRequest, TokenPair
 
 
@@ -40,6 +40,11 @@ def register(payload: RegisterRequest, request: Request, session: Session = Depe
         account = Account(username=payload.username, password_hash=password_hash, user_id=user_id)
         session.add_all([user, account])
         try:
+            session.flush()
+            household = Household(name=f"{payload.username}的家庭", created_by_account_id=account.id)
+            session.add(household)
+            session.flush()
+            session.add(HouseholdMember(household_id=household.id, account_id=account.id, role="owner"))
             session.commit()
         except IntegrityError as exc:
             session.rollback()

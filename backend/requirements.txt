@@ -14,6 +14,7 @@ fastapi==0.116.1
 uvicorn[standard]>=0.35.0,<0.36
 sse-starlette>=3.0.2,<4
 sqlalchemy>=2.0.36,<2.1
+alembic>=1.16.5,<2
 pymysql>=1.1.2,<2
 cryptography>=45.0.0,<46
 bcrypt>=4.3.0,<5
