@@ -9,8 +9,8 @@ def settings(tmp_path: Path):
     from backend.app.core.config import Settings
 
     return Settings(
+        app_mode="test",
         database_url=f"sqlite:///{tmp_path / 'test.db'}",
-        sqlite_fallback_url=f"sqlite:///{tmp_path / 'fallback.db'}",
         jwt_secret="test-secret-with-sufficient-length",
         admin_initial_password="AdminTest@123",
         demo_initial_password="DemoTest@123",

@@ -76,7 +76,8 @@ cd ..
 uvicorn backend.app.main:app --reload --port 8000
 ```
 
-- 无 MySQL 时自动降级 SQLite（`backend/data/customer_service.db`），功能完全一致。
+- `APP_MODE=production` 强制使用 MySQL，连接或迁移失败时启动失败，不会自动切换数据库。
+- 单进程本地预览可显式设置 `APP_MODE=preview` 与 SQLite `DATABASE_URL`；pytest 使用 `APP_MODE=test`。
 - Swagger：http://localhost:8000/docs ；健康检查：`GET /health`。
 
 前端：
@@ -120,8 +121,8 @@ SSE 事件序列：`token`（增量输出）→ `tool`（工具状态）→ `sen
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `DASHSCOPE_API_KEY` | 无 | 通义千问 API Key；缺失时启动仅告警，AI 功能（聊天/情绪/标题/摘要/FAQ/向量检索）不可用，非 AI 接口正常 |
-| `DATABASE_URL` | `mysql+pymysql://root:password@localhost:3306/customer_service` | 主数据库；连接失败自动降级 SQLite |
-| `SQLITE_FALLBACK_URL` | `sqlite:///backend/data/customer_service.db` | SQLite 兜底库位置 |
+| `APP_MODE` | `production` | `production` 强制 MySQL 与 Alembic head；`preview`/`test` 才允许显式 SQLite |
+| `DATABASE_URL` | `mysql+pymysql://root:password@localhost:3306/customer_service` | 数据库连接；不会因连接失败自动切换 |
 | `JWT_SECRET` | 开发默认值（告警） | JWT 签名密钥，生产必须设置 |
 | `ADMIN_INITIAL_PASSWORD` | `Admin@123` | admin 种子初始密码 |
 | `DEMO_INITIAL_PASSWORD` | `Demo@1234` | demo 种子初始密码 |
@@ -137,8 +138,8 @@ SSE 事件序列：`token`（增量输出）→ `tool`（工具状态）→ `sen
 **Docker 下 SSE 消息不流式/卡住**
 nginx 已对 `/api` 设置 `proxy_buffering off`、`proxy_read_timeout 3600s` 与 HTTP/1.1 长连接；若自建反向代理，需做同样配置（后端响应亦携带 `X-Accel-Buffering: no`）。
 
-**不想装 MySQL**
-不设置 `DATABASE_URL`（或 MySQL 不可达）时后端自动降级 SQLite，日志输出“MySQL 连接失败，自动降级 SQLite”。
+**本地单进程预览不想安装 MySQL**
+显式设置 `APP_MODE=preview` 和 `DATABASE_URL=sqlite:///backend/data/customer_service.db`。该模式仅用于预览，不运行 Celery；完整部署必须使用 MySQL 并先执行 Alembic migration。
 
 **admin 首次登录被要求改密**
 种子账号带 `must_change_password` 标记，登录后前端强制跳转改密页；修改成功后恢复正常。

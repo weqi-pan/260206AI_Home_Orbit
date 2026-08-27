@@ -27,9 +27,10 @@ def test_create_all_covers_planned_schema(settings):
     assert EXPECTED_TABLES <= set(inspect(database.engine).get_table_names())
 
 
-def test_mysql_url_uses_utf8mb4_and_connection_failure_falls_back_to_sqlite(settings, monkeypatch):
+def test_production_mysql_connection_failure_is_not_hidden_by_sqlite_fallback(settings):
     from backend.app.db.session import create_database
 
+    settings.app_mode = "production"
     settings.database_url = "mysql+pymysql://user:password@127.0.0.1:1/customer_service"
     attempted_urls = []
 
@@ -37,11 +38,10 @@ def test_mysql_url_uses_utf8mb4_and_connection_failure_falls_back_to_sqlite(sett
         attempted_urls.append(str(url))
         raise OSError("mysql unavailable")
 
-    database = create_database(settings, mysql_probe=fail_mysql)
+    with pytest.raises(OSError, match="mysql unavailable"):
+        create_database(settings, mysql_probe=fail_mysql)
 
     assert "charset=utf8mb4" in attempted_urls[0]
-    assert database.is_fallback is True
-    assert database.engine.url.drivername == "sqlite"
 
 
 @pytest.mark.parametrize(
@@ -51,14 +51,14 @@ def test_mysql_url_uses_utf8mb4_and_connection_failure_falls_back_to_sqlite(sett
         OperationalError("connect", {}, TimeoutError("connection timed out")),
     ],
 )
-def test_mysql_operational_connectivity_errors_fall_back(settings, error):
+def test_production_mysql_operational_connectivity_errors_fail_fast(settings, error):
     from backend.app.db.session import create_database
 
     settings.database_url = "mysql+pymysql://user:password@db/customer_service"
+    settings.app_mode = "production"
 
-    database = create_database(settings, mysql_probe=lambda _url: (_ for _ in ()).throw(error))
-
-    assert database.is_fallback is True
+    with pytest.raises(OperationalError):
+        create_database(settings, mysql_probe=lambda _url: (_ for _ in ()).throw(error))
 
 
 @pytest.mark.parametrize(
@@ -74,6 +74,7 @@ def test_mysql_non_connectivity_errors_are_not_hidden_by_fallback(settings, erro
     from backend.app.db.session import create_database
 
     settings.database_url = "mysql+pymysql://user:password@db/customer_service"
+    settings.app_mode = "production"
 
     with pytest.raises(type(error)):
         create_database(settings, mysql_probe=lambda _url: (_ for _ in ()).throw(error))
@@ -91,25 +92,34 @@ def test_sqlite_engine_creates_missing_parent_directory(settings, tmp_path):
     assert database_path.exists()
 
 
+def test_production_mode_rejects_sqlite_database(settings):
+    from backend.app.db.session import create_database
+
+    settings.app_mode = "production"
+
+    with pytest.raises(RuntimeError, match="production mode requires MySQL"):
+        create_database(settings)
+
+
+def test_startup_rejects_database_without_required_alembic_revision(settings):
+    from backend.app.db.session import create_database, require_database_revision
+
+    database = create_database(settings)
+
+    with pytest.raises(RuntimeError, match="database migrations are not at required revision"):
+        require_database_revision(database.engine)
+
+
 def test_default_settings_paths_are_absolute_and_do_not_create_nested_backend(tmp_path, monkeypatch):
     from pathlib import Path
 
-    from sqlalchemy.engine import make_url
-
     from backend.app.core.config import Settings
-    from backend.app.db.session import _engine
 
     monkeypatch.chdir(tmp_path)
     settings = Settings()
 
     assert Path(settings.knowledge_upload_path).is_absolute()
     assert Path(settings.chroma_path).is_absolute()
-    fallback_db = Path(make_url(settings.sqlite_fallback_url).database)
-    assert fallback_db.is_absolute()
-    assert fallback_db.match("*backend/data/customer_service.db")
-
-    _engine(settings.sqlite_fallback_url)
-
     assert not (tmp_path / "backend").exists()
 
 
@@ -157,16 +167,17 @@ def test_seed_does_not_overwrite_existing_device_or_inventory(settings):
         assert (inventory.stock, inventory.min_stock) == (999, 42)
 
 
-def test_fallback_database_can_create_tables_and_seed(settings):
+def test_preview_mode_uses_explicit_sqlite_database_and_can_seed(settings):
     from backend.app.db.models import Account
     from backend.app.db.seed import seed_database
     from backend.app.db.session import create_database
 
-    settings.database_url = "mysql+pymysql://user:password@db/customer_service"
-    database = create_database(settings, mysql_probe=lambda _url: (_ for _ in ()).throw(OSError("unreachable")))
+    settings.app_mode = "preview"
+    database = create_database(settings)
     database.create_all()
     seed_database(database.session_factory, settings)
 
+    assert database.engine.url.drivername == "sqlite"
     assert EXPECTED_TABLES <= set(inspect(database.engine).get_table_names())
     with database.session_factory() as session:
         assert {account.username for account in session.scalars(select(Account))} == {"admin", "demo"}

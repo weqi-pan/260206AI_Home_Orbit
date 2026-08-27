@@ -28,6 +28,9 @@ const input = ref('')
 const sending = ref(false)
 const listLoading = ref(false)
 const scrollRef = ref<HTMLElement | undefined>()
+const sessionDrawerOpen = ref(false)
+const sessionDrawerTrigger = ref<HTMLButtonElement>()
+const sessionDrawerClose = ref<HTMLButtonElement>()
 let abortController: AbortController | null = null
 
 const activeSession = computed(() => sessions.value.find((item) => item.id === activeId.value) ?? null)
@@ -69,13 +72,27 @@ async function refreshSessions() {
 }
 
 async function selectSession(id: string) {
-  if (id === activeId.value) return
-  abortStreaming()
-  activeId.value = id
-  followups.value = []
-  toolEvents.value = []
-  messages.value = (await listMessages(id)).map(toUiMessage)
-  await scrollBottom()
+  if (id !== activeId.value) {
+    abortStreaming()
+    activeId.value = id
+    followups.value = []
+    toolEvents.value = []
+    messages.value = (await listMessages(id)).map(toUiMessage)
+    await scrollBottom()
+  }
+  if (sessionDrawerOpen.value) closeSessionDrawer()
+}
+
+async function openSessionDrawer() {
+  sessionDrawerOpen.value = true
+  await nextTick()
+  sessionDrawerClose.value?.focus()
+}
+
+async function closeSessionDrawer() {
+  sessionDrawerOpen.value = false
+  await nextTick()
+  sessionDrawerTrigger.value?.focus()
 }
 
 async function handleNewSession() {
@@ -223,10 +240,18 @@ onMounted(() => {
 
 <template>
   <div class="chat-page">
-    <aside v-loading="listLoading" class="sessions-panel">
+    <button ref="sessionDrawerTrigger" class="session-drawer-trigger" type="button" aria-label="打开会话列表" @click="openSessionDrawer">会话</button>
+    <div v-if="sessionDrawerOpen" class="drawer-backdrop" @click="closeSessionDrawer"></div>
+    <aside
+      v-loading="listLoading"
+      :class="['sessions-panel', { 'drawer-open': sessionDrawerOpen }]"
+      :role="sessionDrawerOpen ? 'dialog' : undefined"
+      :aria-label="sessionDrawerOpen ? '会话列表' : undefined"
+      :aria-modal="sessionDrawerOpen ? 'true' : undefined"
+    >
       <div class="sessions-head">
         <span class="sessions-title">会话列表</span>
-        <el-button type="primary" size="small" :icon="Plus" @click="handleNewSession()">新建</el-button>
+        <div><button v-if="sessionDrawerOpen" ref="sessionDrawerClose" class="drawer-close" type="button" aria-label="关闭会话列表" @click="closeSessionDrawer">关闭</button><el-button type="primary" size="small" :icon="Plus" @click="handleNewSession()">新建</el-button></div>
       </div>
       <div class="session-list">
         <div
@@ -234,7 +259,12 @@ onMounted(() => {
           :key="item.id"
           class="session-item"
           :class="{ active: item.id === activeId }"
+          :data-session-id="item.id"
+          role="button"
+          tabindex="0"
           @click="selectSession(item.id)"
+          @keydown.enter.prevent="selectSession(item.id)"
+          @keydown.space.prevent="selectSession(item.id)"
         >
           <span class="session-name" :title="item.title">{{ item.title }}</span>
           <el-icon class="session-delete" title="删除会话" @click.stop="handleDeleteSession(item.id)"><Delete /></el-icon>
@@ -292,6 +322,7 @@ onMounted(() => {
 
 <style scoped>
 .chat-page {
+  position: relative;
   display: flex;
   height: 100%;
   background: #fff;
@@ -299,6 +330,9 @@ onMounted(() => {
   overflow: hidden;
   box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
 }
+.session-drawer-trigger { display: none; }
+.drawer-close { min-height: 32px; margin-right: 6px; border: 0; color: var(--orbit-violet); background: transparent; }
+.drawer-backdrop { display: none; }
 
 .sessions-panel {
   display: flex;
@@ -422,5 +456,12 @@ onMounted(() => {
 .send-button {
   flex-shrink: 0;
   height: 54px;
+}
+@media (max-width: 760px) {
+  .session-drawer-trigger { position: absolute; z-index: 3; top: 8px; left: 10px; display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; border: 1px solid #cbc8dc; border-radius: 10px; background: var(--surface-white); }
+  .sessions-panel { position: fixed; z-index: 50; top: 0; bottom: 0; left: 0; width: min(86vw, 320px); background: white; transform: translateX(-105%); transition: transform .18s ease; }
+  .sessions-panel.drawer-open { transform: translateX(0); }
+  .drawer-backdrop { position: fixed; z-index: 49; inset: 0; display: block; background: rgba(33, 29, 79, .42); }
+  .chat-header { padding-left: 76px; }
 }
 </style>

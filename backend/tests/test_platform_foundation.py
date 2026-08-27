@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -153,6 +154,79 @@ def test_v2_schema_domains_and_alembic_version_table_exist(settings):
         "household_tasks",
         "notifications",
     } <= tables
+
+
+def test_tenant_tables_have_non_nullable_household_ownership_path():
+    from backend.app.db.models import Base
+
+    platform_global = {
+        "accounts", "users", "devices", "inventory", "knowledge_files", "faq_pairs",
+        "llm_endpoints", "llm_credentials", "llm_models", "model_purpose_bindings",
+        "model_health_checks", "tool_definitions",
+    }
+    tenant_tables = {
+        "household_preferences", "invitations", "model_grants", "usage_quotas", "tool_permissions",
+        "skills", "skill_versions", "skill_knowledge_assets", "agent_definitions", "agent_versions",
+        "agent_skill_bindings", "agent_tool_bindings", "agent_deployments", "agent_installations",
+        "installation_permissions", "favorites", "creator_drafts", "review_submissions", "review_checks",
+        "review_decisions", "reports", "agent_runs", "tool_executions", "approval_requests",
+        "household_tasks", "task_schedules", "notifications", "notification_reads",
+    }
+    tables = Base.metadata.tables
+
+    def reaches_household(table_name: str, seen: set[str] | None = None) -> bool:
+        if table_name == "households":
+            return True
+        seen = (seen or set()) | {table_name}
+        for fk in tables[table_name].foreign_keys:
+            if fk.parent.nullable or fk.column.table.name in seen:
+                continue
+            if reaches_household(fk.column.table.name, seen):
+                return True
+        return False
+
+    assert platform_global.isdisjoint(tenant_tables)
+    assert tenant_tables <= set(tables)
+    assert {name for name in tenant_tables if not reaches_household(name)} == set()
+
+
+def test_version_and_deployment_relationship_constraints_are_enforced():
+    from backend.app.db.models import Base
+
+    tables = Base.metadata.tables
+    skill_unique = {tuple(column.name for column in constraint.columns) for constraint in tables["skill_versions"].constraints if hasattr(constraint, "columns")}
+    agent_unique = {tuple(column.name for column in constraint.columns) for constraint in tables["agent_versions"].constraints if hasattr(constraint, "columns")}
+    deployment_fks = {(fk.parent.name, fk.column.table.name, fk.column.name) for fk in tables["agent_deployments"].foreign_keys}
+
+    assert ("skill_id", "version") in skill_unique
+    assert ("agent_id", "version") in agent_unique
+    assert ("household_id", "households", "id") in deployment_fks
+    assert ("agent_version_id", "agent_versions", "id") in deployment_fks
+    assert tables["agent_deployments"].c.household_id.nullable is False
+
+
+def test_empty_database_upgrades_through_frozen_alembic_chain(tmp_path):
+    database_path = tmp_path / "alembic-empty.db"
+    environment = {**os.environ, "ALEMBIC_DATABASE_URL": f"sqlite:///{database_path}"}
+
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "-c", "backend/alembic.ini", "upgrade", "head"],
+        cwd=Path(__file__).parents[2],
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    from sqlalchemy import create_engine
+    engine = create_engine(f"sqlite:///{database_path}")
+    inspector = inspect(engine)
+    assert inspector.get_table_names()
+    assert inspector.get_columns("agent_deployments")
+    assert next(column for column in inspector.get_columns("agent_deployments") if column["name"] == "household_id")["nullable"] is False
+    assert {foreign_key["referred_table"] for foreign_key in inspector.get_foreign_keys("agent_deployments")} == {"households", "agent_versions"}
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "20260827_0001"
 
 
 def test_reset_script_requires_explicit_confirmation(tmp_path):

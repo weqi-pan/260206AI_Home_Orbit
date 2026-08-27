@@ -8,7 +8,7 @@ from sqlalchemy import select
 from backend.app.api import admin, auth, chat, devices, home, households, knowledge, setup, tickets
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.seed import seed_database
-from backend.app.db.session import create_database
+from backend.app.db.session import create_database, require_database_revision
 from backend.app.services.ticket_summary import TicketSummaryService
 from backend.rag.vector_store import VectorStoreService, VectorStoreUnavailable
 
@@ -49,7 +49,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         database = create_database(app_settings)
-        database.create_all()
+        if app_settings.app_mode in {"test", "preview"}:
+            database.create_all()
+        else:
+            require_database_revision(database.engine)
         seed_database(database.session_factory, app_settings)
         app.state.database = database
         app.state.settings = app_settings

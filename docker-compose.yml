@@ -27,7 +27,7 @@ services:
     container_name: ai-customer-service-backend
     environment:
       DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:-change-me}@mysql:3306/customer_service
-      SQLITE_FALLBACK_URL: sqlite:///backend/data/customer_service.db
+      APP_MODE: production
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-development-only-change-this-secret}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-Admin@123}
@@ -39,6 +39,7 @@ services:
     volumes:
       - backend-data:/app/backend/data
     restart: unless-stopped
+    command: ["sh", "-c", "python -m alembic -c backend/alembic.ini upgrade head && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"]
 
   frontend:
     build:

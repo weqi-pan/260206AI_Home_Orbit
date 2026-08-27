@@ -63,11 +63,17 @@ onMounted(async () => {
       </section>
     </div>
 
-    <div class="orbit-stage" aria-hidden="true">
-      <div class="orbit orbit-outer"></div>
-      <div class="orbit orbit-inner"></div>
-      <span v-for="(node, index) in nodes" :key="node.id" :class="['visual-node', `node-${index + 1}`, `is-${node.status}`]"></span>
-      <div class="orbit-core"><span>HOME</span><strong>ORBIT</strong></div>
+    <div class="orbit-stage">
+      <div class="orbit orbit-outer" aria-hidden="true"></div>
+      <div class="orbit orbit-inner" aria-hidden="true"></div>
+      <router-link
+        v-for="(node, index) in nodes"
+        :key="node.id"
+        :to="node.href"
+        :aria-label="`${node.label}：${node.detail}`"
+        :class="['visual-node', `node-${index + 1}`, `is-${node.status}`]"
+      />
+      <div class="orbit-core" aria-hidden="true"><span>HOME</span><strong>ORBIT</strong></div>
     </div>
   </section>
 </template>
@@ -109,6 +115,7 @@ h1 { max-width: 650px; margin: 0; font-family: var(--font-display); font-size: c
 .orbit-core span { font: 11px var(--font-utility); letter-spacing: .25em; }
 .orbit-core strong { font: 28px var(--font-display); }
 .visual-node { position: absolute; z-index: 2; width: 24px; height: 24px; border: 6px solid var(--surface-white); border-radius: 50%; background: var(--orbit-violet); box-shadow: 0 0 0 2px var(--orbit-violet); }
+.visual-node:focus-visible { outline: 4px solid var(--charge-coral); outline-offset: 7px; }
 .visual-node.is-attention { background: var(--charge-coral); box-shadow: 0 0 0 2px var(--charge-coral); }
 .node-1 { top: 21%; left: 17%; }.node-2 { right: 9%; bottom: 27%; }
 @media (max-width: 900px) { .home-page { display: block; }.home-copy { padding: 32px 20px 120px; }.orbit-stage { position: absolute; top: 110px; right: -280px; width: 520px; min-height: 520px; opacity: .22; }.home-copy > * { position: relative; z-index: 2; } }

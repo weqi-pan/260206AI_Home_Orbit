@@ -1,6 +1,7 @@
 import logging
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -11,8 +12,8 @@ BACKEND_DATA_ROOT = REPO_ROOT / "backend" / "data"
 
 class Settings(BaseSettings):
     app_name: str = "智能客服系统 API"
+    app_mode: Literal["production", "preview", "test"] = "production"
     database_url: str = "mysql+pymysql://root:password@localhost:3306/customer_service"
-    sqlite_fallback_url: str = f"sqlite:///{(BACKEND_DATA_ROOT / 'customer_service.db').as_posix()}"
     jwt_secret: str = "development-only-change-this-secret"
     access_token_minutes: int = 120
     refresh_token_days: int = 7
