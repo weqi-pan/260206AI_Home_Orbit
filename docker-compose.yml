@@ -1,0 +1,56 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: ai-customer-service-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root}
+      MYSQL_DATABASE: customer_service
+      MYSQL_USER: customer_service
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change-me}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+    volumes:
+      - mysql-data:/var/lib/mysql
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ai-customer-service-backend
+    environment:
+      DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:-change-me}@mysql:3306/customer_service
+      SQLITE_FALLBACK_URL: sqlite:///backend/data/customer_service.db
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-development-only-change-this-secret}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-Admin@123}
+      DEMO_INITIAL_PASSWORD: ${DEMO_INITIAL_PASSWORD:-Demo@1234}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - backend-data:/app/backend/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: ai-customer-service-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  backend-data:
