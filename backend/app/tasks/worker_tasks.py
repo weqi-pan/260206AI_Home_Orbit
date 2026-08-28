@@ -57,6 +57,23 @@ def sandbox_trial(definition, household_id, draft_id):
                 {"definition": definition}, household_id=household_id)
 
 
+def sandbox_trial_run(draft_id, report_id, household_id, principal_id, granted_tool_keys):
+    """Celery entrypoint used by the API in full-deployment mode."""
+    payload = {"draft_id": draft_id, "report_id": report_id, "household_id": household_id,
+               "principal_id": principal_id, "granted_tool_keys": granted_tool_keys}
+    return _run("creator.sandbox_trial", f"sandbox-trial:{draft_id}:{report_id}", payload,
+                household_id=household_id)
+
+
+def dispatch_sandbox_trial(draft_id, report_id, household_id, principal_id, granted_tool_keys):
+    """Submit the trial to the broker; never blocks the API request."""
+    from backend.app.tasks.celery_app import create_celery_app
+
+    create_celery_app().send_task("tasks.sandbox-trial-run", kwargs={
+        "draft_id": draft_id, "report_id": report_id, "household_id": household_id,
+        "principal_id": principal_id, "granted_tool_keys": granted_tool_keys})
+
+
 def register_tasks(app):
     app.task(name="tasks.reminders-dispatch")(reminders_dispatch)
     app.task(name="tasks.process-retries")(process_retries)
@@ -64,4 +81,5 @@ def register_tasks(app):
     app.task(name="tasks.knowledge-vectorize")(knowledge_vectorize)
     app.task(name="tasks.faq-generate")(faq_generate)
     app.task(name="tasks.sandbox-trial")(sandbox_trial)
+    app.task(name="tasks.sandbox-trial-run")(sandbox_trial_run)
     return app

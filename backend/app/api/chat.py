@@ -13,7 +13,6 @@ from sse_starlette.sse import EventSourceResponse
 from backend.app.core.security import get_current_account, get_db
 from backend.app.db.models import Account, AgentDefinition, AgentDeployment, AgentInstallation, AgentRun, AgentVersion, ChatSession, ConversationHistory, HouseholdMember, Ticket, ToolDefinition, ToolPermission
 from backend.agent.platform.context import RunBudget, RunContext
-from backend.agent.tools.gateways import ToolCapabilities, ToolRepositories
 from backend.agent.tools.household_gateways import HouseholdToolRepositories
 from backend.agent.platform.runner import DeploymentAgentRunner
 from backend.app.services.defaults import get_agent_runner, get_followup_service, get_sentiment_service, get_title_service
@@ -225,7 +224,7 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
     history = db.scalars(select(ConversationHistory).where(ConversationHistory.session_id == session_id).order_by(ConversationHistory.id)).all()
     messages = [{"role": item.role, "content": item.content} for item in history]
     context = {"account_id": account.id, "user_id": account.user_id, "city": account.user.city if account.user else None,
-                "session_id": session_id, "repositories": ToolCapabilities.bind(HouseholdToolRepositories(request.app.state.database.session_factory)),
+                "session_id": session_id, "repositories": HouseholdToolRepositories(request.app.state.database.session_factory),
                 "vector_store_service": request.app.state.vector_store_service}
     if enforce_runtime:
         context["model_resolver"] = purpose_model_resolver(request.app.state.database.session_factory, household_id)
@@ -279,7 +278,7 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
             model_snapshot=json.loads(run.model_snapshot_json), compiled_snapshot=compiled_snapshot,
             skill_version_ids=tuple(item["id"] for item in compiled_snapshot["skills"]),
             city=account.user.city if account.user else None,
-            repositories=ToolCapabilities.bind(HouseholdToolRepositories(request.app.state.database.session_factory)),
+            repositories=HouseholdToolRepositories(request.app.state.database.session_factory),
             vector_store_service=request.app.state.vector_store_service,
             budget=RunBudget(
                 max_delegation_depth=int(compiled_snapshot["budget"].get("delegation_depth", 4)),

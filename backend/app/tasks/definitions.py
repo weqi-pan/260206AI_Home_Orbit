@@ -72,7 +72,13 @@ def notifications_dispatch(session, payload, record):
 
 
 def knowledge_vectorize(session, payload, record):
-    """知识向量化：把已激活知识文件补偿进家庭隔离向量集合。"""
+    """知识向量化：官方知识文件或创作器草稿知识资产进入家庭隔离向量集合。
+
+    创作器资产带 household + skill_version 元数据，与官方/其他家庭检索隔离。
+    """
+    creator_asset_id = payload.get("creator_asset_id")
+    if creator_asset_id:
+        return _vectorize_creator_asset(session, payload, record)
     from backend.rag.vector_store import VectorStoreUnavailable
 
     from backend.app.core.config import get_settings
@@ -87,6 +93,7 @@ def knowledge_vectorize(session, payload, record):
     from backend.rag.vector_store import configured_vector_store
 
     service = configured_vector_store(database.session_factory, settings.chroma_path)
+
     from backend.app.api.knowledge import _knowledge_file_path, official_knowledge_skill_version
 
     path = _knowledge_file_path(settings, item)
@@ -100,6 +107,38 @@ def knowledge_vectorize(session, payload, record):
     except VectorStoreUnavailable as exc:
         raise _transient("VECTOR_STORE_UNAVAILABLE") from exc
     return {"file_id": item.id, "filename": item.filename}
+
+
+def _vectorize_creator_asset(session, payload, record):
+    """创作器知识资产向量化：路径由资产行给出，向量元数据带家庭与技能版本。"""
+    from pathlib import Path
+
+    from backend.rag.vector_store import VectorStoreUnavailable, configured_vector_store
+
+    from backend.app.core.config import get_settings
+    from backend.app.creator.knowledge import CreatorKnowledgeService
+    from backend.app.db.models import CreatorKnowledgeAsset
+    from backend.app.db.session import create_database
+
+    asset = session.get(CreatorKnowledgeAsset, payload.get("creator_asset_id"))
+    if asset is None or asset.status != "active" or asset.scan_status != "passed":
+        raise _permanent("KNOWLEDGE_ASSET_NOT_READY")
+    skill_version_id = payload.get("skill_version_id")
+    if not skill_version_id:
+        raise _permanent("KNOWLEDGE_SKILL_VERSION_REQUIRED")
+    settings = get_settings()
+    service = configured_vector_store(create_database(settings).session_factory, settings.chroma_path)
+    path = Path(settings.knowledge_upload_path) / "creator" / asset.household_id / f"{asset.id}{asset.file_type}"
+    if not path.exists():
+        raise _permanent("KNOWLEDGE_SOURCE_MISSING")
+    try:
+        if not service.has_file(asset.id):
+            service.add_file(asset.id, path, asset.filename, household_id=asset.household_id,
+                             skill_version_id=skill_version_id)
+    except VectorStoreUnavailable as exc:
+        raise _transient("VECTOR_STORE_UNAVAILABLE") from exc
+    CreatorKnowledgeService(session, asset.household_id, settings.knowledge_upload_path)
+    return {"creator_asset_id": asset.id, "skill_version_id": skill_version_id}
 
 
 def faq_generate(session, payload, record):
@@ -146,15 +185,35 @@ def _session_factory():
 
 
 def sandbox_trial(session, payload, record):
-    """沙盒试运行（Phase 5 版）：仅做声明式定义安全校验，不执行任何模型或工具。"""
-    from backend.agent.platform.versions import DefinitionRejected, validate_agent_definition
+    """沙盒试运行：校验草稿并经安全运行时执行测试用例，持久化逐用例报告。
 
-    definition = payload.get("definition")
+    兼容 Phase 5 契约：无 draft_id 时仅做声明式定义校验，不执行任何模型或工具。
+    """
+    from backend.app.creator.sandbox import SandboxTrialError, SandboxTrialService
+
+    draft_id = payload.get("draft_id")
+    if not draft_id:
+        from backend.agent.platform.versions import DefinitionRejected, validate_agent_definition
+
+        definition = payload.get("definition")
+        try:
+            validate_agent_definition(definition)
+        except DefinitionRejected as exc:
+            raise _permanent(f"SANDBOX_{exc.code}") from exc
+        return {"validated": True, "note": "definition-only validation (phase 5 contract)"}
+    household_id = payload.get("household_id")
+    principal_id = payload.get("principal_id")
+    if not household_id or not principal_id or not payload.get("report_id"):
+        raise _permanent("SANDBOX_PAYLOAD_INVALID")
+    from sqlalchemy.orm import sessionmaker
+
+    # 沙盒自行管理事务与里程碑提交，避免在执行器事务上下文内提交。
+    service = SandboxTrialService(sessionmaker(bind=session.get_bind(), expire_on_commit=False),
+                                  household_id, principal_id)
     try:
-        validate_agent_definition(definition)
-    except DefinitionRejected as exc:
-        raise _permanent(f"SANDBOX_{exc.code}") from exc
-    return {"validated": True, "note": "sandbox trial is validation-only in phase 5"}
+        return service.run(payload["report_id"])
+    except SandboxTrialError as exc:
+        raise _permanent(exc.code) from exc
 
 
 def models_health_check(session, payload, record):
