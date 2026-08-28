@@ -38,6 +38,8 @@ def catalog(db: Session = Depends(get_db)):
 
 @router.put("/{tool_id}/grants", status_code=201)
 def grant_tool(tool_id: str, payload: ToolGrantRequest, account: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    from backend.app.audit.service import audit_admin_action
+
     if not db.get(Household, payload.household_id) or not db.get(ToolDefinition, tool_id):
         raise HTTPException(404, detail={"code": "RESOURCE_NOT_FOUND"})
     row = db.scalar(select(ToolPermission).where(ToolPermission.household_id == payload.household_id,
@@ -50,10 +52,17 @@ def grant_tool(tool_id: str, payload: ToolGrantRequest, account: Account = Depen
         row.tool_version = payload.tool_version
         row.granted_by_account_id = account.id
     db.commit(); db.refresh(row)
+    audit_admin_action(db, account, "tools.grant.create", "tool_permission", tool_id,
+                       {"household_id": payload.household_id, "tool_version": payload.tool_version},
+                       household_id=payload.household_id)
     return {"id": row.id, "household_id": row.household_id, "tool_id": row.tool_id, "tool_version": row.tool_version}
 
 
 @router.delete("/{tool_id}/grants/{household_id}", status_code=204)
-def revoke_tool(tool_id: str, household_id: str, _account: Account = Depends(require_admin), db: Session = Depends(get_db)):
+def revoke_tool(tool_id: str, household_id: str, account: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    from backend.app.audit.service import audit_admin_action
+
     db.execute(delete(ToolPermission).where(ToolPermission.household_id == household_id, ToolPermission.tool_id == tool_id))
     db.commit()
+    audit_admin_action(db, account, "tools.grant.delete", "tool_permission", tool_id,
+                       {"household_id": household_id}, household_id=household_id)

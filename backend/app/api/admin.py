@@ -55,6 +55,12 @@ def account_dict(item):
             "must_change_password": item.must_change_password, "created_at": item.created_at}
 
 
+def _audit(db, admin, action, resource_type, resource_id, detail, household_id=None):
+    from backend.app.audit.service import audit_admin_action
+
+    return audit_admin_action(db, admin, action, resource_type, resource_id, detail, household_id=household_id)
+
+
 def device_dict(item):
     return {"model_id": item.model_id, "model_name": item.model_name, "category": item.category, "specs": item.specs,
             "description": item.description, "price": item.price, "features": item.features}
@@ -117,20 +123,24 @@ def update_account(account_id: str, payload: AccountUpdate, admin: Account = Dep
         )) or 0
         if active_admins <= 1:
             raise HTTPException(status_code=400, detail="至少保留一个启用的管理员账号")
+    previous = {"status": item.status, "role": item.role}
     if payload.status is not None: item.status = payload.status
     if payload.role is not None: item.role = payload.role
     db.commit(); db.refresh(item)
+    _audit(db, admin, "admin.account.update", "account", item.id,
+           {"previous": previous, "status": item.status, "role": item.role})
     return account_dict(item)
 
 
 @router.post("/accounts/{account_id}/reset-password", status_code=204)
 def reset_password(account_id: str, payload: ResetPassword, request: Request, response: Response,
-                   _admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+                   admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     item = db.get(Account, account_id)
     if not item: raise HTTPException(status_code=404, detail="账号不存在")
     item.password_hash = hash_password(payload.password, request.app.state.settings.bcrypt_rounds)
     item.must_change_password = True
     db.commit(); response.status_code = 204
+    _audit(db, admin, "admin.account.reset_password", "account", item.id, {"must_change_password": True})
 
 
 @router.get("/households")
@@ -156,30 +166,37 @@ def devices(household_id: str | None = None, _admin: Account = Depends(require_a
 
 
 @router.post("/devices", status_code=201)
-def create_device(payload: DevicePayload, household_id: str, _admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+def create_device(payload: DevicePayload, household_id: str, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     if db.scalar(select(Device).where(Device.household_id == household_id, Device.model_id == payload.model_id)):
         raise HTTPException(status_code=409, detail="设备已存在")
-    item = Device(household_id=household_id, **payload.model_dump()); db.add(item); db.commit(); return device_dict(item)
+    item = Device(household_id=household_id, **payload.model_dump()); db.add(item); db.commit()
+    _audit(db, admin, "admin.device.create", "device", payload.model_id,
+           {"model_name": payload.model_name, "category": payload.category}, household_id=household_id)
+    return device_dict(item)
 
 
 @router.put("/devices/{model_id}")
 def update_device(model_id: str, payload: DevicePayload, household_id: str,
-                  _admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+                  admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     item = db.scalar(select(Device).where(Device.household_id == household_id, Device.model_id == model_id))
     if not item: raise HTTPException(status_code=404, detail="设备不存在")
     for key, value in payload.model_dump(exclude={"model_id"}).items(): setattr(item, key, value)
-    db.commit(); return device_dict(item)
+    db.commit()
+    _audit(db, admin, "admin.device.update", "device", model_id,
+           payload.model_dump(exclude={"specs", "features"}), household_id=household_id)
+    return device_dict(item)
 
 
 @router.delete("/devices/{model_id}", status_code=204)
 def delete_device(model_id: str, response: Response, household_id: str,
-                  _admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+                  admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     item = db.scalar(select(Device).where(Device.household_id == household_id, Device.model_id == model_id))
     if not item: raise HTTPException(status_code=404, detail="设备不存在")
     db.execute(delete(RestockNotification).where(RestockNotification.household_id == household_id,
                                                   RestockNotification.model_id == model_id))
     db.execute(delete(Inventory).where(Inventory.household_id == household_id, Inventory.model_id == model_id))
     db.delete(item); db.commit(); response.status_code = 204
+    _audit(db, admin, "admin.device.delete", "device", model_id, {}, household_id=household_id)
 
 
 @router.get("/inventory")
@@ -197,7 +214,7 @@ def list_inventory(household_id: str | None = None, model_id: str | None = None,
 
 @router.put("/inventory")
 def inventory(payload: InventoryPayload, household_id: str,
-              _admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+             admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     device = db.scalar(select(Device).where(Device.household_id == household_id, Device.model_id == payload.model_id))
     if not device: raise HTTPException(status_code=404, detail="设备不存在")
     item = db.scalar(select(Inventory).where(Inventory.household_id == household_id,
@@ -205,6 +222,8 @@ def inventory(payload: InventoryPayload, household_id: str,
     if not item: item = Inventory(household_id=household_id, device_id=device.id,
                                   model_id=payload.model_id, warehouse=payload.warehouse); db.add(item)
     item.stock = payload.stock; item.min_stock = payload.min_stock; db.commit(); db.refresh(item)
+    _audit(db, admin, "admin.inventory.upsert", "inventory", payload.model_id,
+           payload.model_dump(), household_id=household_id)
     return {"id": item.id, "model_id": item.model_id, "warehouse": item.warehouse, "stock": item.stock, "min_stock": item.min_stock}
 
 
@@ -217,11 +236,13 @@ def notifications(_admin: Account = Depends(require_admin), db: Session = Depend
 
 @router.put("/restock-notifications/{notification_id}")
 def update_notification(notification_id: int, payload: NotificationUpdate, household_id: str,
-                        _admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+                        admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     item = db.scalar(select(RestockNotification).where(RestockNotification.id == notification_id,
                                                         RestockNotification.household_id == household_id))
     if not item: raise HTTPException(status_code=404, detail="通知不存在")
     item.status = payload.status; db.commit()
+    _audit(db, admin, "admin.restock_notification.update", "restock_notification", item.id,
+           {"status": payload.status}, household_id=household_id)
     return {"id": item.id, "account_id": item.account_id, "model_id": item.model_id, "status": item.status}
 
 

@@ -7,7 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_db, require_admin
-from backend.app.db.models import FaqPair, Household, KnowledgeFile, LlmCredential, LlmEndpoint, LlmModel, ModelGrant, ModelPurposeBinding
+from backend.app.db.models import (Account, FaqPair, Household, KnowledgeFile, LlmCredential, LlmEndpoint, LlmModel,
+                                   ModelGrant, ModelPurposeBinding)
 from backend.app.models.collections import DatabaseCollectionSwitchService
 from backend.app.models.credentials import CredentialCipher, InvalidMasterKey
 from backend.app.models.endpoint_security import UnsafeEndpointUrl, validate_endpoint_url
@@ -56,7 +57,9 @@ def list_endpoints(db: Session = Depends(get_db)):
 
 
 @router.post("/endpoints", status_code=201)
-def create_endpoint(payload: EndpointCreate, db: Session = Depends(get_db)):
+def create_endpoint(payload: EndpointCreate, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    from backend.app.audit.service import audit_admin_action
+
     try:
         base_url = validate_endpoint_url(str(payload.base_url))
     except UnsafeEndpointUrl as exc:
@@ -71,11 +74,18 @@ def create_endpoint(payload: EndpointCreate, db: Session = Depends(get_db)):
                                    key_version=encrypted.key_version, last_four=encrypted.last_four)
         db.add(credential)
     db.commit(); db.refresh(item)
+    audit_admin_action(db, admin, "models.endpoint.create", "llm_endpoint", item.id,
+                       {"protocol": item.protocol, "display_name": item.display_name, "base_url": base_url,
+                        "has_api_key": credential is not None,
+                        "masked_api_key": f"****{credential.last_four}" if credential else None})
     return endpoint_view(item, credential)
 
 
 @router.patch("/endpoints/{endpoint_id}")
-def update_endpoint(endpoint_id: str, payload: EndpointUpdate, db: Session = Depends(get_db)):
+def update_endpoint(endpoint_id: str, payload: EndpointUpdate, admin: Account = Depends(require_admin),
+                    db: Session = Depends(get_db)):
+    from backend.app.audit.service import audit_admin_action
+
     item = db.get(LlmEndpoint, endpoint_id)
     if not item:
         raise HTTPException(status_code=404, detail={"code": "ENDPOINT_NOT_FOUND"})
@@ -101,6 +111,10 @@ def update_endpoint(endpoint_id: str, payload: EndpointUpdate, db: Session = Dep
     for model in db.scalars(select(LlmModel).where(LlmModel.endpoint_id == item.id)).all():
         model.capability_flags_json = "{}"
     db.commit(); db.refresh(item)
+    audit_admin_action(db, admin, "models.endpoint.update", "llm_endpoint", item.id,
+                       {**values, "has_api_key": credential is not None,
+                        "api_key_rotated": payload.api_key is not None,
+                        "api_key_cleared": bool(payload.clear_api_key)})
     return endpoint_view(item, credential)
 
 
@@ -110,16 +124,22 @@ def list_models(db: Session = Depends(get_db)):
 
 
 @router.post("/profiles", status_code=201)
-def create_model(payload: ModelCreate, db: Session = Depends(get_db)):
+def create_model(payload: ModelCreate, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    from backend.app.audit.service import audit_admin_action
+
     try:
         item = ModelRegistry(db).create_model(**payload.model_dump())
     except RegistryValidationError as exc:
         raise HTTPException(status_code=422, detail={"code": exc.code}) from exc
+    audit_admin_action(db, admin, "models.profile.create", "llm_model", item.id, payload.model_dump())
     return model_view(item)
 
 
 @router.patch("/profiles/{model_id}")
-def update_model(model_id: str, payload: ModelUpdate, db: Session = Depends(get_db)):
+def update_model(model_id: str, payload: ModelUpdate, admin: Account = Depends(require_admin),
+                 db: Session = Depends(get_db)):
+    from backend.app.audit.service import audit_admin_action
+
     item = db.get(LlmModel, model_id)
     if not item:
         raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND"})
@@ -138,6 +158,9 @@ def update_model(model_id: str, payload: ModelUpdate, db: Session = Depends(get_
         db.rollback()
         raise HTTPException(status_code=422, detail={"code": "MODEL_PROFILE_INVALID"}) from exc
     db.refresh(item)
+    from backend.app.audit.service import audit_admin_action
+
+    audit_admin_action(db, admin, "models.profile.update", "llm_model", item.id, payload.model_dump(exclude_unset=True))
     return model_view(item)
 
 
@@ -163,7 +186,8 @@ def list_bindings(db: Session = Depends(get_db)):
 
 
 @router.put("/bindings/{purpose}")
-def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request, db: Session = Depends(get_db)):
+def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request,
+                 admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     if purpose != payload.purpose: raise HTTPException(status_code=422, detail={"code": "PURPOSE_MISMATCH"})
     registry = ModelRegistry(db)
     snapshot = None
@@ -231,12 +255,23 @@ def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request,
     except Exception as exc: raise HTTPException(status_code=503, detail={"code": "EMBEDDING_REBUILD_FAILED"}) from exc
     finally:
         cleanup_embedding_sources(snapshot)
+    from backend.app.audit.service import audit_admin_action
+
+    audit_admin_action(db, admin, "models.binding.bind", "model_purpose_binding", item.purpose,
+                       {"purpose": item.purpose, "model_id": item.model_id, "config_revision": item.config_revision})
     return {"purpose": item.purpose, "model_id": item.model_id, "config_revision": item.config_revision}
 
 
 @router.put("/households/{household_id}/quota")
-def configure_quota(household_id: str, payload: QuotaRequest, db: Session = Depends(get_db)):
+def configure_quota(household_id: str, payload: QuotaRequest, admin: Account = Depends(require_admin),
+                    db: Session = Depends(get_db)):
+    if not db.get(Household, household_id):
+        raise HTTPException(status_code=404, detail={"code": "HOUSEHOLD_NOT_FOUND"})
     item = QuotaService(db).configure(household_id, **payload.model_dump())
+    from backend.app.audit.service import audit_admin_action
+
+    audit_admin_action(db, admin, "quota.configure", "household_quota", household_id, payload.model_dump(),
+                       household_id=household_id)
     return {"household_id": item.household_id, "monthly_limit": item.monthly_limit,
             "requests_per_minute": item.requests_per_minute, "agent_token_budget": item.agent_token_budget}
 
@@ -250,7 +285,10 @@ def list_grants(household_id: str, db: Session = Depends(get_db)):
 
 
 @router.put("/households/{household_id}/grants/{model_id}")
-def grant_model(household_id: str, model_id: str, db: Session = Depends(get_db)):
+def grant_model(household_id: str, model_id: str, admin: Account = Depends(require_admin),
+                db: Session = Depends(get_db)):
+    from backend.app.audit.service import audit_admin_action
+
     if not db.get(Household, household_id):
         raise HTTPException(status_code=404, detail={"code": "HOUSEHOLD_NOT_FOUND"})
     if not db.get(LlmModel, model_id):
@@ -260,10 +298,17 @@ def grant_model(household_id: str, model_id: str, db: Session = Depends(get_db))
         item = ModelGrant(household_id=household_id, model_id=model_id)
         db.add(item)
         db.commit()
+    audit_admin_action(db, admin, "models.grant.create", "model_grant", model_id,
+                       {"household_id": household_id}, household_id=household_id)
     return {"household_id": item.household_id, "model_id": item.model_id}
 
 
 @router.delete("/households/{household_id}/grants/{model_id}", status_code=204)
-def revoke_model(household_id: str, model_id: str, db: Session = Depends(get_db)):
+def revoke_model(household_id: str, model_id: str, admin: Account = Depends(require_admin),
+                 db: Session = Depends(get_db)):
+    from backend.app.audit.service import audit_admin_action
+
     db.execute(delete(ModelGrant).where(ModelGrant.household_id == household_id, ModelGrant.model_id == model_id))
     db.commit()
+    audit_admin_action(db, admin, "models.grant.delete", "model_grant", model_id,
+                       {"household_id": household_id}, household_id=household_id)
