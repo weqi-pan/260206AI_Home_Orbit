@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import (Boolean, CheckConstraint, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer,
+from sqlalchemy import (Boolean, CheckConstraint, DateTime, Float, ForeignKey, ForeignKeyConstraint, Index, Integer,
                         LargeBinary, String, Text, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -112,6 +112,12 @@ class UsageQuota(TenantRow, Base):
 
 class ModelUsage(Base):
     __tablename__ = "model_usage"
+    __table_args__ = (
+        Index("ix_model_usage_household_month", "household_id", "month"),
+        Index("ix_model_usage_model_id", "model_id"),
+        Index("ix_model_usage_status_created", "status", "created_at"),
+        Index("ix_model_usage_created_at", "created_at"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     model_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -120,6 +126,16 @@ class ModelUsage(Base):
     reserved_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="reserved")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class QuotaIncident(Base):
+    """Persisted over-limit rejection at the reservation gate (stable code that fired)."""
+    __tablename__ = "quota_incidents"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    model_id: Mapped[str] = mapped_column(String(36), nullable=False, default="")
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
 
 class EmbeddingCollectionBuild(Base):
@@ -285,6 +301,9 @@ class AgentRun(TenantRow, Base):
     __tablename__ = "agent_runs"
     __table_args__ = tenant_parent_constraints(
         ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
+        Index("ix_agent_runs_status_created", "status", "created_at"),
+        Index("ix_agent_runs_deployment_id", "deployment_id"),
+        Index("ix_agent_runs_created_at", "created_at"),
     )
     deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
     principal_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False)
@@ -312,6 +331,9 @@ class ToolExecution(Base):
     __tablename__ = "tool_executions"
     __table_args__ = (
         ForeignKeyConstraint(["run_id", "household_id"], ["agent_runs.id", "agent_runs.household_id"], ondelete="CASCADE"),
+        Index("ix_tool_executions_run_id", "run_id"),
+        Index("ix_tool_executions_status_started", "status", "started_at"),
+        Index("ix_tool_executions_tool_id", "tool_id"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -463,6 +485,8 @@ class CeleryTaskRecord(Base):
     __table_args__ = (
         CheckConstraint("status IN ('pending', 'running', 'succeeded', 'failed', 'retry_scheduled', 'dead')",
                         name="ck_celery_tasks_status"),
+        Index("ix_celery_tasks_status_created", "status", "created_at"),
+        Index("ix_celery_tasks_error_code", "error_code"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)

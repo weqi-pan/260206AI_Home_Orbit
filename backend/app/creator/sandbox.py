@@ -142,7 +142,7 @@ class SandboxTrialService:
 
         cases = []
         for case in card.get("tests", []):
-            cases.append(self._run_case(compiled, case, report, card))
+            cases.append(self._run_metered_case(compiled, case, report, card))
         report.cases_json = json.dumps(cases, ensure_ascii=False)
         report.status = "completed"
         report.error_code = None
@@ -155,6 +155,8 @@ class SandboxTrialService:
         return self._summary(report)
 
     _model_error_code = "MODEL_NOT_CONFIGURED"
+    _quota_model_id: str | None = None
+    _quota_budget: int = 0
 
     def _resolve_model(self):
         if self.model is not None:
@@ -167,13 +169,41 @@ class SandboxTrialService:
                 self.model_resolver("primary_chat")
             service = ModelRuntimeService(self.session)
             resolved = service.resolve("primary_chat", household_id=self.household_id)
-            return service.build_chat_model(resolved)
+            model = service.build_chat_model(resolved)
+            profile = resolved.snapshot.profile
+            budget = profile["agent_token_budget"] or profile["max_tokens"]
+            if not budget or budget <= 0:
+                self._model_error_code = "MODEL_REQUEST_BUDGET_NOT_CONFIGURED"
+                return None
+            self._quota_model_id = resolved.snapshot.model_id
+            self._quota_budget = int(budget)
+            return model
         except (ModelRuntimeError, QuotaExceeded) as exc:
             self._model_error_code = getattr(exc, "code", _stable_code(exc))
             return None
         except Exception as exc:
             self._model_error_code = _stable_code(exc)
             return None
+
+    def _run_metered_case(self, compiled, case, report, card):
+        """Platform-model sandbox cases go through the chat quota lifecycle:
+        reserve before the request, complete after; over-limit is a silent
+        stable failure (incident already persisted by QuotaService)."""
+        from backend.app.models.quotas import QuotaExceeded, QuotaService
+
+        if self._quota_model_id is None:
+            return self._run_case(compiled, case, report, card)
+        try:
+            usage = QuotaService(self.session).reserve(self.household_id, self._quota_model_id, self._quota_budget)
+        except QuotaExceeded as exc:
+            return _failed_case(case, exc.code, "")
+        try:
+            result = self._run_case(compiled, case, report, card)
+        except Exception:
+            QuotaService(self.session).complete(usage.id, status="failed")
+            raise
+        QuotaService(self.session).complete(usage.id)
+        return result
 
     # -------------------------------------------------------------- stack build
     def _ensure_stack(self, report, card, validated):

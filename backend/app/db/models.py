@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (Boolean, CheckConstraint, DateTime, Float, ForeignKey, ForeignKeyConstraint, Index, Integer,
+                        String, Text, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base, utcnow, uuid_str
@@ -203,6 +204,11 @@ class ConversationHistory(Base):
 
 class AdminActionAudit(Base):
     __tablename__ = "admin_action_audits"
+    __table_args__ = (
+        Index("ix_admin_action_audits_action_created", "action", "created_at"),
+        Index("ix_admin_action_audits_resource", "resource_type", "resource_id"),
+        Index("ix_admin_action_audits_created_at", "created_at"),
+    )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     principal_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
     household_id: Mapped[str | None] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
@@ -226,5 +232,5 @@ from backend.app.db.platform_models import (  # noqa: E402,F401
     AgentRun, AgentSkillBinding, AgentToolBinding, AgentVersion, ApprovalRequest, CeleryTaskRecord,
     CreatorDraft, EmbeddingCollectionBuild, HouseholdTask, LlmCredential, LlmEndpoint, LlmModel, ModelGrant,
     InstallationPermission, ModelHealthCheck, ModelPurposeBinding, ModelUsage, Notification, NotificationRead, Skill,
-    SkillVersion, TaskSchedule, ToolDefinition, ToolExecution, ToolPermission, UsageQuota,
+    SkillVersion, TaskSchedule, ToolDefinition, ToolExecution, ToolPermission, UsageQuota, QuotaIncident,
 )

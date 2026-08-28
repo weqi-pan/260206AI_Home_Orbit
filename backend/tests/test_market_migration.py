@@ -34,7 +34,7 @@ def test_phase7_revision_upgrades_and_roundtrips(tmp_path):
         assert {"source_household_id", "current_version_id", "install_count", "official",
                 "status"} <= entry_columns
         with engine.begin() as connection:
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20260828_0014"
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20260828_0015"
     finally:
         engine.dispose()
 
@@ -67,7 +67,7 @@ def test_required_revision_consistent_with_phase7_head(settings):
     from backend.app.db.models import Base
     from backend.app.db.session import REQUIRED_DATABASE_REVISION
 
-    assert REQUIRED_DATABASE_REVISION == "20260828_0014"
+    assert REQUIRED_DATABASE_REVISION == "20260828_0015"
     from sqlalchemy import create_engine, inspect
 
     engine = create_engine(f"sqlite:///{settings.database_url.split('///')[-1]}")

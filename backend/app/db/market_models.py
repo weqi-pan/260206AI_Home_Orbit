@@ -8,7 +8,7 @@ installations to the reviewed version they installed.
 """
 from datetime import datetime
 
-from sqlalchemy import (Boolean, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String,
+from sqlalchemy import (Boolean, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String,
                         Text, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -73,6 +73,8 @@ class ReviewSubmission(Base):
         CheckConstraint("risk_summary_status IN ('pending', 'done', 'unavailable')",
                         name="ck_review_submissions_risk_summary"),
         UniqueConstraint("id", "household_id"),
+        Index("ix_review_submissions_status_created", "status", "created_at"),
+        Index("ix_review_submissions_entry_id", "entry_id"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
     household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False,
