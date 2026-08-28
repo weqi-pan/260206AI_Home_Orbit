@@ -22,11 +22,11 @@ def upgrade() -> None:
     with op.batch_alter_table("installation_permissions") as batch:
         batch.create_unique_constraint("uq_installation_permission_tool", ["installation_id", "tool_id"])
     with op.batch_alter_table("agent_runs") as batch:
-        batch.add_column(sa.Column("compiled_snapshot_json", sa.Text(), nullable=False, server_default="{}"))
-        batch.add_column(sa.Column("model_snapshot_json", sa.Text(), nullable=False, server_default="{}"))
-        batch.add_column(sa.Column("permission_snapshot_json", sa.Text(), nullable=False, server_default="{}"))
-        batch.add_column(sa.Column("consent_snapshot_json", sa.Text(), nullable=False, server_default="{}"))
-        batch.add_column(sa.Column("budget_snapshot_json", sa.Text(), nullable=False, server_default="{}"))
+        batch.add_column(sa.Column("compiled_snapshot_json", sa.Text(), nullable=False))
+        batch.add_column(sa.Column("model_snapshot_json", sa.Text(), nullable=False))
+        batch.add_column(sa.Column("permission_snapshot_json", sa.Text(), nullable=False))
+        batch.add_column(sa.Column("consent_snapshot_json", sa.Text(), nullable=False))
+        batch.add_column(sa.Column("budget_snapshot_json", sa.Text(), nullable=False))
     with op.batch_alter_table("approval_requests") as batch:
         batch.add_column(sa.Column("checkpoint_ns", sa.String(250), nullable=True))
         batch.add_column(sa.Column("checkpoint_id", sa.String(100), nullable=True))

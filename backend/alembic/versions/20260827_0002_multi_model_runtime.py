@@ -19,14 +19,14 @@ def upgrade() -> None:
         batch.add_column(sa.Column("max_tokens", sa.Integer()))
         batch.add_column(sa.Column("embedding_dimensions", sa.Integer()))
         batch.add_column(sa.Column("use_responses_api", sa.Boolean(), nullable=False, server_default=sa.false()))
-        batch.add_column(sa.Column("capability_flags_json", sa.Text(), nullable=False, server_default="{}"))
+        batch.add_column(sa.Column("capability_flags_json", sa.Text(), nullable=False))
         batch.add_column(sa.Column("requests_per_minute", sa.Integer(), nullable=False, server_default="60"))
         batch.add_column(sa.Column("agent_token_budget", sa.Integer()))
     with op.batch_alter_table("model_purpose_bindings") as batch:
         batch.add_column(sa.Column("config_revision", sa.Integer(), nullable=False, server_default="1"))
     with op.batch_alter_table("model_health_checks") as batch:
-        batch.add_column(sa.Column("capabilities_json", sa.Text(), nullable=False, server_default="{}"))
-        batch.add_column(sa.Column("evidence_json", sa.Text(), nullable=False, server_default="{}"))
+        batch.add_column(sa.Column("capabilities_json", sa.Text(), nullable=False))
+        batch.add_column(sa.Column("evidence_json", sa.Text(), nullable=False))
         batch.add_column(sa.Column("error_code", sa.String(64)))
     with op.batch_alter_table("usage_quotas") as batch:
         batch.add_column(sa.Column("requests_per_minute", sa.Integer(), nullable=False, server_default="60"))

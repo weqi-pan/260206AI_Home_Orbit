@@ -34,8 +34,16 @@ def upgrade() -> None:
                 "SELECT household_id FROM household_members ORDER BY joined_at, id LIMIT 1")).scalar()
             if owners[0] == earliest:
                 raise RuntimeError("DEVICE_LEGACY_ATTRIBUTION_AMBIGUOUS")
-    with op.batch_alter_table("knowledge_files", naming_convention={"uq": "uq_%(table_name)s_%(column_0_name)s"}) as batch:
-        batch.drop_constraint("uq_knowledge_files_file_md5", type_="unique")
+    if connection.dialect.name == "mysql":
+        # 0001 基线的唯一约束在 MySQL 上是自动命名（如 file_md5），按实际名称删除；
+        # SQLite 走 batch 重建路径，约定名在重建时生效。
+        inspector = sa.inspect(connection)
+        for unique in inspector.get_unique_constraints("knowledge_files"):
+            if unique["column_names"] == ["file_md5"] and unique["name"]:
+                op.drop_constraint(unique["name"], "knowledge_files", type_="unique")
+    else:
+        with op.batch_alter_table("knowledge_files", naming_convention={"uq": "uq_%(table_name)s_%(column_0_name)s"}) as batch:
+            batch.drop_constraint("uq_knowledge_files_file_md5", type_="unique")
     with op.batch_alter_table("household_members") as batch:
         batch.create_unique_constraint("uq_household_member_account_household", ["account_id", "household_id"])
     with op.batch_alter_table("tickets") as batch:
@@ -51,7 +59,7 @@ def upgrade() -> None:
         sa.Column("action", sa.String(100), nullable=False),
         sa.Column("resource_type", sa.String(50), nullable=False),
         sa.Column("resource_id", sa.String(100), nullable=False),
-        sa.Column("detail_json", sa.Text(), nullable=False, server_default="{}"),
+        sa.Column("detail_json", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime()),
     )
     op.create_index("ix_admin_action_audits_principal_id", "admin_action_audits", ["principal_id"])

@@ -93,8 +93,8 @@ def upgrade() -> None:
     with op.batch_alter_table("review_checks") as batch:
         batch.add_column(sa.Column("attempt", sa.Integer(), nullable=False, server_default="1"))
         batch.add_column(sa.Column("passed", sa.Boolean(), nullable=False, server_default=sa.false()))
-        batch.add_column(sa.Column("codes_json", sa.Text(), nullable=False, server_default="[]"))
-        batch.add_column(sa.Column("evidence_json", sa.Text(), nullable=False, server_default="{}"))
+        batch.add_column(sa.Column("codes_json", sa.Text(), nullable=False))
+        batch.add_column(sa.Column("evidence_json", sa.Text(), nullable=False))
         batch.add_column(sa.Column("created_at", sa.DateTime()))
     op.create_index("ix_review_checks_submission_id", "review_checks", ["submission_id"])
 

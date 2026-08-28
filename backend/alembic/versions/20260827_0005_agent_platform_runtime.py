@@ -20,10 +20,10 @@ def upgrade() -> None:
     op.create_index("ix_chat_sessions_deployment_id", "chat_sessions", ["deployment_id"])
     _add("tool_definitions",
          sa.Column("display_name", sa.String(100), nullable=False, server_default=""),
-         sa.Column("description", sa.Text(), nullable=False, server_default=""),
+         sa.Column("description", sa.Text(), nullable=False,),
          sa.Column("version", sa.String(32), nullable=False, server_default="1"),
          sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
-         sa.Column("catalog_json", sa.Text(), nullable=False, server_default="{}"))
+         sa.Column("catalog_json", sa.Text(), nullable=False))
     _add("tool_permissions",
          sa.Column("tool_version", sa.String(32), nullable=False, server_default="1"),
          sa.Column("granted_by_account_id", sa.String(36), nullable=True))
@@ -50,7 +50,7 @@ def upgrade() -> None:
          sa.Column("deployment_revision", sa.Integer(), nullable=False, server_default="1"),
          sa.Column("model_id", sa.String(36), nullable=False, server_default=""),
          sa.Column("model_revision", sa.Integer(), nullable=False, server_default="1"),
-         sa.Column("skill_versions_json", sa.Text(), nullable=False, server_default="[]"),
+         sa.Column("skill_versions_json", sa.Text(), nullable=False,),
          sa.Column("status", sa.String(32), nullable=False, server_default="running"),
          sa.Column("error_code", sa.String(64), nullable=True),
          sa.Column("finished_at", sa.DateTime(), nullable=True))
@@ -60,7 +60,7 @@ def upgrade() -> None:
     _add("tool_executions",
          sa.Column("principal_id", sa.String(36), nullable=False, server_default=""),
          sa.Column("agent_version_id", sa.String(36), nullable=False, server_default=""),
-         sa.Column("skill_versions_json", sa.Text(), nullable=False, server_default="[]"),
+         sa.Column("skill_versions_json", sa.Text(), nullable=False,),
          sa.Column("tool_version", sa.String(32), nullable=False, server_default="1"),
          sa.Column("model_id", sa.String(36), nullable=False, server_default=""),
          sa.Column("deployment_id", sa.String(36), nullable=False, server_default=""),
@@ -68,8 +68,8 @@ def upgrade() -> None:
          sa.Column("status", sa.String(32), nullable=False, server_default="running"),
          sa.Column("error_code", sa.String(64), nullable=True),
          sa.Column("idempotency_key", sa.String(100), nullable=True),
-         sa.Column("arguments_json", sa.Text(), nullable=False, server_default="{}"),
-         sa.Column("result_json", sa.Text(), nullable=False, server_default="{}"),
+         sa.Column("arguments_json", sa.Text(), nullable=False,),
+         sa.Column("result_json", sa.Text(), nullable=False,),
          sa.Column("started_at", sa.DateTime(), nullable=True),
          sa.Column("finished_at", sa.DateTime(), nullable=True),
          sa.Column("duration_ms", sa.Integer(), nullable=True))
@@ -84,7 +84,7 @@ def upgrade() -> None:
          sa.Column("deployment_revision", sa.Integer(), nullable=False, server_default="1"),
          sa.Column("agent_version_id", sa.String(36), nullable=False, server_default=""),
          sa.Column("arguments_digest", sa.String(64), nullable=False, server_default=""),
-         sa.Column("arguments_json", sa.Text(), nullable=False, server_default="{}"),
+         sa.Column("arguments_json", sa.Text(), nullable=False,),
          sa.Column("idempotency_key", sa.String(100), nullable=True),
          sa.Column("status", sa.String(16), nullable=False, server_default="pending"),
          sa.Column("approved_by_account_id", sa.String(36), nullable=True),

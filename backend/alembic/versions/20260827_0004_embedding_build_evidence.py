@@ -11,7 +11,7 @@ depends_on = None
 
 def upgrade() -> None:
     with op.batch_alter_table("embedding_collection_builds") as batch:
-        batch.add_column(sa.Column("evidence_json", sa.Text(), nullable=False, server_default="{}"))
+        batch.add_column(sa.Column("evidence_json", sa.Text(), nullable=False))
         batch.add_column(sa.Column("error_code", sa.String(64)))
 
 

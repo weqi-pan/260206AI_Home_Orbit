@@ -13,7 +13,7 @@ def upgrade() -> None:
     with op.batch_alter_table("creator_drafts") as batch:
         batch.add_column(sa.Column("title", sa.String(200), nullable=False, server_default=""))
         batch.add_column(sa.Column("status", sa.String(20), nullable=False, server_default="draft"))
-        batch.add_column(sa.Column("source_description", sa.Text(), nullable=False, server_default=""))
+        batch.add_column(sa.Column("source_description", sa.Text(), nullable=False))
         batch.add_column(sa.Column("intent_card_json", sa.Text(), nullable=True))
         batch.add_column(sa.Column("last_validation_json", sa.Text(), nullable=True))
         batch.add_column(sa.Column("agent_definition_id", sa.String(36), nullable=True))
@@ -51,7 +51,7 @@ def upgrade() -> None:
         sa.Column("household_id", sa.String(36), sa.ForeignKey("households.id", ondelete="CASCADE"), nullable=False),
         sa.Column("draft_id", sa.String(36), nullable=False),
         sa.Column("status", sa.String(16), nullable=False, server_default="pending"),
-        sa.Column("granted_tool_keys_json", sa.Text(), nullable=False, server_default="[]"),
+        sa.Column("granted_tool_keys_json", sa.Text(), nullable=False,),
         sa.Column("cases_json", sa.Text(), nullable=True),
         sa.Column("agent_version_id", sa.String(36), nullable=True),
         sa.Column("deployment_id", sa.String(36), nullable=True),

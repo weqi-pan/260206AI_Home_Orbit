@@ -51,27 +51,40 @@ def upgrade() -> None:
 
     naming = {"pk": "pk_%(table_name)s", "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
               "uq": "uq_%(table_name)s_%(column_0_name)s"}
+    if dialect == "mysql":
+        # MySQL 无法在仍有外键引用 devices 主键时 DROP PRIMARY KEY（错误 1553），
+        # 且 0001 基线的外键是自动命名，须按实际名称先删除（SQLite 走 batch 重建路径不受影响）。
+        inspector = sa.inspect(connection)
+        for table in ("inventory", "restock_notifications"):
+            for foreign_key in inspector.get_foreign_keys(table):
+                if foreign_key["referred_table"] == "devices" and foreign_key["name"]:
+                    op.drop_constraint(foreign_key["name"], table, type_="foreignkey")
+        # 旧全局唯一 (model_id, warehouse) 阻止同型号进入多个家庭，按实际名称删除
+        for unique in inspector.get_unique_constraints("inventory"):
+            if unique["column_names"] == ["model_id", "warehouse"] and unique["name"]:
+                op.drop_constraint(unique["name"], "inventory", type_="unique")
     with op.batch_alter_table("devices", naming_convention=naming) as batch:
         batch.drop_constraint("pk_devices", type_="primary")
-        batch.alter_column("id", nullable=False)
-        batch.alter_column("household_id", nullable=False)
+        batch.alter_column("id", existing_type=sa.String(36), nullable=False)
+        batch.alter_column("household_id", existing_type=sa.String(36), nullable=False)
         batch.create_primary_key("pk_devices", ["id"])
         batch.create_unique_constraint("uq_device_household_model", ["household_id", "model_id"])
         batch.create_unique_constraint("uq_device_id_household", ["id", "household_id"])
         batch.create_foreign_key("fk_device_household", "households", ["household_id"], ["id"], ondelete="CASCADE")
     with op.batch_alter_table("inventory", naming_convention=naming) as batch:
-        batch.drop_constraint("fk_inventory_model_id_devices", type_="foreignkey")
-        batch.alter_column("household_id", nullable=False)
-        batch.alter_column("device_id", nullable=False)
+        if dialect != "mysql":
+            batch.drop_constraint("fk_inventory_model_id_devices", type_="foreignkey")
+        batch.alter_column("household_id", existing_type=sa.String(36), nullable=False)
+        batch.alter_column("device_id", existing_type=sa.String(36), nullable=False)
         batch.create_unique_constraint("uq_inventory_household_model_warehouse", ["household_id", "model_id", "warehouse"])
         batch.create_unique_constraint("uq_inventory_id_household", ["id", "household_id"])
         batch.create_foreign_key("fk_inventory_device_household", "devices", ["device_id", "household_id"], ["id", "household_id"])
     with op.batch_alter_table("device_usage_records") as batch:
-        batch.alter_column("household_id", nullable=False)
+        batch.alter_column("household_id", existing_type=sa.String(36), nullable=False)
         batch.create_unique_constraint("uq_usage_household_user_month", ["household_id", "user_id", "month"])
     for table in ("tickets", "knowledge_files", "faq_pairs", "restock_notifications"):
         with op.batch_alter_table(table) as batch:
-            batch.alter_column("household_id", nullable=False)
+            batch.alter_column("household_id", existing_type=sa.String(36), nullable=False)
             batch.create_foreign_key(f"fk_{table}_household", "households", ["household_id"], ["id"], ondelete="CASCADE")
     with op.batch_alter_table("knowledge_files") as batch:
         batch.create_unique_constraint("uq_knowledge_file_household_md5", ["household_id", "file_md5"])
@@ -82,7 +95,7 @@ def upgrade() -> None:
     with op.batch_alter_table("faq_pairs") as batch:
         batch.create_foreign_key("fk_faq_file_household", "knowledge_files", ["source_file_id", "household_id"], ["id", "household_id"])
     with op.batch_alter_table("restock_notifications") as batch:
-        batch.alter_column("device_id", nullable=False)
+        batch.alter_column("device_id", existing_type=sa.String(36), nullable=False)
         batch.create_unique_constraint("uq_restock_household_account_model", ["household_id", "account_id", "model_id"])
         batch.create_foreign_key("fk_restock_device_household", "devices", ["device_id", "household_id"], ["id", "household_id"])
 

@@ -10,12 +10,24 @@ def _database():
     return create_database(get_settings())
 
 
+def _view(record):
+    """JSON-safe task result for the Redis result backend (ORM 对象不可序列化)."""
+    if record is None:
+        return None
+    return {"id": record.id, "task_type": record.task_type, "status": record.status,
+            "attempt": record.attempt, "error_code": record.error_code}
+
+
+def _views(records):
+    return [_view(record) for record in (records or [])]
+
+
 def _run(task_type, idempotency_key, payload=None, household_id=None):
     database = _database()
     try:
         executor = TaskExecutor(database.session_factory)
         executor.submit(task_type, payload or {}, idempotency_key, household_id=household_id)
-        return executor.run(idempotency_key)
+        return _view(executor.run(idempotency_key))
     finally:
         database.engine.dispose()
 
@@ -24,8 +36,8 @@ def reminders_dispatch():
     """Beat: fan reminder dispatch out per household for this tick."""
     database = _database()
     try:
-        return TaskExecutor(database.session_factory).dispatch_all_households(
-            "household.reminders.dispatch", key_prefix="beat:reminders")
+        return _views(TaskExecutor(database.session_factory).dispatch_all_households(
+            "household.reminders.dispatch", key_prefix="beat:reminders"))
     finally:
         database.engine.dispose()
 
@@ -33,7 +45,7 @@ def reminders_dispatch():
 def process_retries():
     database = _database()
     try:
-        return TaskExecutor(database.session_factory).process_due_retries()
+        return _views(TaskExecutor(database.session_factory).process_due_retries())
     finally:
         database.engine.dispose()
 
