@@ -49,6 +49,21 @@ def _draft(db, household_id, draft_id) -> CreatorDraft:
     return draft
 
 
+REVIEW_LOCKED_SUBMISSION_STATUSES = ("precheck_pending", "review_pending")
+
+
+def _guard_draft_not_locked_in_review(db, household_id, draft_id) -> None:
+    """提交处于预检/人工审核窗口期时锁定草稿内容编辑，防止预检证据与冻结工件发散。"""
+    from backend.app.db.models import ReviewSubmission
+
+    locked = db.scalar(select(ReviewSubmission.id).where(
+        ReviewSubmission.household_id == household_id,
+        ReviewSubmission.draft_id == draft_id,
+        ReviewSubmission.status.in_(REVIEW_LOCKED_SUBMISSION_STATUSES)).limit(1))
+    if locked is not None:
+        raise HTTPException(409, detail={"code": "REVIEW_SUBMISSION_LOCKED"})
+
+
 def _draft_view(db, household_id, draft):
     assets = CreatorKnowledgeService(db, household_id, "").list_assets(draft.id)
     versions = []
@@ -117,6 +132,7 @@ def update_draft(draft_id: str, payload: DraftUpdateRequest, account: Account = 
     if member.role not in WRITER_ROLES:
         raise HTTPException(403, detail={"code": "CREATOR_ROLE_FORBIDDEN"})
     draft = _draft(db, member.household_id, draft_id)
+    _guard_draft_not_locked_in_review(db, member.household_id, draft_id)
     if payload.title is not None:
         draft.title = payload.title
     if payload.intent_card is not None:
@@ -153,6 +169,7 @@ def generate_card(draft_id: str, payload: GenerateRequest, request: Request,
     if member.role not in WRITER_ROLES:
         raise HTTPException(403, detail={"code": "CREATOR_ROLE_FORBIDDEN"})
     draft = _draft(db, member.household_id, draft_id)
+    _guard_draft_not_locked_in_review(db, member.household_id, draft_id)
     validator = DraftValidator(db, member.household_id)
     generator = getattr(request.app.state, "intent_card_generator", None) or IntentCardGenerator(
         model_resolver=purpose_model_resolver(request.app.state.database.session_factory, member.household_id))
@@ -241,6 +258,8 @@ def delete_knowledge(draft_id: str, asset_id: str, request: Request,
     if member.role not in WRITER_ROLES:
         raise HTTPException(403, detail={"code": "CREATOR_ROLE_FORBIDDEN"})
     _draft(db, member.household_id, draft_id)
+    # 冻结工件按资产 id 引用知识：审核窗口期删除会使已审工件缺源
+    _guard_draft_not_locked_in_review(db, member.household_id, draft_id)
     service = CreatorKnowledgeService(db, member.household_id, request.app.state.settings.knowledge_upload_path)
     try:
         service.delete_asset(draft_id, asset_id,

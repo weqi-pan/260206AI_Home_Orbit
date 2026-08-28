@@ -73,17 +73,6 @@ class ReviewGovernanceService:
         self.session.flush()
         return submission
 
-    # ---------------------------------------------------------------- precheck
-    def run_precheck(self, submission) -> dict:
-        from backend.app.review.precheck import ReviewPrecheckService
-
-        evidence = ReviewPrecheckService(self.session).run(submission)
-        if not evidence["passed"]:
-            draft = self.session.get(self._draft_model(), submission.draft_id)
-            if draft is not None and draft.status == "review_pending":
-                draft.status = "validated"  # 可修复后重新提交
-        return evidence
-
     # ----------------------------------------------------------------- decide
     def decide(self, submission, action, reason, admin_account_id):
         from backend.app.db.models import ReviewDecision
