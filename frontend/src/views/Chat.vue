@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus, Promotion, Tickets } from '@element-plus/icons-vue'
 import {
@@ -20,6 +20,7 @@ import { shellModalOpenKey } from '../composables/shellModal'
 import type { ChatUiMessage } from '../types'
 
 const router = useRouter()
+const route = useRoute()
 
 const sessions = ref<ChatSessionInfo[]>([])
 const activeId = ref('')
@@ -129,6 +130,14 @@ async function handleDeleteSession(id: string) {
 async function loadSessions() {
   listLoading.value = true
   try {
+    const deploymentId = route.query.deployment
+    if (typeof deploymentId === 'string' && deploymentId) {
+      // 从发现/我的助手直达指定助手：新建 deployment 绑定会话
+      const created = await createSession(undefined, deploymentId)
+      sessions.value = await listSessions()
+      await selectSession(created.id)
+      return
+    }
     sessions.value = await listSessions()
     if (sessions.value.length) await selectSession(sessions.value[0].id)
     else await handleNewSession()

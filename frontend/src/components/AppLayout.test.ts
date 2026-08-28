@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 import AppLayout from './AppLayout.vue'
 import Chat from '../views/Chat.vue'
 
-vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useRoute: () => ({ query: {} }),
+}))
 vi.mock('../stores/auth', () => ({ useAuthStore: () => ({ account: { username: 'user', role: 'user' }, logout: vi.fn() }) }))
 vi.mock('../api/chat', () => ({
   listSessions: () => Promise.resolve([{ id: 's1', title: '第一段会话' }]),

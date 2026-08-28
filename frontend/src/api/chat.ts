@@ -42,8 +42,11 @@ export function listSessions() {
   return http.get<ChatSessionInfo[]>('/chat/sessions').then((r) => r.data)
 }
 
-export function createSession(title?: string) {
-  return http.post<ChatSessionInfo>('/chat/sessions', title ? { title } : {}).then((r) => r.data)
+export function createSession(title?: string, deploymentId?: string) {
+  const payload: { title?: string; deployment_id?: string } = {}
+  if (title) payload.title = title
+  if (deploymentId) payload.deployment_id = deploymentId
+  return http.post<ChatSessionInfo>('/chat/sessions', payload).then((r) => r.data)
 }
 
 export function deleteSession(sessionId: string) {
