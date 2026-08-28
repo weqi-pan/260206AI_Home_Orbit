@@ -10,9 +10,9 @@ const shellModalOpen = ref(false)
 provide(shellModalOpenKey, shellModalOpen)
 const primary = [
   { label: '首页', to: '/home' },
-  { label: '发现', unavailable: true },
+  { label: '发现', to: '/discover' },
   { label: '创建', to: '/create' },
-  { label: '我的助手', unavailable: true },
+  { label: '我的助手', to: '/agents' },
   { label: '家庭', to: '/household' },
 ]
 async function handleLogout() { auth.logout(); await router.push('/login') }
