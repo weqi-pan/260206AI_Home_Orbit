@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from backend.app.db.base import utcnow
 from backend.app.db.models import (HouseholdMemo, HouseholdPreference, HouseholdPreferenceProposal, HouseholdTask,
@@ -257,33 +258,53 @@ class ReminderScheduleService:
                              f"reminder:{schedule.id}:{due_at.replace(microsecond=0).isoformat()}")
 
     def dispatch(self, household_id, occurrence, now=None):
-        """Dispatch one occurrence idempotently: duplicate triggers never duplicate notifications."""
+        """Dispatch one occurrence atomically and idempotently.
+
+        The occurrence notification insert (unique on household_id + occurrence_key)
+        and the next_run_at advance happen in one transaction. A concurrent
+        dispatcher that loses the insert race gets an IntegrityError, treats the
+        occurrence as already dispatched, and re-applies the same deterministic
+        advance - duplicate triggers can never produce duplicate notifications.
+        """
         now = now or utcnow()
         schedule = self.session.get(TaskSchedule, occurrence.schedule_id)
         task = self.session.get(HouseholdTask, occurrence.task_id)
         if schedule is None or task is None or not schedule.active or task.status != "open":
             return {"dispatched": False, "reason": "SCHEDULE_INACTIVE"}
         existing = self.session.scalar(select(Notification).where(
-            Notification.household_id == household_id, Notification.source_type == "task_schedule",
-            Notification.source_id == occurrence.occurrence_key))
+            Notification.household_id == household_id,
+            Notification.occurrence_key == occurrence.occurrence_key))
         if existing is not None:
-            schedule.last_run_at = occurrence.due_at
-            schedule.next_run_at = occurrence.due_at + timedelta(minutes=schedule.interval_minutes)
-            if schedule.next_run_at <= now:
-                schedule.next_run_at = now + timedelta(minutes=schedule.interval_minutes)
-            self.session.flush()
+            self._advance(schedule, occurrence, now)
             return {"dispatched": False, "reason": "OCCURRENCE_ALREADY_DISPATCHED",
                     "notification_id": existing.id, "occurrence_key": occurrence.occurrence_key}
-        notification = self.notifications.create(household_id, title=f"提醒：{task.title}",
-                                                 body=task.description or task.title, kind="reminder",
-                                                 source_type="task_schedule", source_id=occurrence.occurrence_key)
+        try:
+            with self.session.begin_nested():  # SAVEPOINT：仅回滚本次插入，不破坏调用方事务
+                notification = self.notifications.create(household_id, title=f"提醒：{task.title}",
+                                                          body=task.description or task.title, kind="reminder",
+                                                          source_type="task_schedule",
+                                                          source_id=occurrence.occurrence_key,
+                                                          occurrence_key=occurrence.occurrence_key)
+                self._advance(schedule, occurrence, now)
+            return {"dispatched": True, "notification_id": notification.id,
+                    "occurrence_key": occurrence.occurrence_key}
+        except IntegrityError:
+            existing = self.session.scalar(select(Notification).where(
+                Notification.household_id == household_id,
+                Notification.occurrence_key == occurrence.occurrence_key))
+            if existing is None:
+                raise  # 与 occurrence 无关的完整性冲突，按原样上抛
+            schedule = self.session.get(TaskSchedule, occurrence.schedule_id)
+            self._advance(schedule, occurrence, now)
+            return {"dispatched": False, "reason": "OCCURRENCE_ALREADY_DISPATCHED",
+                    "notification_id": existing.id, "occurrence_key": occurrence.occurrence_key}
+
+    def _advance(self, schedule, occurrence, now):
         schedule.last_run_at = occurrence.due_at
         schedule.next_run_at = occurrence.due_at + timedelta(minutes=schedule.interval_minutes)
         if schedule.next_run_at <= now:
             schedule.next_run_at = now + timedelta(minutes=schedule.interval_minutes)
         self.session.flush()
-        return {"dispatched": True, "notification_id": notification.id,
-                "occurrence_key": occurrence.occurrence_key}
 
     def dispatch_due(self, household_id, now=None):
         results = []
@@ -296,9 +317,11 @@ class NotificationService:
     def __init__(self, session):
         self.session = session
 
-    def create(self, household_id, *, title, body="", kind="general", source_type="", source_id=""):
+    def create(self, household_id, *, title, body="", kind="general", source_type="", source_id="",
+               occurrence_key=None):
         notification = Notification(household_id=household_id, title=title, body=body or "", kind=kind,
-                                    source_type=source_type, source_id=source_id)
+                                    source_type=source_type, source_id=source_id,
+                                    occurrence_key=occurrence_key)
         self.session.add(notification)
         self.session.flush()
         return notification

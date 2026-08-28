@@ -465,12 +465,15 @@ class TaskSchedule(TenantRow, Base):
 
 class Notification(TenantRow, Base):
     __tablename__ = "notifications"
-    __table_args__ = tenant_parent_constraints()
+    __table_args__ = tenant_parent_constraints(
+        UniqueConstraint("household_id", "occurrence_key", name="uq_notifications_household_occurrence"),
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="general")
     source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     source_id: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    occurrence_key: Mapped[str | None] = mapped_column(String(200))
 
 
 class NotificationRead(TenantRow, Base):

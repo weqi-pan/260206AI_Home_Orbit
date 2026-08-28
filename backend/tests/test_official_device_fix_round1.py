@@ -421,7 +421,7 @@ def test_md5_migration_roundtrip_restores_global_unique_on_downgrade(tmp_path):
     assert {tuple(item["column_names"]) for item in inspect(engine).get_unique_constraints("knowledge_files")} == {
         ("household_id", "file_md5"), ("id", "household_id")}
     with engine.connect() as connection:
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "20260828_0011"
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "20260828_0012"
 
 
 def test_two_households_seed_same_knowledge_md5_at_head(tmp_path, settings):
