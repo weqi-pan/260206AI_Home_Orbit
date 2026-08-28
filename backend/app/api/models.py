@@ -202,8 +202,25 @@ def bind_purpose(purpose: str, payload: PurposeBindingRequest, request: Request,
                     raise EmbeddingSourceSnapshotStale(evidence)
                 current_build.evidence_json = json.dumps(evidence, sort_keys=True)
 
-            switch.build(build.id, lambda store: VectorStoreService(vector_store=store).rebuild(
-                files=snapshot.files, faqs=snapshot.faqs), commit=False, before_swap=compare_before_swap)
+            def rebuild_scopes(store):
+                from backend.app.api.knowledge import official_knowledge_skill_version
+                from backend.app.db.models import FaqPair, KnowledgeFile
+
+                service = VectorStoreService(vector_store=store)
+                file_homes = dict(db.execute(select(KnowledgeFile.id, KnowledgeFile.household_id).where(
+                    KnowledgeFile.id.in_([item[0] for item in snapshot.files]))).all()) if snapshot.files else {}
+                faq_homes = dict(db.execute(select(FaqPair.id, FaqPair.household_id).where(
+                    FaqPair.id.in_([item[0] for item in snapshot.faqs]))).all()) if snapshot.faqs else {}
+                households = sorted(set(file_homes.values()) | set(faq_homes.values()))
+                for household_id in households:
+                    service.rebuild(
+                        files=[item for item in snapshot.files if file_homes.get(item[0]) == household_id],
+                        faqs=[item for item in snapshot.faqs if faq_homes.get(item[0]) == household_id],
+                        household_id=household_id,
+                        skill_version_id=official_knowledge_skill_version(db, household_id),
+                    )
+
+            switch.build(build.id, rebuild_scopes, commit=False, before_swap=compare_before_swap)
         item = registry.bind(purpose, payload.model_id)
     except HTTPException:
         raise

@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
+import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.agent.platform.installations import InstallationService
 from backend.app.core.security import get_current_account, get_db
-from backend.app.db.models import Account, AgentInstallation, HouseholdMember
+from backend.app.db.models import Account, AdminActionAudit, AgentInstallation, HouseholdMember
 from backend.app.schemas.agent_platform import InstallationPermissionRequest, InstallationRequest
 
 
@@ -50,6 +51,13 @@ def grant_permission(installation_id: str, payload: InstallationPermissionReques
             installation_id, payload.tool_id, payload.tool_version)
     except RuntimeError as exc:
         raise HTTPException(409, detail={"code": str(exc)}) from exc
+    db.add(AdminActionAudit(principal_id=account.id, household_id=installation.household_id,
+                            action="installation.grant", resource_type="installation_permission",
+                            resource_id=payload.tool_id,
+                            detail_json=json.dumps({"installation_id": installation_id,
+                                                    "tool_version": payload.tool_version},
+                                                   sort_keys=True)))
+    db.commit()
     return {"id": row.id, "installation_id": row.installation_id, "tool_id": row.tool_id,
             "tool_version": row.tool_version}
 
@@ -65,3 +73,8 @@ def revoke_permission(installation_id: str, tool_id: str, account: Account = Dep
         InstallationService(db, installation.household_id, account.id).revoke(installation_id, tool_id)
     except RuntimeError as exc:
         raise HTTPException(409, detail={"code": str(exc)}) from exc
+    db.add(AdminActionAudit(principal_id=account.id, household_id=installation.household_id,
+                            action="installation.revoke", resource_type="installation_permission",
+                            resource_id=tool_id,
+                            detail_json=json.dumps({"installation_id": installation_id}, sort_keys=True)))
+    db.commit()

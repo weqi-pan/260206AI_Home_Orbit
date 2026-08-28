@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_current_account, get_db
+from backend.agent.tools.gateways import ToolRepositories
 from backend.app.db.models import Account, ChatSession, HouseholdMember, Ticket
 from backend.app.models.execution import purpose_model_resolver
 from backend.app.services.ticket_summary import TicketSummaryService
@@ -55,11 +56,9 @@ def create(payload: TicketCreate, request: Request, account: Account = Depends(g
         summary = service.summarize(payload.content)
     except Exception:
         summary = payload.content[:200]
-    item = Ticket(household_id=household_id, account_id=account.id, session_id=payload.session_id,
-                  title=payload.title, summary=summary[:1000], emotion=payload.emotion, priority=payload.priority)
-    db.add(item)
-    db.commit()
-    db.refresh(item)
+    item = ToolRepositories(request.app.state.database.session_factory).create_ticket(
+        household_id, account.id, payload.session_id, payload.title, payload.content,
+        summary=summary[:1000], emotion=payload.emotion, priority=payload.priority)
     return ticket_dict(item)
 
 

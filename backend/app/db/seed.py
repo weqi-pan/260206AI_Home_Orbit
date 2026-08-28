@@ -1,6 +1,5 @@
 import csv
 import hashlib
-import json
 from pathlib import Path
 
 from sqlalchemy import select
@@ -144,7 +143,8 @@ def _seed_catalog(session):
                                  description=metadata.description, risk_level=metadata.risk_level,
                                  version=metadata.version, enabled=True)
             session.add(row)
-        elif row.version != metadata.version or row.risk_level != metadata.risk_level:
+        elif (row.display_name, row.description, row.risk_level, row.version, row.enabled) != (
+                metadata.display_name, metadata.description, metadata.risk_level, metadata.version, True):
             raise RuntimeError("TOOL_CATALOG_VERSION_CONFLICT")
     session.flush()
 
@@ -194,8 +194,8 @@ def seed_official_device_agent(session: Session, household_id: str, owner_id: st
         if not session.scalar(select(AgentToolBinding).where(AgentToolBinding.agent_version_id == version.id,
                                                               AgentToolBinding.tool_id == tool.id)):
             session.add(AgentToolBinding(household_id=household_id, agent_version_id=version.id, tool_id=tool.id))
-        if not session.scalar(select(ToolPermission).where(ToolPermission.household_id == household_id,
-                                                            ToolPermission.tool_id == tool.id)):
+        if tool.risk_level == "low" and not session.scalar(select(ToolPermission).where(
+                ToolPermission.household_id == household_id, ToolPermission.tool_id == tool.id)):
             session.add(ToolPermission(household_id=household_id, tool_id=tool.id,
                                        tool_version=tool.version, granted_by_account_id=owner_id))
     deployment = session.scalar(select(AgentDeployment).where(AgentDeployment.household_id == household_id,
@@ -211,6 +211,8 @@ def seed_official_device_agent(session: Session, household_id: str, owner_id: st
                                          agent_version_id=version.id, status="installed", authority_slot="active")
         session.add(installation); session.flush()
     for tool in tools:
+        if tool.risk_level != "low":
+            continue
         if not session.scalar(select(InstallationPermission).where(
                 InstallationPermission.installation_id == installation.id, InstallationPermission.tool_id == tool.id)):
             session.add(InstallationPermission(household_id=household_id, installation_id=installation.id,

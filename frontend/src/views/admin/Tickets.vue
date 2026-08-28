@@ -47,7 +47,7 @@ async function saveReply() {
   }
   saving.value = true
   try {
-    const updated = await updateTicket(current.value.id, { admin_reply: replyText.value.trim() })
+    const updated = await updateTicket(current.value.household_id, current.value.id, { admin_reply: replyText.value.trim() })
     patchCurrent(updated)
     ElMessage.success('回复已保存')
   } catch {
@@ -59,7 +59,7 @@ async function saveReply() {
 async function changeStatus(ticket: AdminTicket, status: AdminTicket['status']) {
   saving.value = true
   try {
-    const updated = await updateTicket(ticket.id, { status })
+    const updated = await updateTicket(ticket.household_id, ticket.id, { status })
     patchCurrent(updated)
     ElMessage.success(`工单已${ticketStatusTag(status).label}`)
   } catch {
@@ -70,7 +70,7 @@ async function changeStatus(ticket: AdminTicket, status: AdminTicket['status']) 
 
 async function changePriority(ticket: AdminTicket, priority: AdminTicket['priority']) {
   try {
-    const updated = await updateTicket(ticket.id, { priority })
+    const updated = await updateTicket(ticket.household_id, ticket.id, { priority })
     patchCurrent(updated)
     ElMessage.success('优先级已更新')
   } catch {

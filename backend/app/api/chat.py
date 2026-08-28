@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
 from backend.app.core.security import get_current_account, get_db
-from backend.app.db.models import Account, AgentDeployment, AgentRun, AgentVersion, ChatSession, ConversationHistory, HouseholdMember, Ticket, ToolDefinition, ToolPermission
+from backend.app.db.models import Account, AgentDefinition, AgentDeployment, AgentInstallation, AgentRun, AgentVersion, ChatSession, ConversationHistory, HouseholdMember, Ticket, ToolDefinition, ToolPermission
 from backend.agent.platform.context import RunBudget, RunContext
 from backend.agent.tools.gateways import ToolCapabilities, ToolRepositories
 from backend.agent.platform.runner import DeploymentAgentRunner
@@ -75,7 +75,19 @@ class FeedbackRequest(BaseModel):
 
 
 def session_dict(item):
-    return {"id": item.id, "title": item.title, "created_at": item.created_at, "updated_at": item.updated_at}
+    return {"id": item.id, "title": item.title, "deployment_id": item.deployment_id,
+            "created_at": item.created_at, "updated_at": item.updated_at}
+
+
+def official_device_deployment(db, household_id):
+    return db.scalar(select(AgentDeployment).join(AgentVersion,
+        AgentVersion.id == AgentDeployment.agent_version_id).join(AgentDefinition,
+        AgentDefinition.id == AgentVersion.agent_id).join(AgentInstallation,
+        AgentInstallation.deployment_id == AgentDeployment.id).where(
+            AgentDeployment.household_id == household_id, AgentDefinition.name == "设备管家",
+            AgentInstallation.household_id == household_id, AgentInstallation.status == "installed",
+            AgentInstallation.authority_slot == "active",
+            AgentInstallation.agent_version_id == AgentDeployment.agent_version_id).order_by(AgentDeployment.id))
 
 
 def owned_session(db, session_id, account_id):
@@ -102,7 +114,9 @@ def list_sessions(account: Account = Depends(get_current_account), db: Session =
 def create_session(payload: SessionCreate, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
     household_id = exactly_one_household(db.scalars(select(HouseholdMember.household_id).where(
         HouseholdMember.account_id == account.id)).all())
-    item = ChatSession(account_id=account.id, household_id=household_id, title=payload.title)
+    deployment = official_device_deployment(db, household_id)
+    item = ChatSession(account_id=account.id, household_id=household_id,
+                       deployment_id=deployment.id if deployment else None, title=payload.title)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -155,6 +169,12 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
     owned_session(db, session_id, account.id)
     chat_session = db.get(ChatSession, session_id)
     household_id = chat_session.household_id
+    if not chat_session.deployment_id:
+        deployment = official_device_deployment(db, household_id)
+        if not deployment:
+            raise HTTPException(status_code=409, detail={"code": "SESSION_DEPLOYMENT_REQUIRED"})
+        chat_session.deployment_id = deployment.id
+        db.commit()
     injected_runner = getattr(request.app.state, "agent_runner", None)
     resolved_runtime = None
     usage_id = None

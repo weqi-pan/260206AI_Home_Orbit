@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 def sync_knowledge_vectors(database, vector_service, settings):
     """以 knowledge_files(active) 为准补偿向量库：缺失的入向量库，文件缺失的跳过；任何失败不阻塞启动。"""
     from backend.app.api.knowledge import _knowledge_file_path
+    from backend.app.api.knowledge import official_knowledge_skill_version
     from backend.app.db.models import KnowledgeFile
 
     try:
@@ -34,7 +35,9 @@ def sync_knowledge_vectors(database, vector_service, settings):
                 logger.warning("知识库向量同步跳过：源文件缺失 filename=%s", item.filename)
                 continue
             if not vector_service.has_file(item.id):
-                vector_service.add_file(item.id, path, item.filename)
+                skill_version_id = official_knowledge_skill_version(session, item.household_id)
+                vector_service.add_file(item.id, path, item.filename, household_id=item.household_id,
+                                        skill_version_id=skill_version_id)
                 logger.info("知识库向量同步：已索引 filename=%s", item.filename)
         except VectorStoreUnavailable as exc:
             logger.warning("知识库向量同步跳过：%s", exc)

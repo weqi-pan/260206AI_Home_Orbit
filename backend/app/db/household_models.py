@@ -22,6 +22,7 @@ class HouseholdMember(Base):
     __table_args__ = (
         CheckConstraint("role IN ('owner', 'admin', 'member', 'viewer')", name="ck_household_members_role"),
         UniqueConstraint("account_id", name="uq_household_members_account"),
+        UniqueConstraint("account_id", "household_id", name="uq_household_member_account_household"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)

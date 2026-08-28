@@ -1,28 +1,39 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   createDevice,
   deleteDevice,
   fetchAdminDevices,
+  fetchAdminHouseholds,
   fetchInventory,
   updateDevice,
   upsertInventory,
   type AdminDevice,
+  type AdminHousehold,
   type DevicePayload,
   type InventoryRow,
 } from '../../api/admin'
 
 const devices = ref<AdminDevice[]>([])
 const inventoryRows = ref<InventoryRow[]>([])
+const households = ref<AdminHousehold[]>([])
+const householdFilter = ref('')
 const loading = ref(false)
+
+const householdName = computed(() => {
+  const map = new Map(households.value.map((item) => [item.id, item.name]))
+  return (id: string) => map.get(id) ?? id.slice(0, 8)
+})
 
 const deviceDialogVisible = ref(false)
 const editing = ref(false)
+const editingHousehold = ref('')
 const saving = ref(false)
 const deviceFormRef = ref<FormInstance>()
-const deviceForm = reactive<DevicePayload>({
+const deviceForm = reactive<DevicePayload & { household_id: string }>({
+  household_id: '',
   model_id: '',
   model_name: '',
   category: '',
@@ -33,6 +44,7 @@ const deviceForm = reactive<DevicePayload>({
 })
 
 const deviceRules: FormRules = {
+  household_id: [{ required: true, message: '请选择所属家庭', trigger: 'change' }],
   model_id: [
     { required: true, message: '请输入型号ID', trigger: 'blur' },
     { pattern: /^\S+$/, message: '型号ID不能包含空格', trigger: 'blur' },
@@ -48,7 +60,9 @@ const deviceRules: FormRules = {
 async function load() {
   loading.value = true
   try {
-    const [deviceList, inventoryList] = await Promise.all([fetchAdminDevices(), fetchInventory()])
+    if (!households.value.length) households.value = await fetchAdminHouseholds()
+    const scope = householdFilter.value || undefined
+    const [deviceList, inventoryList] = await Promise.all([fetchAdminDevices(scope), fetchInventory(scope)])
     devices.value = deviceList
     inventoryRows.value = inventoryList
   } catch {
@@ -63,13 +77,24 @@ function formatTime(value: string) {
 
 function openCreate() {
   editing.value = false
+  editingHousehold.value = ''
   deviceFormRef.value?.resetFields()
-  Object.assign(deviceForm, { model_id: '', model_name: '', category: '', specs: '', description: '', price: 0, features: '' })
+  Object.assign(deviceForm, {
+    household_id: householdFilter.value,
+    model_id: '',
+    model_name: '',
+    category: '',
+    specs: '',
+    description: '',
+    price: 0,
+    features: '',
+  })
   deviceDialogVisible.value = true
 }
 
 function openEdit(row: AdminDevice) {
   editing.value = true
+  editingHousehold.value = row.household_id
   deviceFormRef.value?.resetFields()
   Object.assign(deviceForm, row)
   deviceDialogVisible.value = true
@@ -81,10 +106,10 @@ async function saveDevice() {
   saving.value = true
   try {
     if (editing.value) {
-      await updateDevice(deviceForm.model_id, deviceForm)
+      await updateDevice(editingHousehold.value, deviceForm.model_id, deviceForm)
       ElMessage.success('设备已更新')
     } else {
-      await createDevice(deviceForm)
+      await createDevice(deviceForm.household_id, deviceForm)
       ElMessage.success('设备已创建')
     }
     deviceDialogVisible.value = false
@@ -102,7 +127,7 @@ async function removeDevice(row: AdminDevice) {
     return
   }
   try {
-    await deleteDevice(row.model_id)
+    await deleteDevice(row.household_id, row.model_id)
     ElMessage.success('设备已删除')
     await load()
   } catch {
@@ -112,7 +137,7 @@ async function removeDevice(row: AdminDevice) {
 const inventoryDialogVisible = ref(false)
 const inventorySaving = ref(false)
 const inventoryFormRef = ref<FormInstance>()
-const inventoryForm = reactive({ model_id: '', model_name: '', warehouse: '', stock: 0, min_stock: 0 })
+const inventoryForm = reactive({ household_id: '', model_id: '', model_name: '', warehouse: '', stock: 0, min_stock: 0 })
 
 const inventoryRules: FormRules = {
   model_id: [{ required: true, message: '请选择型号', trigger: 'change' }],
@@ -124,6 +149,7 @@ const inventoryRules: FormRules = {
 function openInventory(row: AdminDevice) {
   inventoryFormRef.value?.resetFields()
   Object.assign(inventoryForm, {
+    household_id: row.household_id,
     model_id: row.model_id,
     model_name: row.model_name,
     warehouse: '',
@@ -135,8 +161,9 @@ function openInventory(row: AdminDevice) {
 
 function openInventoryRow(row: InventoryRow) {
   inventoryFormRef.value?.resetFields()
-  const device = devices.value.find((item) => item.model_id === row.model_id)
+  const device = devices.value.find((item) => item.model_id === row.model_id && item.household_id === row.household_id)
   Object.assign(inventoryForm, {
+    household_id: row.household_id,
     model_id: row.model_id,
     model_name: device?.model_name ?? row.model_id,
     warehouse: row.warehouse,
@@ -151,7 +178,7 @@ async function saveInventory() {
   if (!valid) return
   inventorySaving.value = true
   try {
-    await upsertInventory({
+    await upsertInventory(inventoryForm.household_id, {
       model_id: inventoryForm.model_id,
       warehouse: inventoryForm.warehouse.trim(),
       stock: inventoryForm.stock,
@@ -174,11 +201,19 @@ onMounted(load)
     <div class="page-toolbar">
       <h3 class="page-title">设备管理</h3>
       <div class="toolbar-spacer"></div>
+      <el-select v-model="householdFilter" clearable placeholder="全部家庭" style="width: 180px" @change="load()">
+        <el-option v-for="home in households" :key="home.id" :label="home.name" :value="home.id" />
+      </el-select>
       <el-button @click="load()">刷新</el-button>
       <el-button type="primary" :icon="Plus" @click="openCreate()">新增设备</el-button>
     </div>
     <el-table v-loading="loading" :data="devices" border>
       <el-table-column prop="model_id" label="型号ID" width="140" />
+      <el-table-column label="所属家庭" width="150">
+        <template #default="{ row }">
+          {{ householdName((row as AdminDevice).household_id) }}
+        </template>
+      </el-table-column>
       <el-table-column prop="model_name" label="设备名称" min-width="150" />
       <el-table-column prop="category" label="类别" width="130" />
       <el-table-column prop="specs" label="规格" min-width="140" show-overflow-tooltip />
@@ -197,6 +232,11 @@ onMounted(load)
     <h3 class="page-title section">型号库存</h3>
     <el-table v-loading="loading" :data="inventoryRows" border>
       <el-table-column prop="model_id" label="型号ID" width="140" />
+      <el-table-column label="所属家庭" width="150">
+        <template #default="{ row }">
+          {{ householdName((row as InventoryRow).household_id) }}
+        </template>
+      </el-table-column>
       <el-table-column prop="warehouse" label="仓库" width="140" />
       <el-table-column label="库存数量" width="120" align="center">
         <template #default="{ row }">
@@ -223,6 +263,11 @@ onMounted(load)
 
     <el-dialog v-model="deviceDialogVisible" :title="editing ? '编辑设备' : '新增设备'" width="560px">
       <el-form ref="deviceFormRef" :model="deviceForm" :rules="deviceRules" label-width="90px">
+        <el-form-item v-if="!editing" label="所属家庭" prop="household_id">
+          <el-select v-model="deviceForm.household_id" placeholder="选择设备所属家庭" style="width: 100%">
+            <el-option v-for="home in households" :key="home.id" :label="home.name" :value="home.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="型号ID" prop="model_id">
           <el-input v-model="deviceForm.model_id" :disabled="editing" placeholder="唯一标识，如 R1-Lite" />
         </el-form-item>
@@ -253,6 +298,9 @@ onMounted(load)
 
     <el-dialog v-model="inventoryDialogVisible" :title="`库存设置 · ${inventoryForm.model_name}`" width="480px">
       <el-form ref="inventoryFormRef" :model="inventoryForm" :rules="inventoryRules" label-width="90px">
+        <el-form-item label="所属家庭">
+          <el-input :model-value="householdName(inventoryForm.household_id)" disabled />
+        </el-form-item>
         <el-form-item label="型号" prop="model_id">
           <el-input v-model="inventoryForm.model_id" disabled />
         </el-form-item>
@@ -266,7 +314,7 @@ onMounted(load)
           <el-input-number v-model="inventoryForm.min_stock" :min="0" />
         </el-form-item>
       </el-form>
-      <p class="dim tip">按「型号+仓库」保存，已存在则覆盖更新；输入新仓库名称即可新增仓库行。</p>
+      <p class="dim tip">按「家庭+型号+仓库」保存，已存在则覆盖更新；输入新仓库名称即可新增仓库行。</p>
       <template #footer>
         <el-button @click="inventoryDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="inventorySaving" @click="saveInventory()">保存</el-button>

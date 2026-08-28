@@ -48,6 +48,11 @@ def _official_context(app, account_id, model):
             AgentInstallation.household_id == member.household_id,
             AgentInstallation.deployment_id == deployment.id,
             AgentInstallation.authority_slot == "active"))
+        if model.tool_name in {"device.restock.register", "device.ticket.create"}:
+            from backend.app.db.models import InstallationPermission, ToolDefinition
+            tool = db.scalar(select(ToolDefinition).where(ToolDefinition.key == model.tool_name))
+            db.add(InstallationPermission(household_id=member.household_id, installation_id=installation.id,
+                tool_id=tool.id, tool_version=tool.version, granted_by_account_id=account_id))
         chat = ChatSession(account_id=account_id, household_id=member.household_id,
                            deployment_id=deployment.id, title="设备管家测试")
         db.add(chat); db.flush()
@@ -101,8 +106,8 @@ def test_official_device_seed_is_idempotent_versioned_and_least_privilege(client
         granted = set(db.scalars(select(ToolDefinition.key).join(InstallationPermission,
             InstallationPermission.tool_id == ToolDefinition.id).where(
                 InstallationPermission.installation_id == installation.id)).all())
-        assert "device.ticket.create" in granted and "device.restock.register" in granted
-        assert all(db.scalar(select(ToolDefinition.risk_level).where(ToolDefinition.key == key)) != "high" for key in granted)
+        assert "device.ticket.create" not in granted and "device.restock.register" not in granted
+        assert all(db.scalar(select(ToolDefinition.risk_level).where(ToolDefinition.key == key)) == "low" for key in granted)
 
 
 @pytest.mark.parametrize(("tool_name", "arguments", "expected"), [

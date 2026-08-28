@@ -21,9 +21,10 @@ def register(client, username):
 
 class FakeAgentRunner:
     def stream(self, messages, context):
-        assert context["account_id"]
-        assert context["user_id"] == "1001"
-        assert context["city"] == "上海"
+        value = lambda name: context.get(name) if isinstance(context, dict) else getattr(context, name)
+        assert value("principal_id") if not isinstance(context, dict) else value("account_id")
+        assert value("user_id") == "1001"
+        assert value("city") == "上海"
         yield {"event": "token", "data": {"content": "您好"}}
         yield {"event": "tool", "data": {"name": "search_devices", "status": "completed"}}
         yield {"event": "token", "data": {"content": "，已处理"}}
@@ -173,8 +174,9 @@ def test_chat_runtime_injects_lazy_vector_store_and_rag_has_clear_key_fallback(c
     from backend.agent.tools.agent_tools import rag_summarize
 
     class ContextRunner:
+        def bind_model(self, run_id, model): pass
         def stream(self, messages, context):
-            assert context["vector_store_service"] is app.state.vector_store_service
+            assert context.vector_store_service is app.state.vector_store_service
             fallback = rag_summarize.func(query="售后", runtime=type("Runtime", (), {"context": context})())
             assert "MODEL_NOT_CONFIGURED" in fallback
             yield {"event": "token", "data": {"content": "完成"}}
@@ -287,6 +289,7 @@ def test_chat_stream_close_persists_partial_answer_or_placeholder_with_sentiment
     token = login(client, "demo", settings.demo_initial_password)
     for runner, expected in [(FakeAgentRunner(), "您好\n\n[回答中断]"), (ToolOnlyRunner(), "[回答生成失败] 客户端提前断开")]:
         app.state.agent_runner = runner
+        app.state.deployment_agent_runner = runner
         chat_id = client.post("/api/chat/sessions", headers=bearer(token), json={}).json()["id"]
         with app.state.database.session_factory.begin() as session:
             user_message = ConversationHistory(session_id=chat_id, user_id="1001", role="user", content="中断测试")
@@ -322,6 +325,7 @@ def test_chat_stream_close_after_persist_does_not_duplicate_assistant_message(cl
     from backend.app.db.models import ConversationHistory
 
     app.state.agent_runner = FakeAgentRunner()
+    app.state.deployment_agent_runner = app.state.agent_runner
     app.state.sentiment_service = FakeSentiment()
     app.state.followup_service = FakeFollowup()
     token = login(client, "demo", settings.demo_initial_password)

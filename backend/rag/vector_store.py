@@ -69,13 +69,20 @@ class VectorStoreService:
     def delete_faq(self, faq_id):
         self._get_store()._collection.delete(where={"faq_id": str(faq_id)})
 
-    def rebuild(self, files=(), faqs=()):
+    def rebuild(self, files=(), faqs=(), household_id=None, skill_version_id=None):
         store = self._get_store()
-        store._collection.delete(where={"source_type": {"$in": ["kb", "faq"]}})
+        scope = {"source_type": {"$in": ["kb", "faq"]}}
+        if household_id and skill_version_id:
+            scope = {"$and": [{"household_id": str(household_id)},
+                                {"skill_version_id": str(skill_version_id)}, scope]}
+        elif household_id or skill_version_id:
+            raise ValueError("KNOWLEDGE_SCOPE_INCOMPLETE")
+        store._collection.delete(where=scope)
         for file_id, path, filename in files:
-            self.add_file(file_id, path, filename)
+            self.add_file(file_id, path, filename, household_id=household_id, skill_version_id=skill_version_id)
         for faq_id, question, answer, source_file_id in faqs:
-            self.add_faq(faq_id, question, answer, source_file_id)
+            self.add_faq(faq_id, question, answer, source_file_id,
+                         household_id=household_id, skill_version_id=skill_version_id)
 
     def search(self, query, k=4, household_id=None, skill_version_ids=()):
         where = None

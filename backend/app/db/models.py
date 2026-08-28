@@ -58,6 +58,8 @@ class Ticket(Base):
         CheckConstraint("priority IN ('low', 'normal', 'high')", name="ck_tickets_priority"),
         CheckConstraint("status IN ('open', 'processing', 'resolved', 'closed')", name="ck_tickets_status"),
         ForeignKeyConstraint(["session_id", "household_id"], ["chat_sessions.id", "chat_sessions.household_id"]),
+        ForeignKeyConstraint(["account_id", "household_id"],
+                             ["household_members.account_id", "household_members.household_id"]),
         UniqueConstraint("id", "household_id"),
     )
 
@@ -151,6 +153,8 @@ class RestockNotification(Base):
         CheckConstraint("status IN ('waiting', 'notified')", name="ck_restock_notifications_status"),
         UniqueConstraint("household_id", "account_id", "model_id", name="uq_restock_household_account_model"),
         ForeignKeyConstraint(["device_id", "household_id"], ["devices.id", "devices.household_id"]),
+        ForeignKeyConstraint(["account_id", "household_id"],
+                             ["household_members.account_id", "household_members.household_id"]),
         UniqueConstraint("id", "household_id"),
     )
 
@@ -194,6 +198,18 @@ class ConversationHistory(Base):
     sentiment: Mapped[str | None] = mapped_column(String(32))
     sentiment_score: Mapped[float | None] = mapped_column(Float)
     feedback: Mapped[str | None] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdminActionAudit(Base):
+    __tablename__ = "admin_action_audits"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    principal_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
+    household_id: Mapped[str | None] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    detail_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

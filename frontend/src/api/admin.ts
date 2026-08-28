@@ -11,6 +11,13 @@ export interface AdminAccount {
   created_at: string
 }
 
+export interface AdminHousehold {
+  id: string
+  name: string
+  created_at: string
+  members: { account_id: string; username: string; role: string }[]
+}
+
 export interface DashboardData {
   accounts: number
   users: number
@@ -20,7 +27,7 @@ export interface DashboardData {
   messages_last_7_days: number
   satisfaction_rate: number
   ticket_status_counts: Record<string, number>
-  low_stock_devices: { model_id: string; model_name: string; total_stock: number; stock_threshold: number }[]
+  low_stock_devices: { household_id: string; model_id: string; model_name: string; total_stock: number; stock_threshold: number }[]
   knowledge_files: number
   approved_faq: number
 }
@@ -33,6 +40,7 @@ export interface AdminDevice {
   description: string
   price: number
   features: string
+  household_id: string
 }
 
 export interface DevicePayload {
@@ -53,6 +61,7 @@ export interface InventoryPayload {
 }
 
 export interface InventoryRow {
+  household_id: string
   model_id: string
   warehouse: string
   stock: number
@@ -62,6 +71,7 @@ export interface InventoryRow {
 
 export interface AdminTicket extends TicketInfo {
   account_id: string
+  household_id: string
 }
 
 export interface TicketUpdatePayload {
@@ -72,6 +82,10 @@ export interface TicketUpdatePayload {
 
 export function fetchDashboard() {
   return http.get<DashboardData>('/admin/dashboard').then((r) => r.data)
+}
+
+export function fetchAdminHouseholds() {
+  return http.get<AdminHousehold[]>('/admin/households').then((r) => r.data)
 }
 
 export function fetchAccounts() {
@@ -86,38 +100,51 @@ export function resetAccountPassword(accountId: string, password: string) {
   return http.post<void>(`/admin/accounts/${encodeURIComponent(accountId)}/reset-password`, { password })
 }
 
-export function fetchAdminDevices() {
-  return http.get<AdminDevice[]>('/admin/devices').then((r) => r.data)
-}
-
-export function createDevice(payload: DevicePayload) {
-  return http.post<AdminDevice>('/admin/devices', payload).then((r) => r.data)
-}
-
-export function updateDevice(modelId: string, payload: DevicePayload) {
-  return http.put<AdminDevice>(`/admin/devices/${encodeURIComponent(modelId)}`, payload).then((r) => r.data)
-}
-
-export function deleteDevice(modelId: string) {
-  return http.delete<void>(`/admin/devices/${encodeURIComponent(modelId)}`)
-}
-
-export function fetchInventory(modelId?: string) {
+export function fetchAdminDevices(householdId?: string) {
   return http
-    .get<InventoryRow[]>('/admin/inventory', { params: modelId ? { model_id: modelId } : {} })
+    .get<AdminDevice[]>('/admin/devices', { params: householdId ? { household_id: householdId } : {} })
     .then((r) => r.data)
 }
 
-export function upsertInventory(payload: InventoryPayload) {
+export function createDevice(householdId: string, payload: DevicePayload) {
   return http
-    .put<{ id: number; model_id: string; warehouse: string; stock: number; min_stock: number }>('/admin/inventory', payload)
+    .post<AdminDevice>('/admin/devices', payload, { params: { household_id: householdId } })
     .then((r) => r.data)
 }
 
-export function fetchAdminTickets() {
-  return http.get<AdminTicket[]>('/admin/tickets').then((r) => r.data)
+export function updateDevice(householdId: string, modelId: string, payload: DevicePayload) {
+  return http
+    .put<AdminDevice>(`/admin/devices/${encodeURIComponent(modelId)}`, payload, { params: { household_id: householdId } })
+    .then((r) => r.data)
 }
 
-export function updateTicket(ticketId: number, payload: TicketUpdatePayload) {
-  return http.put<AdminTicket>(`/admin/tickets/${ticketId}`, payload).then((r) => r.data)
+export function deleteDevice(householdId: string, modelId: string) {
+  return http.delete<void>(`/admin/devices/${encodeURIComponent(modelId)}`, { params: { household_id: householdId } })
+}
+
+export function fetchInventory(householdId?: string, modelId?: string) {
+  const params: Record<string, string> = {}
+  if (householdId) params.household_id = householdId
+  if (modelId) params.model_id = modelId
+  return http.get<InventoryRow[]>('/admin/inventory', { params }).then((r) => r.data)
+}
+
+export function upsertInventory(householdId: string, payload: InventoryPayload) {
+  return http
+    .put<{ id: number; model_id: string; warehouse: string; stock: number; min_stock: number }>('/admin/inventory', payload, {
+      params: { household_id: householdId },
+    })
+    .then((r) => r.data)
+}
+
+export function fetchAdminTickets(householdId?: string) {
+  return http
+    .get<AdminTicket[]>('/admin/tickets', { params: householdId ? { household_id: householdId } : {} })
+    .then((r) => r.data)
+}
+
+export function updateTicket(householdId: string, ticketId: number, payload: TicketUpdatePayload) {
+  return http
+    .put<AdminTicket>(`/admin/households/${encodeURIComponent(householdId)}/tickets/${ticketId}`, payload)
+    .then((r) => r.data)
 }

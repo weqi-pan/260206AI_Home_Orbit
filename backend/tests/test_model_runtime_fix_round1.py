@@ -98,11 +98,14 @@ def test_chat_reserves_grant_quota_and_records_usage_before_real_runner(client, 
         configured_runtime(session, household_id, purpose="embedding")
 
     class Runner:
+        def bind_model(self, run_id, model): pass
         def stream(self, messages, context):
-            assert context["model_snapshot"].profile["max_tokens"] == 8
+            assert context.model_snapshot["profile"]["max_tokens"] == 8
             yield {"event": "token", "data": {"content": "ok"}}
 
-    app.state.agent_runner = Runner()
+    runner = Runner()
+    app.state.agent_runner = runner
+    app.state.deployment_agent_runner = runner
     app.state.enforce_model_runtime_for_injected_runner = True
     app.state.chat_model_builder = lambda resolved: object()
     session_id = client.post("/api/chat/sessions", headers=headers, json={}).json()["id"]
@@ -324,8 +327,10 @@ def test_embedding_binding_api_rebuilds_before_atomic_pointer_and_binding_switch
     with app.state.database.session_factory() as session:
         assert session.get(ModelPurposeBinding, "embedding").model_id == new_id
         assert session.get(ActiveEmbeddingCollection, "knowledge").model_id == new_id
-    assert rebuilt[0] == {"where": {"source_type": {"$in": ["kb", "faq"]}}}
-    assert len(rebuilt) > 1
+    deletes = [item for item in rebuilt if isinstance(item, dict) and "$and" in item.get("where", {})]
+    assert any(item["where"]["$and"][0] == {"household_id": household_id} for item in deletes)
+    assert all(item["where"]["$and"][2] == {"source_type": {"$in": ["kb", "faq"]}} for item in deletes)
+    assert len(deletes) >= 2
 
 
 def test_anthropic_builder_uses_controlled_http_client_without_network():

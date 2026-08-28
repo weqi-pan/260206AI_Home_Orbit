@@ -15,7 +15,8 @@ class RecordingVectorService:
     def has_file(self, file_id):
         return file_id in self.known
 
-    def add_file(self, file_id, path, filename):
+    def add_file(self, file_id, path, filename, household_id=None, skill_version_id=None):
+        assert household_id and skill_version_id
         self.added.append((file_id, path, filename))
         self.known.add(file_id)
 

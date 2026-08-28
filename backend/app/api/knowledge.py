@@ -52,6 +52,15 @@ def admin_household(db, admin):
     return db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == admin.id))
 
 
+def official_knowledge_skill_version(db, household_id):
+    from backend.app.db.models import Skill, SkillVersion
+    row = db.scalar(select(SkillVersion).join(Skill, Skill.id == SkillVersion.skill_id).where(
+        SkillVersion.household_id == household_id, Skill.name == "设备诊断").order_by(SkillVersion.version.desc()))
+    if not row:
+        raise HTTPException(409, detail={"code": "OFFICIAL_KNOWLEDGE_SKILL_NOT_FOUND"})
+    return row.id
+
+
 def faq_dict(item):
     return {"id": item.id, "question": item.question, "answer": item.answer, "source_file_id": item.source_file_id, "status": item.status,
             "created_at": item.created_at, "reviewed_at": item.reviewed_at}
@@ -74,6 +83,7 @@ async def upload(request: Request, file: UploadFile = File(...), admin: Account 
         raise HTTPException(status_code=413, detail="文件不能超过20MB")
     digest = hashlib.md5(content).hexdigest()
     household_id = admin_household(db, admin)
+    skill_version_id = official_knowledge_skill_version(db, household_id)
     existing = db.scalar(select(KnowledgeFile).where(KnowledgeFile.household_id == household_id,
                                                       KnowledgeFile.file_md5 == digest))
     if existing and existing.status == "active":
@@ -95,10 +105,8 @@ async def upload(request: Request, file: UploadFile = File(...), admin: Account 
     path = directory / f"{item.id}{suffix}"
     path.write_bytes(content)
     try:
-        try:
-            vector_service(request).add_file(item.id, path, item.filename, household_id=household_id)
-        except TypeError:
-            vector_service(request).add_file(item.id, path, item.filename)
+        vector_service(request).add_file(item.id, path, item.filename, household_id=household_id,
+                                         skill_version_id=skill_version_id)
     except Exception as exc:
         db.rollback()
         path.unlink(missing_ok=True)
@@ -132,6 +140,7 @@ def delete_file(file_id: str, request: Request, response: Response, admin: Accou
 @router.post("/rebuild")
 def rebuild(request: Request, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     household_id = admin_household(db, admin)
+    skill_version_id = official_knowledge_skill_version(db, household_id)
     files = []
     for item in db.scalars(select(KnowledgeFile).where(KnowledgeFile.household_id == household_id,
                                                        KnowledgeFile.status == "active")).all():
@@ -144,7 +153,8 @@ def rebuild(request: Request, admin: Account = Depends(require_admin), db: Sessi
                                                       FaqPair.status == "approved")).all()
     ]
     try:
-        vector_service(request).rebuild(files=files, faqs=faqs)
+        vector_service(request).rebuild(files=files, faqs=faqs, household_id=household_id,
+                                        skill_version_id=skill_version_id)
     except VectorStoreUnavailable as exc:
         raise HTTPException(status_code=503, detail={"code": "VECTOR_STORE_UNAVAILABLE"}) from exc
     return {"status": "rebuilt"}
@@ -153,6 +163,7 @@ def rebuild(request: Request, admin: Account = Depends(require_admin), db: Sessi
 @router.post("/files/{file_id}/generate-faq")
 def generate_faq(file_id: str, request: Request, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     household_id = admin_household(db, admin)
+    skill_version_id = official_knowledge_skill_version(db, household_id)
     item = db.scalar(select(KnowledgeFile).where(KnowledgeFile.id == file_id,
                                                  KnowledgeFile.household_id == household_id))
     if not item or item.status != "active":
@@ -190,6 +201,7 @@ def faq_list(status: str | None = None, admin: Account = Depends(require_admin),
 @router.put("/faq/{faq_id}/review")
 def review(faq_id: int, payload: ReviewRequest, request: Request, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     household_id = admin_household(db, admin)
+    skill_version_id = official_knowledge_skill_version(db, household_id)
     item = db.scalar(select(FaqPair).where(FaqPair.id == faq_id, FaqPair.household_id == household_id))
     if not item:
         raise HTTPException(status_code=404, detail="FAQ不存在")
@@ -197,11 +209,8 @@ def review(faq_id: int, payload: ReviewRequest, request: Request, admin: Account
         if payload.status == item.status:
             return faq_dict(item)
         if payload.status == "approved":
-            try:
-                vector_service(request).add_faq(item.id, item.question, item.answer, item.source_file_id,
-                                                household_id=household_id)
-            except TypeError:
-                vector_service(request).add_faq(item.id, item.question, item.answer, item.source_file_id)
+            vector_service(request).add_faq(item.id, item.question, item.answer, item.source_file_id,
+                                            household_id=household_id, skill_version_id=skill_version_id)
         else:
             vector_service(request).delete_faq(item.id)
     except VectorStoreUnavailable as exc:

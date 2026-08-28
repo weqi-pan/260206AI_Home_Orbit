@@ -18,16 +18,19 @@ class FakeVectorStore:
     def __init__(self):
         self.calls = []
 
-    def add_file(self, file_id, path, filename):
+    def add_file(self, file_id, path, filename, household_id=None, skill_version_id=None):
+        assert household_id and skill_version_id
         self.calls.append(("add_file", file_id, filename))
 
     def delete_file(self, file_id):
         self.calls.append(("delete_file", file_id))
 
-    def rebuild(self, files=(), faqs=()):
+    def rebuild(self, files=(), faqs=(), household_id=None, skill_version_id=None):
+        assert household_id and skill_version_id
         self.calls.append(("rebuild", tuple(files), tuple(faqs)))
 
-    def add_faq(self, faq_id, question, answer, source_file_id):
+    def add_faq(self, faq_id, question, answer, source_file_id, household_id=None, skill_version_id=None):
+        assert household_id and skill_version_id
         self.calls.append(("add_faq", faq_id, source_file_id))
 
     def delete_faq(self, faq_id):
@@ -236,7 +239,8 @@ def test_rebuild_rejects_bootstrap_filename_outside_root_and_reports_vector_fail
     from backend.rag.vector_store import VectorStoreUnavailable
 
     class FailingRebuild(FakeVectorStore):
-        def rebuild(self, files=(), faqs=()):
+        def rebuild(self, files=(), faqs=(), household_id=None, skill_version_id=None):
+            assert household_id and skill_version_id
             assert all(path.resolve().is_relative_to(Path(settings.knowledge_path).resolve()) for _, path, _ in files)
             assert all(filename != "../outside.txt" for _, _, filename in files)
             raise VectorStoreUnavailable("rebuild incomplete; source data preserved")
@@ -259,6 +263,7 @@ def test_rebuild_rejects_bootstrap_filename_outside_root_and_reports_vector_fail
 
 
 def test_admin_inventory_listing_requires_admin_and_filters_by_model(client, app, settings):
+    from backend.app.db.models import Account, HouseholdMember
     token = admin_token(client, settings)
     user_token = client.post(
         "/api/auth/login", json={"username": "demo", "password": settings.demo_initial_password}
@@ -266,37 +271,47 @@ def test_admin_inventory_listing_requires_admin_and_filters_by_model(client, app
 
     assert client.get("/api/admin/inventory", headers=bearer(user_token)).status_code == 403
 
-    rows = client.get("/api/admin/inventory", headers=bearer(token)).json()
+    with app.state.database.session_factory() as db:
+        admin = db.scalar(select(Account).where(Account.username == "admin"))
+        household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == admin.id))
+    rows = client.get("/api/admin/inventory", headers=bearer(token), params={"household_id": household_id}).json()
     assert {(row["model_id"], row["warehouse"]) for row in rows} == {
         ("R1-Lite", "北京仓"), ("R1-Lite", "上海仓"),
         ("R1-Pro", "北京仓"), ("R1-Pro", "上海仓"), ("R1-Pro", "广州仓"),
         ("RT2-Max", "上海仓"), ("RT2-Max", "广州仓"),
     }
     assert all(
-        set(row) == {"model_id", "warehouse", "stock", "min_stock", "updated_at"} and row["updated_at"]
+        set(row) == {"household_id", "model_id", "warehouse", "stock", "min_stock", "updated_at"}
+        and row["updated_at"] and row["household_id"] == household_id
         for row in rows
     )
 
-    filtered = client.get("/api/admin/inventory", headers=bearer(token), params={"model_id": "R1-Pro"}).json()
+    filtered = client.get("/api/admin/inventory", headers=bearer(token),
+                          params={"household_id": household_id, "model_id": "R1-Pro"}).json()
     assert {row["model_id"] for row in filtered} == {"R1-Pro"}
     assert {row["warehouse"] for row in filtered} == {"北京仓", "上海仓", "广州仓"}
     assert sorted(row["stock"] for row in filtered) == [12, 18, 32]
 
 
 def test_admin_account_device_inventory_notification_ticket_crud_and_dashboard(client, app, settings):
+    from backend.app.db.models import Account, HouseholdMember
     token = admin_token(client, settings)
     headers = bearer(token)
+    with app.state.database.session_factory() as db:
+        admin_account = db.scalar(select(Account).where(Account.username == "admin"))
+        household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == admin_account.id))
     accounts = client.get("/api/admin/accounts", headers=headers).json()
     demo = next(item for item in accounts if item["username"] == "demo")
     assert client.put(f"/api/admin/accounts/{demo['id']}", headers=headers, json={"status": "disabled"}).json()["status"] == "disabled"
     assert client.put(f"/api/admin/accounts/{demo['id']}", headers=headers, json={"status": "active", "role": "user"}).status_code == 200
     assert client.post(f"/api/admin/accounts/{demo['id']}/reset-password", headers=headers, json={"password": "Reset@123"}).status_code == 204
 
-    created = client.post("/api/admin/devices", headers=headers, json={
+    created = client.post("/api/admin/devices", headers=headers, params={"household_id": household_id}, json={
         "model_id": "NEW-1", "model_name": "新设备", "category": "扫地机器人", "specs": "s", "description": "d", "price": 999, "features": "f"
     })
     assert created.status_code == 201
-    assert client.put("/api/admin/inventory", headers=headers, json={"model_id": "NEW-1", "warehouse": "上海仓", "stock": 0, "min_stock": 3}).status_code == 200
+    assert client.put("/api/admin/inventory", headers=headers, params={"household_id": household_id},
+                      json={"model_id": "NEW-1", "warehouse": "上海仓", "stock": 0, "min_stock": 3}).status_code == 200
 
     user_token = client.post("/api/auth/login", json={"username": "demo", "password": "Reset@123"}).json()["access_token"]
     notification = client.post("/api/devices/restock-notify/NEW-1", headers=bearer(user_token))
@@ -311,7 +326,8 @@ def test_admin_account_device_inventory_notification_ticket_crud_and_dashboard(c
     assert dashboard["accounts"] >= 2
     assert dashboard["knowledge_files"] >= 0
     assert any(item["model_id"] == "NEW-1" for item in dashboard["low_stock_devices"])
-    assert client.delete("/api/admin/devices/NEW-1", headers=headers).status_code == 204
+    assert client.delete("/api/admin/devices/NEW-1", headers=headers,
+                         params={"household_id": household_id}).status_code == 204
 
 
 def test_admin_cannot_disable_or_demote_self_and_must_leave_active_admin(client, app, settings):
@@ -360,4 +376,5 @@ def test_dashboard_counts_only_assistant_feedback_and_uses_total_stock_threshold
     dashboard = client.get("/api/admin/dashboard", headers=bearer(token)).json()
     assert dashboard["satisfaction_rate"] == 0
     low = next(item for item in dashboard["low_stock_devices"] if item["model_id"] == "THRESHOLD")
-    assert low == {"model_id": "THRESHOLD", "model_name": "阈值设备", "total_stock": 4, "stock_threshold": 5}
+    assert low == {"household_id": household_id, "model_id": "THRESHOLD", "model_name": "阈值设备",
+                   "total_stock": 4, "stock_threshold": 5}

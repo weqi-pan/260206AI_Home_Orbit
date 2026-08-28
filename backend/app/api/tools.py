@@ -16,13 +16,13 @@ def sync_builtin_catalog(session: Session):
     for metadata in registry.metadata():
         row = session.scalar(select(ToolDefinition).where(ToolDefinition.key == metadata.key))
         if row is None:
-            row = ToolDefinition(key=metadata.key)
+            row = ToolDefinition(key=metadata.key, display_name=metadata.display_name,
+                description=metadata.description, risk_level=metadata.risk_level,
+                version=metadata.version, enabled=True)
             session.add(row)
-        row.display_name = metadata.display_name
-        row.description = metadata.description
-        row.risk_level = metadata.risk_level
-        row.version = metadata.version
-        row.enabled = True
+        elif (row.display_name, row.description, row.risk_level, row.version, row.enabled) != (
+                metadata.display_name, metadata.description, metadata.risk_level, metadata.version, True):
+            raise RuntimeError("TOOL_CATALOG_MISMATCH")
     session.commit()
 
 
