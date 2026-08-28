@@ -11,6 +11,7 @@ from backend.app.audit import api as audit_api
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.seed import seed_database
 from backend.app.db.session import create_database, require_database_revision
+from backend.app.ops import api as ops_api
 from backend.app.services.ticket_summary import TicketSummaryService
 from backend.rag.vector_store import VectorStoreUnavailable, configured_vector_store
 
@@ -98,6 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(market.router, prefix="/api")
     app.include_router(reviews.router, prefix="/api")
     app.include_router(audit_api.router, prefix="/api")
+    app.include_router(ops_api.router, prefix="/api")
 
     @app.get("/health")
     def health():
