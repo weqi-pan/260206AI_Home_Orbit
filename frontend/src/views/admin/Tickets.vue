@@ -175,7 +175,7 @@ onMounted(load)
 
         <div class="drawer-section">
           <h4>客服回复</h4>
-          <el-input v-model="replyText" type="textarea" :rows="5" placeholder="输入回复内容" />
+          <el-input v-model="replyText" type="textarea" :rows="5" placeholder="输入回复内容" aria-label="客服回复内容" />
           <el-button class="reply-save" type="primary" :loading="saving" @click="saveReply()">保存回复</el-button>
         </div>
       </template>

@@ -31,6 +31,17 @@ const input = ref('')
 const sending = ref(false)
 const listLoading = ref(false)
 const scrollRef = ref<HTMLElement | undefined>()
+// SSE 无障碍播报：只按“段落完成/回复完成”进入 aria-live，绝不逐 token 朗读
+const streamAnnouncement = ref('')
+let pendingParagraph = ''
+
+function announceCompletedParagraph() {
+  const boundary = pendingParagraph.lastIndexOf('\n\n')
+  if (boundary === -1) return
+  const completed = pendingParagraph.slice(0, boundary).trim()
+  pendingParagraph = pendingParagraph.slice(boundary + 2)
+  if (completed) streamAnnouncement.value = completed
+}
 const sessionDrawerOpen = ref(false)
 const sessionDrawerTrigger = ref<HTMLButtonElement>()
 const sessionDrawer = ref<HTMLElement>()
@@ -180,6 +191,8 @@ async function sendMessage(preset?: string) {
     streaming: true,
   })
   messages.value.push(userMessage, assistantMessage)
+  streamAnnouncement.value = ''
+  pendingParagraph = ''
   await scrollBottom()
   try {
     await streamChat(
@@ -188,6 +201,8 @@ async function sendMessage(preset?: string) {
       {
         onToken: (token) => {
           assistantMessage.content += token
+          pendingParagraph += token
+          announceCompletedParagraph()
           void scrollBottom()
         },
         onTool: (data) => {
@@ -202,10 +217,14 @@ async function sendMessage(preset?: string) {
         },
         onDone: (data) => {
           assistantMessage.id = data.message_id
+          const remainder = pendingParagraph.trim()
+          streamAnnouncement.value = remainder ? `${remainder}\n回复完成` : '回复完成'
+          pendingParagraph = ''
           refreshSessions().catch(() => undefined)
         },
         onError: (message) => {
           assistantMessage.failed = true
+          streamAnnouncement.value = '回复失败'
           ElMessage.error(message)
         },
       },
@@ -289,6 +308,7 @@ onMounted(() => {
         <el-button size="small" :icon="Tickets" @click="goCreateTicket()">提交工单</el-button>
       </header>
       <div ref="scrollRef" class="message-list">
+        <div class="sr-only" role="status" aria-live="polite" data-testid="stream-live">{{ streamAnnouncement }}</div>
         <MessageItem
           v-for="(message, index) in messages"
           :key="index"

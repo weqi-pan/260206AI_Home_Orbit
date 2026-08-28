@@ -166,7 +166,7 @@ onMounted(load)
 
     <el-dialog v-model="passwordVisible" title="重置密码成功" width="440px">
       <p>新密码（一次性，仅此一次展示，请立即复制并告知用户）：</p>
-      <el-input :model-value="passwordResult" readonly class="password-box">
+      <el-input :model-value="passwordResult" readonly class="password-box" aria-label="重置后的新密码">
         <template #append>
           <el-button @click="copyPassword">复制</el-button>
         </template>
