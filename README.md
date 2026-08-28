@@ -1,6 +1,6 @@
-# 智能客服系统（扫地机器人）
+# 智能客服系统（Home Orbit 家庭助手 Agent 平台）
 
-> FastAPI + Vue3 前后端分离的智能客服系统：DeepAgents 多子代理调度、RAG 知识库、JWT 认证、工单闭环与管理后台。
+> FastAPI + Vue3 前后端分离的家庭助手平台：家庭空间多租户、DeepAgents 编排、多模型配置（OpenAI-compatible / Anthropic）、Agent/Skill 创作与审核市场、家庭日常闭环（厨师/计划员/百科/总管）、治理与审计。原扫地机器人客服能力整体迁为官方「设备管家」Agent。
 
 ---
 
@@ -9,18 +9,18 @@
 ```
 ┌──────────────────────────┐        ┌──────────────────────────┐
 │  前端 Vue3 + Element Plus │        │  管理后台（同一前端 /admin）│
-│  Vite · Pinia · Router   │        │  用户/知识库/库存/工单/看板 │
+│  Home Orbit 用户侧五栏    │        │  初始化/运营/审核/模型/审计 │
 └────────────┬─────────────┘        └────────────┬─────────────┘
              │  /api（axios + fetch SSE）         │
              ▼                                   ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    FastAPI 后端（:8000）                      │
-│  /auth  /chat(SSE)  /tickets  /devices  /knowledge  /admin   │
-│  JWT 认证 · 角色权限 · 满意度/情绪/追问/标题 LLM 辅助服务       │
+│  /auth /chat(SSE) /households /home /creator /market        │
+│  /reviews /models /tools /audit /ops /tickets /devices      │
+│  JWT · 家庭角色（owner/admin/member/viewer）· 资源按家庭隔离   │
 ├─────────────────────────────────────────────────────────────┤
-│                DeepAgents 主代理 + 3 子代理                   │
-│  售前设备顾问 │ 售后知识专家 │ 报告与工单                       │
-│  TodoList 规划 · 工具监控中间件 · runtime context 身份注入     │
+│  AgentCompiler → DeepAgents/受限流程 · ToolPolicy 授权/审批    │
+│  ModelRegistry（多 Endpoint/Profile/用途绑定/配额）            │
 ├──────────────────────┬──────────────────────────────────────┤
 │   MySQL 8（主）       │   Chroma 版本化向量集合                  │
 │   SQLite（测试/预览） │   OpenAI-compatible / Anthropic         │
@@ -45,7 +45,8 @@
 │   ├── rag/vector_store.py  # Chroma（metadata 标记/按文件删除/重建）
 │   ├── model/factory.py     # OpenAI-compatible/Anthropic 模型工厂
 │   ├── prompts/             # 主代理 + 子代理提示词
-│   ├── tests/               # pytest（67 项，LLM 全 mock）
+│   ├── alembic/versions/    # 0015 迁移链（清库重建 Schema）
+│   ├── tests/               # pytest（490+ 项，LLM 全 mock）
 │   └── data/                # 运行产物（gitignore）：上传/向量库/SQLite
 ├── frontend/                # Vue3 前端（Dockerfile + nginx.conf）
 │   └── src/                 # api stores router components views
@@ -91,7 +92,7 @@ npm install
 npm run dev                    # http://localhost:5173，/api 自动代理到 8000
 ```
 
-测试（67 项，从 backend 目录或仓库根均可）：
+测试（490+ 项，从 backend 目录或仓库根均可）：
 
 ```bash
 cd backend && python -m pytest          # 或在仓库根：python -m pytest backend
@@ -117,7 +118,40 @@ cd backend && python -m pytest          # 或在仓库根：python -m pytest bac
 | 知识库（admin） | `GET/POST/DELETE /knowledge/files`、`POST /knowledge/rebuild`、`POST /knowledge/files/:id/generate-faq`、`GET /knowledge/faq`、`PUT /knowledge/faq/:id/review` |
 | 管理（admin） | `GET /admin/dashboard`、账号管理、设备/库存 CRUD、缺货登记、工单处理 |
 
-SSE 事件序列：`token`（增量输出）→ `tool`（工具状态）→ `sentiment`（情绪）→ `followup`（推荐追问）→ `done`。
+SSE 事件序列：`token`（增量输出）→ `run`（运行状态）→ `tool`（工具状态）→ `sentiment`（情绪）→ `followup`（推荐追问）→ `approval_required` / `approval_resumed`（高风险确认）→ `done`；前端 aria-live 仅按段落/完成播报。
+
+## 模型初始化向导（首次启动必经）
+
+1. 设置环境变量 `LLM_CREDENTIAL_MASTER_KEY`（Base64 的 32 字节随机密钥）后以 admin 登录，进入 `/admin/setup`。
+2. 创建 Endpoint（OpenAI-compatible 或 Anthropic；base URL 防 SSRF 校验）并提交 API Key —— 密钥以 AES-256-GCM 加密入库，页面仅显示末四位；数据库无明文。
+3. 创建模型档案并跑完整能力测试（生成/SSE/取消/工具调用/结构化输出；embedding 为维度测试），全部通过后绑定用途：`primary_chat`（主聊天）、`embedding`（向量，必须 OpenAI-compatible）、可选 `auxiliary`（辅助生成）与 `review_model`（审核风险摘要）。
+4. 主聊天与 embedding 绑定通过前，所有 AI 接口稳定返回 `MODEL_NOT_CONFIGURED`，前端显示初始化引导；非 AI 家庭/账号功能不受影响。
+5. 为家庭配置月度配额与模型授权（`/admin` 用户与家庭 / 模型治理），用户聊天走配额生命周期（预约→完成/失败/释放）。
+
+## 功能地图
+
+- **家庭空间（households）**：注册创建默认家庭；owner/admin/member/viewer 角色；邀请加入；所有资源（会话、任务、清单、知识、安装、通知、审计查询）按家庭隔离，跨家庭一律 403/404 且无存在性泄露。
+- **家庭日常闭环（home）**：官方 Agent 设备管家/家庭厨师/家庭计划员/生活百科/家庭总管；购物清单、任务、周期提醒、通知中心、备忘、结构化偏好（仅建议+确认）；Celery 到期派发幂等可重试。
+- **自然语言创作（creator）**：一句话 → 意图卡 → Skill/Tool 匹配 → 权限声明 → 知识上传（扫描后向量化）→ 沙盒试运行（配额计量）→ 私用发布或提交公开审核；只允许声明式配置，禁止代码/URL/连接器。
+- **市场与审核（market/reviews）**：发现/搜索/安装/收藏/举报；安装固定审核版本 + 逐项工具授权（默认拒绝）；公开发布走自动预检（Schema/权限/敏感内容/提示注入/预算/试运行）+ 审核 LLM 风险摘要 + 管理员人工终审；版本升级需重新授权新增权限；下架保留既有安装运行。
+- **治理与审计（ops/audit）**：运营概览、模型用量与对账、家庭配额治理、超限事故、Celery 任务运营、Agent Run / Tool Execution 查询、部署指针与模型配置版本、管理员动作全量审计（载荷脱敏）。
+
+## 验证命令
+
+```bash
+# 后端全量测试（LLM 全 mock，含多租户矩阵/安全/并发验收套件）
+cd backend && python -m pytest
+
+# 前端测试与生产构建
+cd frontend && npm test && npm run build
+
+# 迁移链：空库升级到 head，head 版本降级/升级回环
+cd backend && python -m alembic -c alembic.ini upgrade head
+python -m alembic -c alembic.ini downgrade -1 && python -m alembic -c alembic.ini upgrade head
+
+# Docker 全栈（mysql healthcheck → 迁移 → API → worker/beat → frontend）
+docker compose up -d --build
+```
 
 ## 家庭日常闭环（Phase 5）
 
