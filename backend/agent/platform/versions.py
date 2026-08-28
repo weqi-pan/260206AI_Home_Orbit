@@ -24,6 +24,7 @@ FORBIDDEN_KEY_PARTS = {"url", "uri", "http", "https", "mcp", "script", "shell", 
                        "import", "filesystem", "file_path", "secret", "credential", "token", "api_key"}
 UNSAFE_CONTENT = re.compile(
     r"https?://|\b(?:curl|wget|powershell|cmd\.exe|bash|sh|python|javascript|node|eval|exec|os\.system|subprocess)\b|"
+    r"\bimport\s+[a-z_.]+|\bfrom\s+[a-z_.]+\s+import\b|"
     r"`[^`]*(?:rm\s+-|curl|wget|python|bash|sh\s)[^`]*`",
     re.IGNORECASE,
 )
@@ -138,6 +139,7 @@ class VersionView:
     def __init__(self, row):
         self.row = row
         self.id = row.id
+        self.version = row.version
         self.definition = json.loads(row.definition_json)
 
 

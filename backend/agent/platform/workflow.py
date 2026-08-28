@@ -28,9 +28,13 @@ class DelegateNode(Node):
 
 
 class CallToolNode(Node):
+    """Deterministic tool step; keys are limited to hardcoded catalog namespaces,
+    arguments are plain JSON literals (no expressions) and every execution still
+    passes the tool args schema plus the permission recheck."""
+
     type: Literal["call_tool"]
-    tool: str = Field(pattern=r"^platform\.[a-z0-9_]+$")
-    arguments: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+    tool: str = Field(pattern=r"^(platform|household|device)\.[a-z0-9_.]+$")
+    arguments: dict[str, object] = Field(default_factory=dict)
 
 
 class ConditionNode(Node):

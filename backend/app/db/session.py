@@ -10,7 +10,7 @@ from backend.app.core.config import Settings
 from backend.app.db.models import Base
 
 
-REQUIRED_DATABASE_REVISION = "20260828_0012"
+REQUIRED_DATABASE_REVISION = "20260828_0013"
 
 
 @dataclass

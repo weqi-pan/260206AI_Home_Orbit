@@ -270,8 +270,22 @@ class Favorite(TenantRow, Base):
 
 
 class CreatorDraft(TenantRow, Base):
+    """Creator-owned draft with the draft -> validated -> private_published lifecycle."""
     __tablename__ = "creator_drafts"
-    draft_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    __table_args__ = (
+        UniqueConstraint("id", "household_id"),
+        CheckConstraint("status IN ('draft', 'validated', 'private_published')", name="ck_creator_drafts_status"),
+    )
+    draft_type: Mapped[str] = mapped_column(String(16), nullable=False, default="agent")
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    source_description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    intent_card_json: Mapped[str | None] = mapped_column(Text)
+    last_validation_json: Mapped[str | None] = mapped_column(Text)
+    agent_definition_id: Mapped[str | None] = mapped_column(String(36))
+    deployment_id: Mapped[str | None] = mapped_column(String(36))
+    created_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id"))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class ReviewSubmission(Base):

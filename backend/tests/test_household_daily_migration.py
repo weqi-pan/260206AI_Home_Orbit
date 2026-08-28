@@ -34,7 +34,7 @@ def test_phase5_revision_upgrades_and_roundtrips(tmp_path):
         with engine.begin() as connection:
             from sqlalchemy import text
             connection.execute(text("SELECT version_num FROM alembic_version"))
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20260828_0012"
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20260828_0013"
     finally:
         engine.dispose()
 
@@ -67,7 +67,7 @@ def test_create_all_matches_revision_head_for_phase5_tables(settings):
     from backend.app.db.models import Base
     from backend.app.db.session import REQUIRED_DATABASE_REVISION
 
-    assert REQUIRED_DATABASE_REVISION == "20260828_0012"
+    assert REQUIRED_DATABASE_REVISION == "20260828_0013"
     engine = create_engine(f"sqlite:///{settings.database_url.split('///')[-1]}")
     Base.metadata.create_all(engine)
     inspector = inspect(engine)
