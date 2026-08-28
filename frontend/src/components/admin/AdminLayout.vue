@@ -13,8 +13,8 @@ const { show: openDrawer, hide: closeDrawer, onKeydown: onDrawerKeydown } = useM
 const groups = [
   { label: '初始化设置', to: '/admin/setup' }, { label: '运营概览', to: '/admin/dashboard' },
   { label: '用户与家庭', to: '/admin/users' }, { label: 'Agent / Skill 治理', to: '/admin/reviews' },
-  { label: '模型与能力' },
-  { label: '任务运营' }, { label: '知识与支持', to: '/admin/knowledge' }, { label: '审计与发布' },
+  { label: '模型与能力', to: '/admin/models' },
+  { label: '任务运营', to: '/admin/tasks' }, { label: '知识与支持', to: '/admin/knowledge' }, { label: '审计与发布', to: '/admin/audit' },
 ]
 
 async function goUser() { await closeDrawer(); await router.push('/home') }

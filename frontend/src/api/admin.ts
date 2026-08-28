@@ -18,20 +18,6 @@ export interface AdminHousehold {
   members: { account_id: string; username: string; role: string }[]
 }
 
-export interface DashboardData {
-  accounts: number
-  users: number
-  devices: number
-  open_tickets: number
-  today_sessions: number
-  messages_last_7_days: number
-  satisfaction_rate: number
-  ticket_status_counts: Record<string, number>
-  low_stock_devices: { household_id: string; model_id: string; model_name: string; total_stock: number; stock_threshold: number }[]
-  knowledge_files: number
-  approved_faq: number
-}
-
 export interface AdminDevice {
   model_id: string
   model_name: string
@@ -78,10 +64,6 @@ export interface TicketUpdatePayload {
   status?: 'open' | 'processing' | 'resolved' | 'closed'
   priority?: 'low' | 'normal' | 'high'
   admin_reply?: string
-}
-
-export function fetchDashboard() {
-  return http.get<DashboardData>('/admin/dashboard').then((r) => r.data)
 }
 
 export function fetchAdminHouseholds() {
