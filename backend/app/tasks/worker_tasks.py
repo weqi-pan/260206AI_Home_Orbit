@@ -74,6 +74,30 @@ def dispatch_sandbox_trial(draft_id, report_id, household_id, principal_id, gran
         "principal_id": principal_id, "granted_tool_keys": granted_tool_keys})
 
 
+def review_precheck_run(submission_id, household_id, attempt):
+    return _run("review.precheck", f"review.precheck:{submission_id}:{attempt}",
+                {"submission_id": submission_id}, household_id=household_id)
+
+
+def review_risk_summary_run(submission_id, household_id, attempt):
+    return _run("review.risk_summary", f"review.risk_summary:{submission_id}:{attempt}",
+                {"submission_id": submission_id}, household_id=household_id)
+
+
+def dispatch_review_tasks(submission_id, household_id, attempt):
+    """Submit precheck + risk summary to the broker; never blocks the API request.
+
+    The risk task retries transiently until the precheck task has committed.
+    """
+    from backend.app.tasks.celery_app import create_celery_app
+
+    app = create_celery_app()
+    app.send_task("tasks.review-precheck-run",
+                  kwargs={"submission_id": submission_id, "household_id": household_id, "attempt": attempt})
+    app.send_task("tasks.review-risk-summary-run",
+                  kwargs={"submission_id": submission_id, "household_id": household_id, "attempt": attempt})
+
+
 def register_tasks(app):
     app.task(name="tasks.reminders-dispatch")(reminders_dispatch)
     app.task(name="tasks.process-retries")(process_retries)
@@ -82,4 +106,6 @@ def register_tasks(app):
     app.task(name="tasks.faq-generate")(faq_generate)
     app.task(name="tasks.sandbox-trial")(sandbox_trial)
     app.task(name="tasks.sandbox-trial-run")(sandbox_trial_run)
+    app.task(name="tasks.review-precheck-run")(review_precheck_run)
+    app.task(name="tasks.review-risk-summary-run")(review_risk_summary_run)
     return app

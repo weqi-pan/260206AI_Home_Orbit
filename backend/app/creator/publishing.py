@@ -23,6 +23,56 @@ class PublishRejected(ValueError):
         super().__init__(code if not detail else f"{code}: {detail}")
 
 
+def materialize_stack(session, household_id, draft, validated):
+    """Publishes the immutable Agent/Skill version stack for a validated card.
+
+    Shared by Phase 6 private publishing and Phase 7 review submission so the
+    reviewed artifact is always the frozen immutable version. Returns
+    (agent, agent_version, skill_results, skill_assets, tool_infos).
+    """
+    from backend.agent.platform.versions import AgentVersionService, SkillVersionService
+    from backend.app.db.models import (AgentDefinition, AgentSkillBinding, AgentToolBinding, Skill)
+
+    card = validated["card"]
+    agent = None
+    if draft.agent_definition_id:
+        agent = session.get(AgentDefinition, draft.agent_definition_id)
+    if agent is None:
+        agent = AgentDefinition(household_id=household_id, name=card["name"][:100])
+        session.add(agent)
+        session.flush()
+        draft.agent_definition_id = agent.id
+
+    skill_results = []
+    skill_assets = []
+    for skill in validated["skills"]:
+        skill_name = f"{card['name']}-{skill['name']}"[:100]
+        row = session.scalar(select(Skill).where(Skill.household_id == household_id,
+                                                 Skill.name == skill_name))
+        if row is None:
+            row = Skill(household_id=household_id, name=skill_name)
+            session.add(row)
+            session.flush()
+        skill_version = SkillVersionService(session, household_id).publish(row.id, skill["definition"])
+        skill_results.append({"name": skill["name"], "skill_id": row.id, "skill_version_id": skill_version.id})
+        for attachment in skill["definition"].get("attachments", []):
+            skill_assets.append((skill_version.id, attachment["asset_id"]))
+
+    agent_version = AgentVersionService(session, household_id).publish(agent.id,
+                                                                       validated["agent_definition"])
+    for item in skill_results:
+        session.add(AgentSkillBinding(household_id=household_id,
+                                      agent_version_id=agent_version.id,
+                                      skill_version_id=item["skill_version_id"]))
+    tool_infos = []
+    for info in validated["tools"].values():
+        session.add(AgentToolBinding(household_id=household_id,
+                                     agent_version_id=agent_version.id, tool_id=info["tool_id"]))
+        tool_infos.append(info)
+    session.commit()
+    return agent, agent_version, skill_results, skill_assets, tool_infos
+
+
 class PrivatePublishService:
     def __init__(self, session_or_factory, household_id, principal_id, settings=None, executor=None):
         from sqlalchemy.orm import Session
@@ -61,9 +111,8 @@ class PrivatePublishService:
     # ------------------------------------------------------------------ publish
     def publish(self, draft_id, granted_tool_keys):
         from backend.app.creator.validation import DraftValidator, DraftValidationRejected
-        from backend.app.db.models import (AgentDefinition, AgentDeployment, AgentInstallation,
-                                           AgentSkillBinding, AgentToolBinding, CreatorDraft, InstallationPermission,
-                                           Skill)
+        from backend.app.db.models import CreatorDraft, InstallationPermission
+        from backend.app.creator.publishing import materialize_stack
 
         draft = self._draft(draft_id)
         if not draft.intent_card_json:
@@ -77,46 +126,8 @@ class PrivatePublishService:
 
         confirmed = self._confirmed_keys(set(granted_tool_keys), validator)
 
-        agent = None
-        if draft.agent_definition_id:
-            agent = self.session.get(AgentDefinition, draft.agent_definition_id)
-        if agent is None:
-            agent = AgentDefinition(household_id=self.household_id, name=card["name"][:100])
-            self.session.add(agent)
-            self.session.flush()
-            draft.agent_definition_id = agent.id
-
-        skill_results = []
-        skill_assets = []
-        for skill in validated["skills"]:
-            skill_name = f"{card['name']}-{skill['name']}"[:100]
-            row = self.session.scalar(select(Skill).where(Skill.household_id == self.household_id,
-                                                          Skill.name == skill_name))
-            if row is None:
-                row = Skill(household_id=self.household_id, name=skill_name)
-                self.session.add(row)
-                self.session.flush()
-            from backend.agent.platform.versions import SkillVersionService
-
-            skill_version = SkillVersionService(self.session, self.household_id).publish(row.id, skill["definition"])
-            skill_results.append({"name": skill["name"], "skill_id": row.id, "skill_version_id": skill_version.id})
-            for attachment in skill["definition"].get("attachments", []):
-                skill_assets.append((skill_version.id, attachment["asset_id"]))
-
-        from backend.agent.platform.versions import AgentVersionService
-
-        agent_version = AgentVersionService(self.session, self.household_id).publish(agent.id,
-                                                                                     validated["agent_definition"])
-        for item in skill_results:
-            self.session.add(AgentSkillBinding(household_id=self.household_id,
-                                               agent_version_id=agent_version.id,
-                                               skill_version_id=item["skill_version_id"]))
-        tool_ids = []
-        for info in validated["tools"].values():
-            self.session.add(AgentToolBinding(household_id=self.household_id,
-                                              agent_version_id=agent_version.id, tool_id=info["tool_id"]))
-            tool_ids.append(info)
-        self.session.commit()
+        agent, agent_version, skill_results, skill_assets, tool_ids = materialize_stack(
+            self.session, self.household_id, draft, validated)
 
         deployment = self._deployment_for(draft, agent_version)
         installation = self._installation_for(deployment, agent_version)

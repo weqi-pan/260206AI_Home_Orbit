@@ -271,7 +271,7 @@ def test_database_rejects_cross_household_agent_deployment_version(settings):
 @pytest.mark.parametrize("resource_name", ["installation", "favorite", "report", "run"])
 def test_database_rejects_cross_household_deployment_relationships(settings, resource_name):
     from backend.app.db.models import Account, Household
-    from backend.app.db.platform_models import (
+    from backend.app.db.models import (
         AgentDefinition, AgentDeployment, AgentInstallation, AgentRun, AgentVersion, Favorite, Report,
     )
     from backend.app.db.session import create_database
@@ -328,7 +328,7 @@ def test_empty_database_upgrades_through_frozen_alembic_chain(tmp_path):
     assert next(column for column in inspector.get_columns("agent_deployments") if column["name"] == "household_id")["nullable"] is False
     assert {foreign_key["referred_table"] for foreign_key in inspector.get_foreign_keys("agent_deployments")} == {"households", "agent_versions"}
     with engine.connect() as connection:
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "20260828_0013"
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "20260828_0014"
 
 
 def test_reset_script_requires_explicit_confirmation(tmp_path):

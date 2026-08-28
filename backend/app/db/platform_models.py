@@ -261,20 +261,13 @@ class InstallationPermission(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
-class Favorite(TenantRow, Base):
-    __tablename__ = "favorites"
-    __table_args__ = (
-        ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
-    )
-    deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
-
-
 class CreatorDraft(TenantRow, Base):
-    """Creator-owned draft with the draft -> validated -> private_published lifecycle."""
+    """Creator-owned draft with the private + public publishing lifecycle."""
     __tablename__ = "creator_drafts"
     __table_args__ = (
         UniqueConstraint("id", "household_id"),
-        CheckConstraint("status IN ('draft', 'validated', 'private_published')", name="ck_creator_drafts_status"),
+        CheckConstraint("status IN ('draft', 'validated', 'private_published', 'review_pending',"
+                        " 'public_published', 'deprecated')", name="ck_creator_drafts_status"),
     )
     draft_type: Mapped[str] = mapped_column(String(16), nullable=False, default="agent")
     title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
@@ -286,44 +279,6 @@ class CreatorDraft(TenantRow, Base):
     deployment_id: Mapped[str | None] = mapped_column(String(36))
     created_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id"))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
-
-
-class ReviewSubmission(Base):
-    __tablename__ = "review_submissions"
-    __table_args__ = tenant_parent_constraints(
-        ForeignKeyConstraint(["agent_version_id", "household_id"], ["agent_versions.id", "agent_versions.household_id"]),
-    )
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
-    agent_version_id: Mapped[str] = mapped_column(String(36), nullable=False)
-
-
-class ReviewCheck(Base):
-    __tablename__ = "review_checks"
-    __table_args__ = (
-        ForeignKeyConstraint(["submission_id", "household_id"], ["review_submissions.id", "review_submissions.household_id"], ondelete="CASCADE"),
-    )
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
-    submission_id: Mapped[str] = mapped_column(String(36), nullable=False)
-
-
-class ReviewDecision(Base):
-    __tablename__ = "review_decisions"
-    __table_args__ = (
-        ForeignKeyConstraint(["submission_id", "household_id"], ["review_submissions.id", "review_submissions.household_id"], ondelete="CASCADE"),
-    )
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
-    submission_id: Mapped[str] = mapped_column(String(36), nullable=False)
-
-
-class Report(TenantRow, Base):
-    __tablename__ = "reports"
-    __table_args__ = (
-        ForeignKeyConstraint(["deployment_id", "household_id"], ["agent_deployments.id", "agent_deployments.household_id"]),
-    )
-    deployment_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
 
 class AgentRun(TenantRow, Base):

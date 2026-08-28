@@ -74,10 +74,13 @@ def notifications_dispatch(session, payload, record):
 def knowledge_vectorize(session, payload, record):
     """知识向量化：官方知识文件或创作器草稿知识资产进入家庭隔离向量集合。
 
-    创作器资产带 household + skill_version 元数据，与官方/其他家庭检索隔离。
+    创作器资产带 household + skill_version 元数据，与官方/其他家庭检索隔离；
+    市场安装以 target_household_id 把已审核知识复制进安装家庭（隔离元数据）。
     """
     creator_asset_id = payload.get("creator_asset_id")
     if creator_asset_id:
+        if payload.get("target_household_id"):
+            return _vectorize_market_asset(session, payload, record)
         return _vectorize_creator_asset(session, payload, record)
     from backend.rag.vector_store import VectorStoreUnavailable
 
@@ -139,6 +142,48 @@ def _vectorize_creator_asset(session, payload, record):
         raise _transient("VECTOR_STORE_UNAVAILABLE") from exc
     CreatorKnowledgeService(session, asset.household_id, settings.knowledge_upload_path)
     return {"creator_asset_id": asset.id, "skill_version_id": skill_version_id}
+
+
+def _vectorize_market_asset(session, payload, record):
+    """市场安装知识复制：把已审核资产复制进安装家庭的隔离向量集合。
+
+    源文件留在创作者目录不动；复制到 market/<household>/ 后以安装家庭 +
+    本地技能版本元数据入向量库。幂等：has_file 去重，record key 去重。
+    """
+    import shutil
+    from pathlib import Path
+
+    from backend.rag.vector_store import VectorStoreUnavailable, configured_vector_store
+
+    from backend.app.core.config import get_settings
+    from backend.app.db.models import CreatorKnowledgeAsset
+    from backend.app.db.session import create_database
+
+    asset = session.get(CreatorKnowledgeAsset, payload.get("creator_asset_id"))
+    if asset is None or asset.status != "active" or asset.scan_status != "passed":
+        raise _permanent("KNOWLEDGE_ASSET_NOT_READY")
+    target_household_id = payload.get("target_household_id")
+    skill_version_id = payload.get("skill_version_id")
+    if not target_household_id or not skill_version_id:
+        raise _permanent("KNOWLEDGE_TARGET_INVALID")
+    settings = get_settings()
+    service = configured_vector_store(create_database(settings).session_factory, settings.chroma_path)
+    source = Path(settings.knowledge_upload_path) / "creator" / asset.household_id / f"{asset.id}{asset.file_type}"
+    target_dir = Path(settings.knowledge_upload_path) / "market" / target_household_id
+    target = target_dir / f"{asset.id}{asset.file_type}"
+    if not source.exists():
+        raise _permanent("KNOWLEDGE_SOURCE_MISSING")
+    if not target.exists():
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    try:
+        if not service.has_file(asset.id, skill_version_id=skill_version_id):
+            service.add_file(asset.id, target, asset.filename, household_id=target_household_id,
+                             skill_version_id=skill_version_id)
+    except VectorStoreUnavailable as exc:
+        raise _transient("VECTOR_STORE_UNAVAILABLE") from exc
+    return {"creator_asset_id": asset.id, "skill_version_id": skill_version_id,
+            "target_household_id": target_household_id}
 
 
 def faq_generate(session, payload, record):
@@ -246,6 +291,52 @@ def models_health_check(session, payload, record):
     return {"models": len(results), "results": results}
 
 
+def review_precheck(session, payload, record):
+    """审核自动预检：完整检查并持久化为审核证据；幂等（同 key 不重复执行）。
+
+    只做预检，不调用任何模型 —— 风险摘要是独立任务，避免在预检事务内
+    跨连接写配额。
+    """
+    from backend.app.review.precheck import ReviewPrecheckService
+    from backend.app.db.models import ReviewSubmission
+
+    submission = session.get(ReviewSubmission, payload.get("submission_id"))
+    if submission is None:
+        raise _permanent("REVIEW_SUBMISSION_NOT_FOUND")
+    if submission.status in {"review_pending", "approved", "rejected", "returned"} \
+            and submission.precheck_status != "pending":
+        return {"submission_id": submission.id, "status": submission.status, "skipped": True}
+    evidence = ReviewPrecheckService(session).run(submission)
+    return {"submission_id": submission.id, "status": submission.status, "precheck": evidence}
+
+
+def review_risk_summary(session, payload, record):
+    """审核 LLM 风险摘要（仅参考）：review_model 用途 + 家庭配额语义。
+
+    模型未就绪降级为 unavailable（不阻塞队列）；预检尚未完成时按瞬态重试。
+    摘要永不改变审核状态。
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    from backend.app.review.risk import ReviewRiskService, risk_payload
+    from backend.app.db.models import ReviewSubmission
+
+    submission = session.get(ReviewSubmission, payload.get("submission_id"))
+    if submission is None:
+        raise _permanent("REVIEW_SUBMISSION_NOT_FOUND")
+    if submission.status == "precheck_pending":
+        raise _transient("REVIEW_PRECHECK_PENDING")
+    if submission.status != "review_pending":
+        service = ReviewRiskService(sessionmaker(bind=session.get_bind(), expire_on_commit=False),
+                                    submission.household_id)
+        return {"submission_id": submission.id,
+                "risk_summary": service._unavailable(submission, "REVIEW_PRECHECK_NOT_PASSED")}
+    factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+    service = ReviewRiskService(factory, submission.household_id)
+    summary = service.summarize(submission, risk_payload(session, submission))
+    return {"submission_id": submission.id, "risk_summary": summary}
+
+
 def _safe_json(value):
     import json
 
@@ -268,4 +359,8 @@ TASK_TYPES = {
         sandbox_trial, max_attempts=1, description="创作沙盒试运行（仅校验，不执行）"),
     "models.health_check": TaskSpec(
         models_health_check, max_attempts=2, description="模型档案健康检查"),
+    "review.precheck": TaskSpec(
+        review_precheck, max_attempts=2, description="公开审核自动预检（证据持久化）"),
+    "review.risk_summary": TaskSpec(
+        review_risk_summary, max_attempts=3, description="审核 LLM 风险摘要（仅参考，不决定通过）"),
 }

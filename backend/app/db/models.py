@@ -219,6 +219,8 @@ from backend.app.db.household_models import Household, HouseholdMember, Househol
 from backend.app.db.household_daily_models import (HouseholdMemo, HouseholdPreferenceProposal,  # noqa: E402,F401
                                                     ShoppingListItem)
 from backend.app.db.creator_models import CreatorKnowledgeAsset, CreatorTrialReport  # noqa: E402,F401
+from backend.app.db.market_models import (Favorite, MarketEntry, MarketInstall, Report,  # noqa: E402,F401
+                                          ReviewCheck, ReviewDecision, ReviewSubmission)
 from backend.app.db.platform_models import (  # noqa: E402,F401
     ActiveEmbeddingCollection, AgentCheckpoint, AgentCheckpointWrite, AgentDefinition, AgentDeployment, AgentInstallation,
     AgentRun, AgentSkillBinding, AgentToolBinding, AgentVersion, ApprovalRequest, CeleryTaskRecord,
