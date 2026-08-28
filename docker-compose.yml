@@ -20,6 +20,20 @@ services:
       - mysql-data:/var/lib/mysql
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: ai-customer-service-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -27,6 +41,7 @@ services:
     container_name: ai-customer-service-backend
     environment:
       DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:-change-me}@mysql:3306/customer_service
+      REDIS_URL: redis://redis:6379/0
       APP_MODE: production
       LLM_CREDENTIAL_MASTER_KEY: ${LLM_CREDENTIAL_MASTER_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-development-only-change-this-secret}
@@ -36,10 +51,68 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - backend-data:/app/backend/data
     restart: unless-stopped
     command: ["sh", "-c", "python -m alembic -c backend/alembic.ini upgrade head && uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"]
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ai-customer-service-celery-worker
+    environment:
+      DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:-change-me}@mysql:3306/customer_service
+      REDIS_URL: redis://redis:6379/0
+      APP_MODE: production
+      LLM_CREDENTIAL_MASTER_KEY: ${LLM_CREDENTIAL_MASTER_KEY:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    volumes:
+      - backend-data:/app/backend/data
+    restart: unless-stopped
+    command: ["sh", "-c", "celery -A backend.app.tasks.celery_app:worker_app worker --loglevel=info --concurrency=2"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A backend.app.tasks.celery_app:worker_app inspect ping -d celery@$$HOSTNAME --timeout=10 | grep -q OK"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ai-customer-service-celery-beat
+    environment:
+      DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:-change-me}@mysql:3306/customer_service
+      REDIS_URL: redis://redis:6379/0
+      APP_MODE: production
+      LLM_CREDENTIAL_MASTER_KEY: ${LLM_CREDENTIAL_MASTER_KEY:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    volumes:
+      - backend-data:/app/backend/data
+    restart: unless-stopped
+    command: ["sh", "-c", "celery -A backend.app.tasks.celery_app:worker_app beat --loglevel=info"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('redis', 6379), timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   frontend:
     build:
@@ -54,4 +127,5 @@ services:
 
 volumes:
   mysql-data:
+  redis-data:
   backend-data:

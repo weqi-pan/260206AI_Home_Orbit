@@ -24,8 +24,11 @@
 ├──────────────────────┬──────────────────────────────────────┤
 │   MySQL 8（主）       │   Chroma 版本化向量集合                  │
 │   SQLite（测试/预览） │   OpenAI-compatible / Anthropic         │
+│   Redis + Celery     │   worker/beat：提醒·通知·FAQ·向量化      │
 └──────────────────────┴──────────────────────────────────────┘
 ```
+
+完整部署拓扑：`mysql(healthy) + redis(healthy) → backend(Alembic 迁移 + API) → celery-worker / celery-beat → frontend`。SQLite 仅用于 pytest、本地预览与单进程开发，**不启动 Celery**。
 
 ## 目录结构
 
@@ -116,6 +119,21 @@ cd backend && python -m pytest          # 或在仓库根：python -m pytest bac
 
 SSE 事件序列：`token`（增量输出）→ `tool`（工具状态）→ `sentiment`（情绪）→ `followup`（推荐追问）→ `done`。
 
+## 家庭日常闭环（Phase 5）
+
+- 官方 Agent：设备管家、家庭厨师（菜谱/按人数换算/采购清单）、家庭计划员（家务计划/周期提醒/任务确认）、生活百科（家庭隔离知识检索）、家庭总管（委派上述官方子代理）。
+- 内置工具目录 `household.*`：读低风险、写可撤销（清单写入、任务/备忘、提醒创建/取消、偏好建议）；结构化偏好仅 Agent 建议 + 家庭成员确认写入，无自由文本自动记忆。
+- `/api/home/*`：`/today`（今日任务/提醒/清单汇总/未读通知/设备异常）、`/shopping-list`、`/tasks`、`/reminders`、`/notifications`（按账号已读）、`/memos`、`/preferences`（含 proposals confirm/reject）、`/device-anomalies`；Home Orbit 首页接入真实家庭状态。
+
+## 异步任务与 Celery
+
+- 任务类型：到期提醒派发、站内通知派发、知识向量化、FAQ 生成、沙盒试运行（本阶段仅声明式校验）、模型健康检查。
+- 每条任务以幂等键入库（`celery_tasks`：status/attempt/max_attempts/next_retry_at/error_code/audit）；瞬时失败按指数退避重试，重试耗尽进入 dead 并生成站内通知；副作用按幂等键去重（提醒按 occurrence、通知按 source_id）。
+- 完整部署：`docker compose up` 启动 `redis`、`celery-worker`、`celery-beat`（含健康检查与依赖顺序），beat 每 30 秒派发到期提醒并处理到期重试，每小时执行模型健康检查。
+- SQLite 预览/测试不启动 Celery。手动触发边界（测试与运维文档化入口）：
+  - Python：`backend.app.tasks.manual.trigger(session_factory, task_type, payload, idempotency_key)`、`beat_tick(session_factory)`、`process_retries(session_factory)`；
+  - 管理端 API：`GET /api/admin/tasks`、`POST /api/admin/tasks/{task_type}/run`。
+
 ## 配置项（.env / 环境变量）
 
 | 变量 | 默认值 | 说明 |
@@ -128,6 +146,8 @@ SSE 事件序列：`token`（增量输出）→ `tool`（工具状态）→ `sen
 | `DEMO_INITIAL_PASSWORD` | `Demo@1234` | demo 种子初始密码 |
 | `CORS_ORIGINS` | `http://localhost:5173` | 允许的跨域来源，逗号分隔 |
 | `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` | `change-me-root` / `change-me` | docker-compose 中 MySQL 密码 |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis/Celery broker（完整部署必填；SQLite 模式不使用） |
+| `CELERY_RETRY_BACKOFF_SECONDS` | `30` | 任务重试退避基数（指数退避） |
 | `FOLLOWUP_TIMEOUT_SECONDS` | `4` | SSE 追问生成等待秒数，超时降级为空数组 |
 
 ## 常见问题
@@ -139,7 +159,7 @@ SSE 事件序列：`token`（增量输出）→ `tool`（工具状态）→ `sen
 nginx 已对 `/api` 设置 `proxy_buffering off`、`proxy_read_timeout 3600s` 与 HTTP/1.1 长连接；若自建反向代理，需做同样配置（后端响应亦携带 `X-Accel-Buffering: no`）。
 
 **本地单进程预览不想安装 MySQL**
-显式设置 `APP_MODE=preview` 和 `DATABASE_URL=sqlite:///backend/data/customer_service.db`。该模式仅用于预览，不运行 Celery；完整部署必须使用 MySQL 并先执行 Alembic migration。
+显式设置 `APP_MODE=preview` 和 `DATABASE_URL=sqlite:///backend/data/customer_service.db`。该模式仅用于预览，不运行 Celery；完整部署必须使用 MySQL + Redis 并先执行 Alembic migration。
 
 **admin 首次登录被要求改密**
 种子账号带 `must_change_password` 标记，登录后前端强制跳转改密页；修改成功后恢复正常。

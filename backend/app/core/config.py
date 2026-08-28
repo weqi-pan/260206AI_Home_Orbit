@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     knowledge_upload_path: Path = BACKEND_DATA_ROOT / "knowledge"
     chroma_path: Path = BACKEND_DATA_ROOT / "chroma"
     followup_timeout_seconds: float = 4.0
+    redis_url: str = "redis://localhost:6379/0"
+    celery_retry_backoff_seconds: int = 30
 
     model_config = SettingsConfigDict(
         env_file=".env",
