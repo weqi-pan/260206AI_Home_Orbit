@@ -144,16 +144,18 @@ def admin_actions(actor_id: str | None = None, action: str | None = None, resour
 
 
 @router.get("/deployments/pointers")
-def deployment_pointers(admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
-    result = AuditQueryService(db).deployment_pointer_history()
-    _read(db, admin, "/api/audit/deployments/pointers", {})
+def deployment_pointers(page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=100),
+                        admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    result = AuditQueryService(db).deployment_pointer_history(page=page, page_size=page_size)
+    _read(db, admin, "/api/audit/deployments/pointers", {"page": page, "page_size": page_size})
     db.commit()
     return result
 
 
 @router.get("/models/revisions")
-def model_config_revisions(admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
-    result = AuditQueryService(db).model_config_revisions()
-    _read(db, admin, "/api/audit/models/revisions", {})
+def model_config_revisions(page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=100),
+                           admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    result = AuditQueryService(db).model_config_revisions(page=page, page_size=page_size)
+    _read(db, admin, "/api/audit/models/revisions", {"page": page, "page_size": page_size})
     db.commit()
     return result

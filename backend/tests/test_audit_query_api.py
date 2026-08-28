@@ -248,3 +248,174 @@ def test_admin_action_listing_filters_and_actor_labels(client, app):
     assert by_actor["total"] >= 1
     by_resource = client.get("/api/audit/admin-actions?resource_type=review_submission", headers=headers).json()
     assert any(row["resource_id"] == "sub-1" for row in by_resource["items"])
+
+
+# --------------------------------------------------------------------- Fix Round 1
+def _seed_pointer_entries(app, household_id, version_id, entry_count, submissions_per_entry):
+    from backend.app.db.models import MarketEntry, ReviewSubmission
+
+    with app.state.database.session_factory.begin() as db:
+        for index in range(entry_count):
+            entry = MarketEntry(source_household_id=household_id, agent_definition_id="def",
+                                name=f"条目{index}", status="published", current_version_number=1)
+            db.add(entry)
+            db.flush()
+            for submission_index in range(submissions_per_entry):
+                db.add(ReviewSubmission(household_id=household_id, agent_version_id=version_id,
+                                        draft_id=f"d-{index}-{submission_index}", status="approved",
+                                        entry_id=entry.id, decided_by_account_id=None))
+
+
+def _captured_statements(app, path, headers):
+    from sqlalchemy import event
+
+    engine = app.state.database.engine
+    captured = []
+
+    def _listen(conn, cursor, statement, parameters, context, executemany):
+        captured.append(statement)
+
+    with event.listens_for(engine, "before_cursor_execute")(_listen):
+        response = app and _client_get(app, path, headers)
+    return response, captured
+
+
+def _client_get(app, path, headers):
+    raise NotImplementedError("replaced in test")
+
+
+def test_deployment_pointers_paginated_with_bounded_joined_history(client, app):
+    from backend.app.db.models import AgentVersion
+
+    account_id, household_id = _home(app)
+    headers = _admin_headers(client)
+    with app.state.database.session_factory() as db:
+        version_id = db.scalar(select(AgentVersion.id).where(AgentVersion.household_id == household_id))
+    _seed_pointer_entries(app, household_id, version_id, entry_count=7, submissions_per_entry=2)
+
+    page1 = client.get("/api/audit/deployments/pointers?page=1&page_size=3", headers=headers)
+    assert page1.status_code == 200, page1.text
+    body = page1.json()
+    market = body["market_entries"]
+    assert market["total"] == 7 and market["page"] == 1 and market["page_size"] == 3
+    assert len(market["items"]) == 3
+    assert all(len(item["history"]) == 2 for item in market["items"])
+    page3 = client.get("/api/audit/deployments/pointers?page=3&page_size=3", headers=headers).json()
+    assert len(page3["market_entries"]["items"]) == 1
+    oversized = client.get("/api/audit/deployments/pointers?page=1&page_size=500", headers=headers)
+    assert oversized.status_code == 422  # 与其余审计端点一致的 ≤100 上限
+    assert "total" in body["official"] and body["official"]["page"] == 1
+
+
+def test_deployment_pointers_history_is_one_bounded_query_no_full_scan(client, app):
+    from sqlalchemy import event
+
+    from backend.app.db.models import AgentVersion
+
+    account_id, household_id = _home(app)
+    headers = _admin_headers(client)
+    with app.state.database.session_factory() as db:
+        version_id = db.scalar(select(AgentVersion.id).where(AgentVersion.household_id == household_id))
+    _seed_pointer_entries(app, household_id, version_id, entry_count=25, submissions_per_entry=1)
+
+    engine = app.state.database.engine
+    captured = []
+
+    def _listen(conn, cursor, statement, parameters, context, executemany):
+        captured.append(statement)
+
+    from sqlalchemy import event
+
+    event.listen(engine, "before_cursor_execute", _listen)
+    try:
+        response = client.get("/api/audit/deployments/pointers?page=1&page_size=10", headers=headers)
+    finally:
+        event.remove(engine, "before_cursor_execute", _listen)
+    assert response.status_code == 200
+    submission_queries = [sql for sql in captured if "review_submissions" in sql]
+    assert len(submission_queries) == 1  # 单条连接查询，消除 N+1
+    assert "LIMIT" in submission_queries[0]  # 历史查询本身有界
+    assert len(response.json()["market_entries"]["items"]) == 10
+
+
+def test_model_config_revisions_paginated_and_bounded_per_model(client, app):
+    from sqlalchemy import event
+
+    from backend.app.db.models import LlmEndpoint, LlmModel, ModelHealthCheck
+
+    account_id, household_id = _home(app)
+    headers = _admin_headers(client)
+    with app.state.database.session_factory.begin() as db:
+        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Fix Gateway",
+                               base_url="https://models.example/v1", enabled=True)
+        db.add(endpoint)
+        db.flush()
+        model_ids = []
+        for index in range(60):
+            model = LlmModel(endpoint_id=endpoint.id, model_name=f"fix-model-{index:02d}",
+                             model_type="chat", max_tokens=8)
+            db.add(model)
+            db.flush()
+            model_ids.append(model.id)
+            for check_index in range(30):  # 每档案 30 条证据，证明不做全表内存扫描
+                db.add(ModelHealthCheck(model_id=model.id, status="passed", capabilities_json="{}",
+                                        evidence_json="{}", endpoint_revision=1, model_revision=1))
+
+    engine = app.state.database.engine
+    captured = []
+
+    def _listen(conn, cursor, statement, parameters, context, executemany):
+        captured.append(statement)
+
+    from sqlalchemy import event
+
+    event.listen(engine, "before_cursor_execute", _listen)
+    try:
+        response = client.get("/api/audit/models/revisions?page=2&page_size=10", headers=headers)
+    finally:
+        event.remove(engine, "before_cursor_execute", _listen)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 60 and body["page"] == 2 and body["page_size"] == 10
+    assert len(body["items"]) == 10
+    assert all(len(item["history"]) <= 20 for item in body["items"])  # 每档案历史上限
+    assert all(item["latest_health"] is not None for item in body["items"])
+    check_queries = [sql for sql in captured if "model_health_checks" in sql]
+    assert check_queries and all("LIMIT" in sql for sql in check_queries)  # 有界查询，无全表加载
+    oversized = client.get("/api/audit/models/revisions?page=1&page_size=9999", headers=headers)
+    assert oversized.status_code == 422  # ≤100 上限与其余审计端点一致
+
+
+def test_celery_task_detail_sanitizes_provider_error_text(client, app):
+    from backend.app.db.models import CeleryTaskRecord
+
+    account_id, household_id = _home(app)
+    headers = _admin_headers(client)
+    from backend.app.db.base import utcnow
+
+    raw_detail = ("TASK_EXECUTION_FAILED: HTTPSConnectionPool(host='api.provider.io', port=443): "
+                  "Max retries exceeded with url: /v1/chat (Caused by ProxyError('Cannot connect to proxy', "
+                  "File \"C:\\secrets\\provider.py\" line 8)) sk-live-9f3a1c22b7")
+    with app.state.database.session_factory.begin() as db:
+        db.add(CeleryTaskRecord(idempotency_key="fix-raw-1", task_type="demo.task",
+                                household_id=household_id, status="failed", attempt=1,
+                                error_code="TASK_EXECUTION_FAILED", error_detail=raw_detail))
+        db.add(CeleryTaskRecord(idempotency_key="fix-raw-2", task_type="demo.task",
+                                household_id=household_id, status="failed", attempt=1,
+                                error_code="MODEL_PROVIDER_UNAVAILABLE",
+                                error_detail="https://api.secret.example/v1 Error"))
+    listing = client.get("/api/audit/celery-tasks?task_type=demo.task&page_size=10", headers=headers).json()
+    items = {row["idempotency_key"]: row["id"] for row in listing["items"]}
+
+    first = client.get(f"/api/audit/celery-tasks/{items['fix-raw-1']}", headers=headers).json()
+    assert first["error_code"] == "TASK_EXECUTION_FAILED"  # 稳定码权威
+    sanitized = first["error_detail"]
+    lowered = sanitized.lower()
+    for forbidden in ("http://", "https://", "api.provider.io", "sk-live-9f3a1c22b7", "proxyerror",
+                      "c:\\secrets", "/v1/chat", "httpsconnectionpool", "host="):
+        assert forbidden not in lowered, forbidden
+    assert len(sanitized) <= 180
+
+    second = client.get(f"/api/audit/celery-tasks/{items['fix-raw-2']}", headers=headers).json()
+    assert second["error_code"] == "MODEL_PROVIDER_UNAVAILABLE"
+    assert second["error_detail"] == ""  # 全部不安全 → 空串

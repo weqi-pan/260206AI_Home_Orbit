@@ -128,8 +128,8 @@ export interface OfficialDeploymentPointer {
 }
 
 export interface DeploymentPointers {
-  market_entries: MarketPointerEntry[]
-  official: OfficialDeploymentPointer[]
+  market_entries: Page<MarketPointerEntry>
+  official: Page<OfficialDeploymentPointer>
 }
 
 export interface ModelRevisionCheck {
@@ -199,10 +199,10 @@ export function fetchAdminActions(params: AuditListParams & {
   return http.get<Page<AdminActionItem>>('/audit/admin-actions', { params }).then((r) => r.data)
 }
 
-export function fetchDeploymentPointers() {
-  return http.get<DeploymentPointers>('/audit/deployments/pointers').then((r) => r.data)
+export function fetchDeploymentPointers(params: { page?: number; page_size?: number } = {}) {
+  return http.get<DeploymentPointers>('/audit/deployments/pointers', { params }).then((r) => r.data)
 }
 
-export function fetchModelConfigRevisions() {
-  return http.get<ModelConfigRevision[]>('/audit/models/revisions').then((r) => r.data)
+export function fetchModelConfigRevisions(params: { page?: number; page_size?: number } = {}) {
+  return http.get<Page<ModelConfigRevision>>('/audit/models/revisions', { params }).then((r) => r.data)
 }

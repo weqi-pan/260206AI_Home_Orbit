@@ -15,9 +15,9 @@ vi.mock('../../api/audit', () => ({
   }),
   fetchCeleryTaskDetail: vi.fn().mockResolvedValue({
     id: 'task-1', idempotency_key: 'beat:reminders:h1', task_type: 'household.reminders.dispatch', household_id: 'h-1',
-    status: 'succeeded', attempt: 1, max_attempts: 3, error_code: null, next_retry_at: null,
+    status: 'failed', attempt: 2, max_attempts: 3, error_code: 'MODEL_PROVIDER_UNAVAILABLE', next_retry_at: null,
     created_at: '2026-08-28T08:00:00', updated_at: '2026-08-28T08:00:05',
-    error_detail: null, payload: { household_id: 'h-1' }, result: { occurrences: 2 },
+    error_detail: 'max retries exceeded', payload: { household_id: 'h-1' }, result: { occurrences: 2 },
     audit: { submitted_at: '2026-08-28T08:00:00', finished_at: '2026-08-28T08:00:05' },
     notifications: [{ id: 'n-1', title: '后台任务失败', kind: 'task_failed', created_at: '2026-08-27T08:02:00' }],
   }),
@@ -48,6 +48,17 @@ describe('Admin TaskOps 任务运营', () => {
     expect(wrapper.text()).toContain('beat:reminders:h1')
     expect(wrapper.text()).toContain('finished_at')
     expect(wrapper.text()).toContain('后台任务失败') // 任务失败产生的通知记录
+  })
+
+  it('shows the stable error code prominently with sanitized detail secondary', async () => {
+    const wrapper = mount(TaskOps, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    await wrapper.find('[data-testid="open-task"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="task-error-code"]').text()).toBe('MODEL_PROVIDER_UNAVAILABLE')
+    expect(wrapper.find('[data-testid="sanitized-error-detail"]').text()).toBe('max retries exceeded')
+    expect(wrapper.text()).not.toContain('://') // 视图不再内联渲染原始错误文本
+    expect(wrapper.text()).not.toContain('https://api.provider.io')
   })
 
   it('submits manual re-trigger through the audited admin boundary', async () => {

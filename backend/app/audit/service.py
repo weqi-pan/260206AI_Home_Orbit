@@ -4,6 +4,7 @@ filtered, indexed read paths over the platform's real evidence records
 (AgentRun, ToolExecution, ModelUsage, CeleryTaskRecord, AdminActionAudit) and
 the reservation-vs-completion accounting reconciliation."""
 import json
+import re
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
@@ -18,6 +19,41 @@ SENSITIVE_DETAIL_KEYS = {"api_key", "password", "secret", "token", "credential",
 MAX_DETAIL_LENGTH = 200
 MAX_PAGE_SIZE = 100
 UNRECONCILED_WINDOW_MINUTES = 15
+MAX_POINTER_HISTORY = 20
+MODEL_HISTORY_PER_MODEL = 20
+MAX_ERROR_DETAIL_LENGTH = 180
+
+_URL_RE = re.compile(r"(?i)\b(?:https?|ftp|wss?)://\S+|\bwww\.\S+")
+_KEY_RE = re.compile(r"(?i)\b(?:sk|pk|rk)[-_][A-Za-z0-9_\-+.]{6,}\b|\bapi[_-]?key\s*[:=]\s*\S+")
+_OPAQUE_RUN_RE = re.compile(r"\b[A-Za-z0-9+/=]{20,}\b")
+_WIN_PATH_RE = re.compile(r"\b[A-Za-z]:[\\/][^\s]+")
+_UNIX_PATH_RE = re.compile(r"(?<![\w.])/(?:[^\s/]+/)+[^\s]*")
+_EXC_CLASS_RE = re.compile(r"\b[A-Za-z0-9]*(?:Error|Exception|Interrupt|Exit|Failure|Pool)\b")
+_KV_LEAK_RE = re.compile(r"(?i)\b(host|port|url|key|authorization)\s*=\s*'?[^,)\s]*'?")
+_FILE_REF_RE = re.compile(r"(?i)\bfile\s*\"?[^\"]*\"?(\s*,?\s*line\s*\d+)?|\bline\s+\d+\b")
+_TRACEBACK_LINE_RE = re.compile(r"(?i)^\s*(traceback|file |during handling|the above exception)")
+
+
+def sanitize_error_detail(detail: str | None) -> str | None:
+    """Aggressive read-side disinfection for stored task error details.
+
+    The stable ``error_code`` stays authoritative; whatever survives here must
+    be clearly safe — no URLs, paths, key material, opaque runs, provider
+    exception classes or traceback fragments. Fully unsafe input yields "".
+    """
+    if detail is None:
+        return None
+    kept = []
+    for line in str(detail).splitlines():
+        if _TRACEBACK_LINE_RE.match(line):
+            continue
+        for pattern in (_URL_RE, _KEY_RE, _KV_LEAK_RE, _OPAQUE_RUN_RE, _WIN_PATH_RE, _UNIX_PATH_RE,
+                        _FILE_REF_RE, _EXC_CLASS_RE):
+            line = pattern.sub("", line)
+        line = " ".join(line.split())
+        if line:
+            kept.append(line)
+    return " ".join(kept)[:MAX_ERROR_DETAIL_LENGTH].strip()
 
 
 def sanitize_detail(value, key: str = ""):
@@ -269,7 +305,7 @@ class AuditQueryService:
         if row is None:
             return None
         view = self._celery_task_view(row)
-        view["error_detail"] = row.error_detail
+        view["error_detail"] = sanitize_error_detail(row.error_detail)
         view["payload"] = sanitize_detail(json.loads(row.payload_json or "{}"))
         view["result"] = sanitize_detail(json.loads(row.result_json or "{}")) if row.result_json else None
         view["audit"] = json.loads(row.audit_json or "{}")
@@ -310,61 +346,95 @@ class AuditQueryService:
         return {"items": items, "total": total, "page": page, "page_size": page_size}
 
     # ------------------------------------------------- deployment pointers
-    def deployment_pointer_history(self):
+    def deployment_pointer_history(self, page: int = 1, page_size: int = 20):
         """Per-market-entry and per-official-Agent pointer history from existing
         records: approved submissions move the market pointer; official
-        deployments pin household installs to immutable versions."""
-        entries = self.session.scalars(select(MarketEntry).order_by(MarketEntry.created_at.desc())).all()
-        market = []
-        for entry in entries:
-            rows = self.session.execute(select(ReviewSubmission, AgentVersion).join(
-                AgentVersion, AgentVersion.id == ReviewSubmission.agent_version_id).where(
-                ReviewSubmission.entry_id == entry.id, ReviewSubmission.status == "approved").order_by(
-                ReviewSubmission.decided_at.desc(), ReviewSubmission.id.desc())).all()
-            market.append({
-                "entry_id": entry.id, "name": entry.name, "source_household_id": entry.source_household_id,
-                "official": entry.official, "status": entry.status,
-                "current_version_number": entry.current_version_number,
-                "current_version_id": entry.current_version_id,
-                "history": [{"version": version.version, "version_id": version.id,
-                             "changed_by_account_id": submission.decided_by_account_id,
-                             "changed_at": submission.decided_at, "submission_id": submission.id}
-                            for submission, version in rows],
-            })
+        deployments pin household installs to immutable versions. Both sections
+        are paginated; entry history comes from one bounded joined query."""
+        page, page_size = clamp_page(page, page_size)
+        entry_total = self.session.scalar(select(func.count()).select_from(MarketEntry)) or 0
+        entries = self.session.scalars(select(MarketEntry).order_by(
+            MarketEntry.created_at.desc(), MarketEntry.id.desc()).offset(
+            (page - 1) * page_size).limit(page_size)).all()
+        entry_ids = [entry.id for entry in entries]
+        history_by_entry: dict[str, list] = {}
+        if entry_ids:
+            rows = self.session.execute(
+                select(ReviewSubmission, AgentVersion).join(
+                    AgentVersion, AgentVersion.id == ReviewSubmission.agent_version_id).where(
+                    ReviewSubmission.entry_id.in_(entry_ids),
+                    ReviewSubmission.status == "approved").order_by(
+                    ReviewSubmission.entry_id, ReviewSubmission.decided_at.desc(),
+                    ReviewSubmission.id.desc()).limit(page_size * MAX_POINTER_HISTORY)).all()
+            for submission, version in rows:
+                history_by_entry.setdefault(submission.entry_id, []).append({
+                    "version": version.version, "version_id": version.id,
+                    "changed_by_account_id": submission.decided_by_account_id,
+                    "changed_at": submission.decided_at, "submission_id": submission.id})
+        market_items = [{
+            "entry_id": entry.id, "name": entry.name, "source_household_id": entry.source_household_id,
+            "official": entry.official, "status": entry.status,
+            "current_version_number": entry.current_version_number,
+            "current_version_id": entry.current_version_id,
+            "history": history_by_entry.get(entry.id, [])[:MAX_POINTER_HISTORY],
+        } for entry in entries]
 
-        official_rows = self.session.execute(select(AgentDeployment, AgentVersion, Account.username).join(
-            AgentVersion, AgentVersion.id == AgentDeployment.agent_version_id).join(
-            Account, Account.id == AgentDeployment.created_by_account_id, isouter=True).where(
-            AgentDeployment.visibility == "official").order_by(AgentDeployment.created_at.desc())).all()
-        deployment_map: dict[str, dict] = {}
-        for deployment, version, creator in official_rows:
-            record = deployment_map.setdefault(deployment.id, {
-                "deployment_id": deployment.id, "household_id": deployment.household_id,
-                "name": None, "revision": deployment.revision,
-                "agent_version_id": deployment.agent_version_id, "created_by": creator,
-                "created_at": deployment.created_at, "history": []})
-            record["history"].append({"version": version.version, "version_id": version.id,
-                                      "published_at": version.published_at, "changed_by": creator})
-        official = sorted(deployment_map.values(), key=lambda item: item["created_at"] or utcnow(), reverse=True)
-        return {"market_entries": market, "official": official}
+        official_total = self.session.scalar(select(func.count()).select_from(AgentDeployment).where(
+            AgentDeployment.visibility == "official")) or 0
+        official_rows = self.session.execute(select(AgentDeployment, AgentVersion).join(
+            AgentVersion, AgentVersion.id == AgentDeployment.agent_version_id).where(
+            AgentDeployment.visibility == "official").order_by(
+            AgentDeployment.created_at.desc(), AgentDeployment.id.desc()).offset(
+            (page - 1) * page_size).limit(page_size)).all()
+        official_items = [{
+            "deployment_id": deployment.id, "household_id": deployment.household_id,
+            "revision": deployment.revision, "agent_version_id": deployment.agent_version_id,
+            "created_by": None, "created_at": deployment.created_at,
+            "history": [{"version": version.version, "version_id": version.id,
+                         "published_at": version.published_at, "changed_by": None}],
+        } for deployment, version in official_rows]
+        return {
+            "market_entries": {"items": market_items, "total": entry_total, "page": page, "page_size": page_size},
+            "official": {"items": official_items, "total": official_total, "page": page, "page_size": page_size},
+        }
 
     # ------------------------------------------------- model config revisions
-    def model_config_revisions(self):
-        """Model configuration revision evidence from existing records."""
+    def model_config_revisions(self, page: int = 1, page_size: int = 20):
+        """Model configuration revision evidence from existing records, paginated
+        with a per-model bounded window query (no full-table in-memory scan)."""
+        from sqlalchemy.orm import aliased
+
         from backend.app.db.models import ModelHealthCheck
 
-        models = self.session.scalars(select(LlmModel).order_by(LlmModel.model_name)).all()
-        checks = self.session.scalars(select(ModelHealthCheck).order_by(
-            ModelHealthCheck.created_at.desc(), ModelHealthCheck.id.desc())).all()
+        page, page_size = clamp_page(page, page_size)
+        total = self.session.scalar(select(func.count()).select_from(LlmModel)) or 0
+        models = self.session.scalars(select(LlmModel).order_by(
+            LlmModel.model_name, LlmModel.id).offset((page - 1) * page_size).limit(page_size)).all()
+        model_ids = [model.id for model in models]
         by_model: dict[str, list] = {}
-        for check in checks:
-            by_model.setdefault(check.model_id, []).append(check)
-        return [{
-            "model_id": model.id, "model_name": model.model_name, "model_type": model.model_type,
-            "enabled": model.enabled, "revision": model.revision,
-            "latest_health": ({"status": by_model[model.id][0].status, "error_code": by_model[model.id][0].error_code,
-                               "checked_at": by_model[model.id][0].created_at} if model.id in by_model else None),
-            "history": [{"status": check.status, "error_code": check.error_code,
-                         "endpoint_revision": check.endpoint_revision, "model_revision": check.model_revision,
-                         "checked_at": check.created_at} for check in by_model.get(model.id, [])[:20]],
-        } for model in models]
+        if model_ids:
+            row_number = func.row_number().over(
+                partition_by=ModelHealthCheck.model_id,
+                order_by=(ModelHealthCheck.created_at.desc(), ModelHealthCheck.id.desc())).label("rn")
+            inner = select(ModelHealthCheck, row_number).where(
+                ModelHealthCheck.model_id.in_(model_ids)).subquery()
+            check_alias = aliased(ModelHealthCheck, inner, adapt_on_names=True)
+            checks = self.session.scalars(select(check_alias).where(
+                inner.c.rn <= MODEL_HISTORY_PER_MODEL).order_by(
+                inner.c.model_id, inner.c.rn).limit(page_size * MODEL_HISTORY_PER_MODEL)).all()
+            for check in checks:
+                by_model.setdefault(check.model_id, []).append(check)
+        return {
+            "items": [{
+                "model_id": model.id, "model_name": model.model_name, "model_type": model.model_type,
+                "enabled": model.enabled, "revision": model.revision,
+                "latest_health": ({"status": history[0].status, "error_code": history[0].error_code,
+                                   "checked_at": history[0].created_at} if (history := by_model.get(model.id)) else None),
+                "history": [{"status": check.status, "error_code": check.error_code,
+                             "endpoint_revision": check.endpoint_revision,
+                             "model_revision": check.model_revision,
+                             "checked_at": check.created_at}
+                            for check in by_model.get(model.id, [])[:MODEL_HISTORY_PER_MODEL]],
+            } for model in models],
+            "total": total, "page": page, "page_size": page_size,
+        }

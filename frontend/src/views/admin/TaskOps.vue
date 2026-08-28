@@ -134,7 +134,11 @@ onMounted(async () => {
           <div><dt>任务类型</dt><dd class="mono">{{ detail.task_type }}</dd></div>
           <div><dt>幂等键</dt><dd class="mono">{{ detail.idempotency_key }}</dd></div>
           <div><dt>状态</dt><dd><span class="state" :data-status="detail.status">{{ detail.status }}</span>（{{ detail.attempt }}/{{ detail.max_attempts }}）</dd></div>
-          <div><dt>错误码</dt><dd class="mono">{{ detail.error_code ?? '—' }}<template v-if="detail.error_detail"> · {{ detail.error_detail }}</template></dd></div>
+          <div><dt>错误码</dt><dd class="mono" data-testid="task-error-code">{{ detail.error_code ?? '—' }}</dd></div>
+          <div v-if="detail.error_detail">
+            <dt>诊断（已消毒）</dt>
+            <dd class="mono secondary" data-testid="sanitized-error-detail">{{ detail.error_detail }}</dd>
+          </div>
           <div><dt>下次重试</dt><dd class="mono">{{ detail.next_retry_at ? formatDateTime(detail.next_retry_at) : '—' }}</dd></div>
         </dl>
         <h3>负载（脱敏）</h3>
@@ -189,5 +193,6 @@ td { padding: 5px 6px; border-bottom: 1px solid #f3f2f8; }
 .facts > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
 .facts dt { opacity: .66; }
 .facts dd { margin: 0; }
+.facts dd.secondary { opacity: .78; font-size: 12px; }
 .json { margin: 0; padding: 10px; border-radius: 8px; background: #f7f6fb; font-size: 11.5px; overflow: auto; max-height: 220px; }
 </style>

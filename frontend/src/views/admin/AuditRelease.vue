@@ -13,7 +13,12 @@ const actionPageSize = 20
 const actionFilter = ref('')
 const resourceFilter = ref('')
 const pointers = ref<DeploymentPointers | null>(null)
+const pointerPage = ref(1)
+const pointerPageSize = 20
 const revisions = ref<ModelConfigRevision[]>([])
+const revisionTotal = ref(0)
+const revisionPage = ref(1)
+const revisionPageSize = 20
 
 async function loadActions() {
   const result = await fetchAdminActions({
@@ -25,10 +30,20 @@ async function loadActions() {
   actionTotal.value = result.total
 }
 
+async function loadPointers() {
+  pointers.value = await fetchDeploymentPointers({ page: pointerPage.value, page_size: pointerPageSize })
+}
+
+async function loadRevisions() {
+  const result = await fetchModelConfigRevisions({ page: revisionPage.value, page_size: revisionPageSize })
+  revisions.value = result.items
+  revisionTotal.value = result.total
+}
+
 onMounted(async () => {
   await loadActions()
-  pointers.value = await fetchDeploymentPointers()
-  revisions.value = await fetchModelConfigRevisions()
+  await loadPointers()
+  await loadRevisions()
 })
 </script>
 
@@ -72,12 +87,19 @@ onMounted(async () => {
     </section>
 
     <section class="panel" aria-labelledby="pointers-title">
-      <h2 id="pointers-title">发布指针历史（市场条目 / 官方 Agent）</h2>
+      <div class="panel-title">
+        <h2 id="pointers-title">发布指针历史（市场条目 / 官方 Agent）</h2>
+        <div class="pager" v-if="pointers">
+          <button type="button" :disabled="pointerPage <= 1" @click="pointerPage -= 1; loadPointers()">上一页</button>
+          <span data-testid="pointer-total">第 {{ pointerPage }} 页 / 共 {{ Math.max(1, Math.ceil(pointers.market_entries.total / pointerPageSize)) }} 页（{{ pointers.market_entries.total }} 条）</span>
+          <button type="button" :disabled="pointerPage >= Math.ceil(pointers.market_entries.total / pointerPageSize)" @click="pointerPage += 1; loadPointers()">下一页</button>
+        </div>
+      </div>
       <div v-if="pointers" class="pointer-grid">
         <table>
           <thead><tr><th>市场条目</th><th>状态</th><th>当前版本</th><th>版本轨迹（版本 · 决定者 · 时间）</th></tr></thead>
           <tbody>
-            <tr v-for="entry in pointers.market_entries" :key="entry.entry_id">
+            <tr v-for="entry in pointers.market_entries.items" :key="entry.entry_id">
               <td>{{ entry.name }}<small class="mono block">{{ entry.entry_id }}</small></td>
               <td>{{ entry.status }}<small v-if="entry.official" class="chip">官方</small></td>
               <td>v{{ entry.current_version_number }}</td>
@@ -88,13 +110,13 @@ onMounted(async () => {
                 <span v-if="!entry.history.length" class="dim">无已通过版本</span>
               </td>
             </tr>
-            <tr v-if="!pointers.market_entries.length"><td colspan="4" class="empty">暂无市场条目</td></tr>
+            <tr v-if="!pointers.market_entries.items.length"><td colspan="4" class="empty">暂无市场条目</td></tr>
           </tbody>
         </table>
         <table>
-          <thead><tr><th>官方部署</th><th>家庭</th><th>修订</th><th>版本轨迹</th></tr></thead>
+          <thead><tr><th>官方部署（{{ pointers.official.total }}）</th><th>家庭</th><th>修订</th><th>版本轨迹</th></tr></thead>
           <tbody>
-            <tr v-for="deployment in pointers.official" :key="deployment.deployment_id">
+            <tr v-for="deployment in pointers.official.items" :key="deployment.deployment_id">
               <td class="mono clip" :title="deployment.deployment_id">{{ deployment.deployment_id }}</td>
               <td class="mono clip" :title="deployment.household_id">{{ deployment.household_id }}</td>
               <td>r{{ deployment.revision }}</td>
@@ -104,14 +126,21 @@ onMounted(async () => {
                 </span>
               </td>
             </tr>
-            <tr v-if="!pointers.official.length"><td colspan="4" class="empty">暂无官方部署</td></tr>
+            <tr v-if="!pointers.official.items.length"><td colspan="4" class="empty">暂无官方部署</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
     <section class="panel" aria-labelledby="model-revisions-title">
-      <h2 id="model-revisions-title">模型配置修订与健康证据</h2>
+      <div class="panel-title">
+        <h2 id="model-revisions-title">模型配置修订与健康证据</h2>
+        <div class="pager">
+          <button type="button" :disabled="revisionPage <= 1" @click="revisionPage -= 1; loadRevisions()">上一页</button>
+          <span data-testid="revision-total">第 {{ revisionPage }} 页 / 共 {{ Math.max(1, Math.ceil(revisionTotal / revisionPageSize)) }} 页（{{ revisionTotal }} 条）</span>
+          <button type="button" :disabled="revisionPage >= Math.ceil(revisionTotal / revisionPageSize)" @click="revisionPage += 1; loadRevisions()">下一页</button>
+        </div>
+      </div>
       <table>
         <thead><tr><th>模型</th><th>类型</th><th>启用</th><th>修订</th><th>最近健康</th><th>检查轨迹（状态 · 端点修订 · 模型修订 · 时间）</th></tr></thead>
         <tbody>
