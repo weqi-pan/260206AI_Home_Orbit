@@ -14,6 +14,7 @@ from backend.app.core.security import get_current_account, get_db
 from backend.app.db.models import Account, AgentDefinition, AgentDeployment, AgentInstallation, AgentRun, AgentVersion, ChatSession, ConversationHistory, HouseholdMember, Ticket, ToolDefinition, ToolPermission
 from backend.agent.platform.context import RunBudget, RunContext
 from backend.agent.tools.gateways import ToolCapabilities, ToolRepositories
+from backend.agent.tools.household_gateways import HouseholdToolRepositories
 from backend.agent.platform.runner import DeploymentAgentRunner
 from backend.app.services.defaults import get_agent_runner, get_followup_service, get_sentiment_service, get_title_service
 from backend.app.api.setup import setup_status
@@ -60,6 +61,7 @@ def submit_title_generation(app, session_id: str, user_text: str, answer: str, m
 
 class SessionCreate(BaseModel):
     title: str = Field(default="新对话", max_length=100)
+    deployment_id: str | None = Field(default=None, max_length=36)
 
 
 class SessionUpdate(BaseModel):
@@ -110,11 +112,32 @@ def list_sessions(account: Account = Depends(get_current_account), db: Session =
     return [session_dict(item) for item in items]
 
 
+def official_household_deployment(db, household_id, deployment_id=None):
+    """已安装官方 Agent 的 deployment；可显式指定，默认回退设备管家。"""
+    statement = select(AgentDeployment).join(AgentVersion,
+        AgentVersion.id == AgentDeployment.agent_version_id).join(AgentDefinition,
+        AgentDefinition.id == AgentVersion.agent_id).join(AgentInstallation,
+        AgentInstallation.deployment_id == AgentDeployment.id).where(
+            AgentDeployment.household_id == household_id,
+            AgentInstallation.household_id == household_id, AgentInstallation.status == "installed",
+            AgentInstallation.authority_slot == "active",
+            AgentInstallation.agent_version_id == AgentDeployment.agent_version_id)
+    if deployment_id:
+        statement = statement.where(AgentDeployment.id == deployment_id)
+    else:
+        statement = statement.where(AgentDefinition.name == "设备管家")
+    return db.scalar(statement.order_by(AgentDeployment.id))
+
+
 @router.post("/sessions", status_code=201)
 def create_session(payload: SessionCreate, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
     household_id = exactly_one_household(db.scalars(select(HouseholdMember.household_id).where(
         HouseholdMember.account_id == account.id)).all())
     deployment = official_device_deployment(db, household_id)
+    if payload.deployment_id:
+        deployment = official_household_deployment(db, household_id, payload.deployment_id)
+        if not deployment:
+            raise HTTPException(404, detail={"code": "DEPLOYMENT_NOT_FOUND"})
     item = ChatSession(account_id=account.id, household_id=household_id,
                        deployment_id=deployment.id if deployment else None, title=payload.title)
     db.add(item)
@@ -202,8 +225,8 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
     history = db.scalars(select(ConversationHistory).where(ConversationHistory.session_id == session_id).order_by(ConversationHistory.id)).all()
     messages = [{"role": item.role, "content": item.content} for item in history]
     context = {"account_id": account.id, "user_id": account.user_id, "city": account.user.city if account.user else None,
-               "session_id": session_id, "repositories": ToolCapabilities.bind(ToolRepositories(request.app.state.database.session_factory)),
-               "vector_store_service": request.app.state.vector_store_service}
+                "session_id": session_id, "repositories": ToolCapabilities.bind(HouseholdToolRepositories(request.app.state.database.session_factory)),
+                "vector_store_service": request.app.state.vector_store_service}
     if enforce_runtime:
         context["model_resolver"] = purpose_model_resolver(request.app.state.database.session_factory, household_id)
     if resolved_runtime:
@@ -256,7 +279,7 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
             model_snapshot=json.loads(run.model_snapshot_json), compiled_snapshot=compiled_snapshot,
             skill_version_ids=tuple(item["id"] for item in compiled_snapshot["skills"]),
             city=account.user.city if account.user else None,
-            repositories=ToolCapabilities.bind(ToolRepositories(request.app.state.database.session_factory)),
+            repositories=ToolCapabilities.bind(HouseholdToolRepositories(request.app.state.database.session_factory)),
             vector_store_service=request.app.state.vector_store_service,
             budget=RunBudget(
                 max_delegation_depth=int(compiled_snapshot["budget"].get("delegation_depth", 4)),

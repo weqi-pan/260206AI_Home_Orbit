@@ -146,6 +146,195 @@ class WorkflowConfirmArguments(BaseModel):
     message: str
 
 
+class RecipeIngredientInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    amount: float = 1
+    unit: str = "适量"
+
+
+class RecipeScaleArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    servings_base: int
+    servings_target: int
+    ingredients: list[RecipeIngredientInput]
+
+
+class ShoppingItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    quantity: int = 1
+    unit: str = "份"
+    category: str = ""
+    note: str = ""
+
+
+class ShoppingWriteArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[ShoppingItemInput]
+
+
+class TaskCreateArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str
+    description: str = ""
+    due_at: str = ""
+
+
+class TaskUpdateArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_id: str
+    title: str = ""
+    description: str = ""
+    due_at: str = ""
+    status: str = ""
+
+
+class TaskConfirmArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_id: str
+    done: bool = True
+
+
+class ReminderCreateArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_title: str = ""
+    task_id: str = ""
+    interval_minutes: int
+    timezone: str = "Asia/Shanghai"
+    missed_run_policy: str = "skip"
+    catch_up_limit: int = 1
+    start_at: str = ""
+
+
+class ReminderCancelArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_id: str
+
+
+class MemoWriteArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str
+    memo_id: str = ""
+
+
+class PreferenceReadArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    category: str = ""
+
+
+class PreferenceProposeArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: str
+    value: str
+    value_type: str = "string"
+    category: str = "general"
+    reason: str = ""
+
+
+class NotificationListArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    unread_only: bool = True
+
+
+def _household_repositories(context):
+    repositories = context.repositories
+    if repositories is None or not hasattr(repositories, "shopping_write"):
+        raise RuntimeError("HOUSEHOLD_REPOSITORY_REQUIRED")
+    return repositories
+
+
+def _recipe_scale(arguments, context):
+    return _household_repositories(context).recipe_scale(
+        arguments["servings_base"], arguments["servings_target"], arguments.get("ingredients", []))
+
+
+def _shopping_read(_arguments, context):
+    repositories = _household_repositories(context)
+    rows, summary = repositories.shopping_list(context.household_id)
+    lines = [f"{row['name']} x{row['quantity']}{row['unit']}" + ("（已购）" if row["checked"] else "")
+             for row in rows]
+    lines.append(f"共 {summary['total']} 项，待购 {summary['unchecked']} 项")
+    return "\n".join(lines) or "购物清单为空。"
+
+
+def _shopping_write(arguments, context):
+    return _household_repositories(context).shopping_write(context.household_id, arguments.get("items", []),
+                                                           account_id=context.principal_id)
+
+
+def _task_create(arguments, context):
+    return _household_repositories(context).task_create(
+        context.household_id, arguments["title"], description=arguments.get("description", ""),
+        due_at=arguments.get("due_at") or None, account_id=context.principal_id)
+
+
+def _task_update(arguments, context):
+    return _household_repositories(context).task_update(
+        context.household_id, arguments["task_id"], title=arguments.get("title") or None,
+        description=arguments.get("description") or None, due_at=arguments.get("due_at") or None,
+        status=arguments.get("status") or None, account_id=context.principal_id)
+
+
+def _task_confirm(arguments, context):
+    return _household_repositories(context).task_confirm(
+        context.household_id, arguments["task_id"], done=arguments.get("done", True),
+        account_id=context.principal_id)
+
+
+def _reminder_create(arguments, context):
+    return _household_repositories(context).reminder_create(
+        context.household_id, arguments["interval_minutes"], task_id=arguments.get("task_id", ""),
+        task_title=arguments.get("task_title", ""), timezone=arguments.get("timezone", "Asia/Shanghai"),
+        missed_run_policy=arguments.get("missed_run_policy", "skip"),
+        catch_up_limit=arguments.get("catch_up_limit", 1), start_at=arguments.get("start_at") or None,
+        account_id=context.principal_id)
+
+
+def _reminder_cancel(arguments, context):
+    return _household_repositories(context).reminder_cancel(
+        context.household_id, arguments["task_id"], account_id=context.principal_id)
+
+
+def _memo_write(arguments, context):
+    return _household_repositories(context).memo_write(
+        context.household_id, arguments["content"], memo_id=arguments.get("memo_id", ""),
+        account_id=context.principal_id)
+
+
+def _preference_read(arguments, context):
+    rows = _household_repositories(context).preference_list(context.household_id,
+                                                            category=arguments.get("category", ""))
+    lines = [f"{row['key']} = {row['value']}（{row['category']}）" for row in rows]
+    return "\n".join(lines) or "暂无已确认的家庭偏好；Agent 只能提出建议，需家庭成员确认后生效。"
+
+
+def _preference_propose(arguments, context):
+    return _household_repositories(context).preference_propose(
+        context.household_id, arguments["key"], arguments["value"],
+        value_type=arguments.get("value_type", "string"), category=arguments.get("category", "general"),
+        reason=arguments.get("reason", ""), account_id=context.principal_id)
+
+
+def _notification_read(arguments, context):
+    rows = _household_repositories(context).notification_recent(
+        context.household_id, context.principal_id, unread_only=arguments.get("unread_only", True))
+    lines = [f"[{row['kind']}] {row['title']}：{row['body']}" for row in rows]
+    return "\n".join(lines) or "暂无未读通知。"
+
+
+def _household_knowledge(arguments, context):
+    """Household-isolated vector retrieval only - never an SQL/FAQ fallback."""
+    if context.vector_store_service is None:
+        return "知识检索不可用：MODEL_NOT_CONFIGURED"
+    try:
+        documents = context.vector_store_service.search(arguments["query"], household_id=context.household_id,
+                                                        skill_version_ids=context.skill_version_ids)
+    except Exception:
+        documents = []
+    return "\n".join(document.page_content for document in documents) or "未在家庭知识中找到相关内容。"
+
+
 class BuiltinToolRegistry:
     def __init__(self, tools: list[BuiltinTool]):
         self._tools = {tool.metadata.key: tool for tool in tools}
@@ -169,6 +358,32 @@ class BuiltinToolRegistry:
             BuiltinTool(ToolMetadata("device.restock.register", "到货登记", "登记可撤销的设备到货通知", "reversible"), _restock, ModelArguments),
             BuiltinTool(ToolMetadata("device.ticket.create", "创建售后工单", "创建普通售后支持工单", "reversible"), _ticket, TicketArguments),
             BuiltinTool(ToolMetadata("device.faq.search", "FAQ检索", "检索已审核设备FAQ", "low"), _knowledge, QueryArguments),
+            BuiltinTool(ToolMetadata("household.recipe.scale", "菜谱用量换算", "按目标人数确定性换算食材用量", "low"),
+                        _recipe_scale, RecipeScaleArguments),
+            BuiltinTool(ToolMetadata("household.shopping.read", "购物清单读取", "读取当前家庭购物清单与待购统计", "low"),
+                        _shopping_read, NoArguments),
+            BuiltinTool(ToolMetadata("household.shopping.write", "购物清单写入", "按名称新增或更新购物清单条目（可撤销）", "reversible"),
+                        _shopping_write, ShoppingWriteArguments),
+            BuiltinTool(ToolMetadata("household.task.create", "家庭任务创建", "创建家庭任务（可撤销）", "reversible"),
+                        _task_create, TaskCreateArguments),
+            BuiltinTool(ToolMetadata("household.task.update", "家庭任务更新", "更新家庭任务标题、描述或状态（可撤销）", "reversible"),
+                        _task_update, TaskUpdateArguments),
+            BuiltinTool(ToolMetadata("household.task.confirm", "家庭任务确认", "确认完成或重新打开家庭任务（可撤销）", "reversible"),
+                        _task_confirm, TaskConfirmArguments),
+            BuiltinTool(ToolMetadata("household.reminder.create", "提醒创建", "为家庭任务创建周期提醒（可撤销）", "reversible"),
+                        _reminder_create, ReminderCreateArguments),
+            BuiltinTool(ToolMetadata("household.reminder.cancel", "提醒取消", "取消家庭任务的周期提醒（可撤销）", "reversible"),
+                        _reminder_cancel, ReminderCancelArguments),
+            BuiltinTool(ToolMetadata("household.memo.write", "家庭备忘写入", "新增或更新家庭备忘（可撤销）", "reversible"),
+                        _memo_write, MemoWriteArguments),
+            BuiltinTool(ToolMetadata("household.preference.read", "家庭偏好读取", "读取已确认的结构化家庭偏好", "low"),
+                        _preference_read, PreferenceReadArguments),
+            BuiltinTool(ToolMetadata("household.preference.propose", "家庭偏好建议", "提出结构化偏好变更建议，需家庭成员确认后生效（可撤销）",
+                                     "reversible"), _preference_propose, PreferenceProposeArguments),
+            BuiltinTool(ToolMetadata("household.notification.read", "通知读取", "读取当前家庭站内通知", "low"),
+                        _notification_read, NotificationListArguments),
+            BuiltinTool(ToolMetadata("household.knowledge.search", "家庭知识检索", "在家庭隔离向量知识中检索", "low"),
+                        _household_knowledge, QueryArguments),
         ])
 
     def resolve(self, key: str) -> BuiltinTool:

@@ -111,24 +111,24 @@ def test_home_orbit_nodes_use_current_household_state(client):
     response = client.get("/api/home/orbit", headers=bearer(owner["access_token"]))
 
     assert response.status_code == 200
-    assert response.json()["nodes"] == [
-        {
-            "id": "setup",
-            "label": "完成模型初始化",
-            "kind": "setup",
-            "status": "attention",
-            "href": "/admin/setup",
-            "detail": "主聊天与向量模型尚未配置",
-        },
-        {
-            "id": "household",
-            "label": "家庭空间",
-            "kind": "household",
-            "status": "ready",
-            "href": "/household",
-            "detail": "1 位家庭成员",
-        },
-    ]
+    nodes = {node["id"]: node for node in response.json()["nodes"]}
+    assert nodes["setup"] == {
+        "id": "setup",
+        "label": "完成模型初始化",
+        "kind": "setup",
+        "status": "attention",
+        "href": "/admin/setup",
+        "detail": "主聊天与向量模型尚未配置",
+    }
+    assert nodes["household"] == {
+        "id": "household",
+        "label": "家庭空间",
+        "kind": "household",
+        "status": "ready",
+        "href": "/household",
+        "detail": "1 位家庭成员",
+        }
+    assert {"tasks", "shopping", "notifications"} <= set(nodes)  # Phase 5 真实家庭状态
 
 
 def test_v2_schema_domains_and_alembic_version_table_exist(settings):

@@ -95,7 +95,9 @@ def test_official_device_seed_is_idempotent_versioned_and_least_privilege(client
         assert version.version == 1
         assert db.scalar(select(func.count()).select_from(AgentDefinition).where(
             AgentDefinition.household_id == agent.household_id, AgentDefinition.name == "设备管家")) == 1
-        assert db.scalar(select(func.count()).select_from(Skill).where(Skill.household_id == agent.household_id)) == 4
+        assert db.scalar(select(func.count()).select_from(Skill).where(
+            Skill.household_id == agent.household_id, Skill.name.in_(
+                ("设备诊断", "设备选购", "库存与使用报告", "售后升级")))) == 4
         assert db.scalar(select(func.count()).select_from(AgentSkillBinding).where(
             AgentSkillBinding.agent_version_id == version.id)) == 4
         assert db.scalar(select(func.count()).select_from(AgentToolBinding).where(

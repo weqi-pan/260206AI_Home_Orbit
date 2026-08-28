@@ -216,10 +216,12 @@ class AdminActionAudit(Base):
 # Staged V2 compatibility exports. New domains live in focused modules while
 # existing V1 imports continue to use backend.app.db.models.
 from backend.app.db.household_models import Household, HouseholdMember, HouseholdPreference, Invitation  # noqa: E402,F401
+from backend.app.db.household_daily_models import (HouseholdMemo, HouseholdPreferenceProposal,  # noqa: E402,F401
+                                                   ShoppingListItem)
 from backend.app.db.platform_models import (  # noqa: E402,F401
     ActiveEmbeddingCollection, AgentCheckpoint, AgentCheckpointWrite, AgentDefinition, AgentDeployment, AgentInstallation,
-    AgentRun, AgentSkillBinding, AgentToolBinding, AgentVersion, ApprovalRequest,
-    EmbeddingCollectionBuild, LlmCredential, LlmEndpoint, LlmModel, ModelGrant,
-    InstallationPermission, ModelHealthCheck, ModelPurposeBinding, ModelUsage, Notification, Skill, SkillVersion,
-    ToolDefinition, ToolExecution, ToolPermission, UsageQuota,
+    AgentRun, AgentSkillBinding, AgentToolBinding, AgentVersion, ApprovalRequest, CeleryTaskRecord,
+    EmbeddingCollectionBuild, HouseholdTask, LlmCredential, LlmEndpoint, LlmModel, ModelGrant,
+    InstallationPermission, ModelHealthCheck, ModelPurposeBinding, ModelUsage, Notification, NotificationRead, Skill,
+    SkillVersion, TaskSchedule, ToolDefinition, ToolExecution, ToolPermission, UsageQuota,
 )

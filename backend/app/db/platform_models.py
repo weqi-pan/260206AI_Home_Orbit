@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import (Boolean, CheckConstraint, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer,
+                        LargeBinary, String, Text, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.db.base import Base, utcnow, uuid_str
@@ -431,32 +432,79 @@ class AgentCheckpointWrite(Base):
 
 class HouseholdTask(TenantRow, Base):
     __tablename__ = "household_tasks"
-    __table_args__ = tenant_parent_constraints()
+    __table_args__ = tenant_parent_constraints(
+        CheckConstraint("status IN ('open', 'done', 'cancelled')", name="ck_household_tasks_status"),
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    due_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id"))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id"))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
-class TaskSchedule(Base):
+class TaskSchedule(TenantRow, Base):
+    """Timezone-aware reminder rule: fixed interval with explicit next-run and missed-run policy."""
     __tablename__ = "task_schedules"
     __table_args__ = (
         ForeignKeyConstraint(["task_id", "household_id"], ["household_tasks.id", "household_tasks.household_id"], ondelete="CASCADE"),
+        CheckConstraint("missed_run_policy IN ('skip', 'catch_up_bounded')", name="ck_task_schedules_missed_policy"),
     )
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     task_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="Asia/Shanghai")
+    interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime)
+    missed_run_policy: Mapped[str] = mapped_column(String(16), nullable=False, default="skip")
+    catch_up_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_by_account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id"))
 
 
 class Notification(TenantRow, Base):
     __tablename__ = "notifications"
     __table_args__ = tenant_parent_constraints()
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="general")
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    source_id: Mapped[str] = mapped_column(String(100), nullable=False, default="")
 
 
-class NotificationRead(Base):
+class NotificationRead(TenantRow, Base):
     __tablename__ = "notification_reads"
     __table_args__ = (
         ForeignKeyConstraint(["notification_id", "household_id"], ["notifications.id", "notifications.household_id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["account_id", "household_id"], ["household_members.account_id", "household_members.household_id"]),
+        UniqueConstraint("notification_id", "account_id", name="uq_notification_read_notification_account"),
     )
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
-    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     notification_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
+    account_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class CeleryTaskRecord(Base):
+    """Platform-global async task record: idempotency, attempts, retry policy and audit."""
+    __tablename__ = "celery_tasks"
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'running', 'succeeded', 'failed', 'retry_scheduled', 'dead')",
+                        name="ck_celery_tasks_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    idempotency_key: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    household_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    result_json: Mapped[str | None] = mapped_column(Text)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_detail: Mapped[str | None] = mapped_column(String(200))
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime)
+    audit_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

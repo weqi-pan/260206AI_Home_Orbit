@@ -50,6 +50,49 @@ def build_platform_tool(authority, executor, context, session):
     elif schema_name == "TicketArguments":
         def callable_tool(title: str, content: str, runtime: ToolRuntime):
             return execute(runtime, {"title": title, "content": content})
+    elif schema_name == "RecipeScaleArguments":
+        def callable_tool(servings_base: int, servings_target: int, ingredients: list, runtime: ToolRuntime):
+            return execute(runtime, {"servings_base": servings_base, "servings_target": servings_target,
+                                     "ingredients": ingredients})
+    elif schema_name == "ShoppingWriteArguments":
+        def callable_tool(items: list, runtime: ToolRuntime):
+            return execute(runtime, {"items": items})
+    elif schema_name == "TaskCreateArguments":
+        def callable_tool(title: str, description: str = "", due_at: str = "", runtime: ToolRuntime = None):
+            return execute(runtime, {"title": title, "description": description, "due_at": due_at})
+    elif schema_name == "TaskUpdateArguments":
+        def callable_tool(task_id: str, title: str = "", description: str = "", due_at: str = "", status: str = "",
+                          runtime: ToolRuntime = None):
+            return execute(runtime, {"task_id": task_id, "title": title, "description": description,
+                                     "due_at": due_at, "status": status})
+    elif schema_name == "TaskConfirmArguments":
+        def callable_tool(task_id: str, done: bool = True, runtime: ToolRuntime = None):
+            return execute(runtime, {"task_id": task_id, "done": done})
+    elif schema_name == "ReminderCreateArguments":
+        def callable_tool(interval_minutes: int, task_title: str = "", task_id: str = "",
+                          timezone: str = "Asia/Shanghai", missed_run_policy: str = "skip",
+                          catch_up_limit: int = 1, start_at: str = "", runtime: ToolRuntime = None):
+            return execute(runtime, {"interval_minutes": interval_minutes, "task_title": task_title,
+                                     "task_id": task_id, "timezone": timezone,
+                                     "missed_run_policy": missed_run_policy, "catch_up_limit": catch_up_limit,
+                                     "start_at": start_at})
+    elif schema_name == "ReminderCancelArguments":
+        def callable_tool(task_id: str, runtime: ToolRuntime = None):
+            return execute(runtime, {"task_id": task_id})
+    elif schema_name == "MemoWriteArguments":
+        def callable_tool(content: str, memo_id: str = "", runtime: ToolRuntime = None):
+            return execute(runtime, {"content": content, "memo_id": memo_id})
+    elif schema_name == "PreferenceReadArguments":
+        def callable_tool(category: str = "", runtime: ToolRuntime = None):
+            return execute(runtime, {"category": category})
+    elif schema_name == "PreferenceProposeArguments":
+        def callable_tool(key: str, value: str, value_type: str = "string", category: str = "general",
+                          reason: str = "", runtime: ToolRuntime = None):
+            return execute(runtime, {"key": key, "value": value, "value_type": value_type,
+                                     "category": category, "reason": reason})
+    elif schema_name == "NotificationListArguments":
+        def callable_tool(unread_only: bool = True, runtime: ToolRuntime = None):
+            return execute(runtime, {"unread_only": unread_only})
     else:
         raise PlatformToolError("TOOL_SCHEMA_UNSUPPORTED")
     return StructuredTool.from_function(callable_tool, name=authority.key, description=metadata.description)

@@ -42,6 +42,8 @@ class HouseholdPreference(Base):
     household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     key: Mapped[str] = mapped_column(String(100), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False, default="general")
+    value_type: Mapped[str] = mapped_column(String(16), nullable=False, default="string")
     confirmed_by_account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 

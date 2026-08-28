@@ -25,7 +25,33 @@ export interface OrbitNode {
   detail: string
 }
 
+export interface TodayTask {
+  id: string
+  title: string
+  description: string
+  status: string
+  due_at: string | null
+}
+
+export interface TodayReminder {
+  id: string
+  task_id: string
+  interval_minutes: number
+  next_run_at: string | null
+  active: boolean
+}
+
+export interface HomeToday {
+  date: string
+  tasks: TodayTask[]
+  reminders: TodayReminder[]
+  shopping: { total: number; unchecked: number; checked: number }
+  notifications: { unread: number }
+  anomalies: { model_id: string; stock: number }[]
+}
+
 export const fetchHousehold = () => http.get<Household>('/households/current').then((response) => response.data)
 export const fetchOrbit = () => http.get<{ nodes: OrbitNode[] }>('/home/orbit').then((response) => response.data)
+export const fetchHomeToday = () => http.get<HomeToday>('/home/today').then((response) => response.data)
 export const inviteMember = (householdId: string, username: string, role: string) =>
   http.post(`/households/${householdId}/invitations`, { username, role }).then((response) => response.data)

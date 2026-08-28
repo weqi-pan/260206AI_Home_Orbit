@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
-import { fetchOrbit, fetchSetupStatus, type OrbitNode, type SetupStatus } from '../api/platform'
+import { fetchHomeToday, fetchOrbit, fetchSetupStatus, type HomeToday, type OrbitNode, type SetupStatus } from '../api/platform'
 
 const auth = useAuthStore()
 const nodes = ref<OrbitNode[]>([])
 const setup = ref<SetupStatus | null>(null)
+const today = ref<HomeToday | null>(null)
 const loading = ref(true)
 
 onMounted(async () => {
   try {
-    const [orbit, setupStatus] = await Promise.all([fetchOrbit(), fetchSetupStatus()])
+    const [orbit, setupStatus, homeToday] = await Promise.all([fetchOrbit(), fetchSetupStatus(), fetchHomeToday()])
     nodes.value = orbit.nodes
     setup.value = setupStatus
+    today.value = homeToday
   } finally {
     loading.value = false
   }
@@ -61,6 +63,34 @@ onMounted(async () => {
           </li>
         </ul>
       </section>
+
+      <section v-if="today" class="today-grid" aria-labelledby="today-title">
+        <div class="section-heading">
+          <h2 id="today-title">今日家庭</h2>
+          <span>{{ today.date }}</span>
+        </div>
+        <div class="today-cards">
+          <div class="today-card" data-testid="today-tasks">
+            <strong>今日任务 {{ today.tasks.length }}</strong>
+            <ul>
+              <li v-for="task in today.tasks.slice(0, 4)" :key="task.id">{{ task.title }}</li>
+              <li v-if="!today.tasks.length" class="empty">暂无任务</li>
+            </ul>
+          </div>
+          <div class="today-card">
+            <strong>购物清单 {{ today.shopping.unchecked }} 待购</strong>
+            <p>{{ today.shopping.checked }} / {{ today.shopping.total }} 已购</p>
+          </div>
+          <div class="today-card" data-testid="today-notifications">
+            <strong>未读通知 {{ today.notifications.unread }}</strong>
+            <p>{{ today.reminders.length }} 条周期提醒运行中</p>
+          </div>
+          <div class="today-card" :class="{ attention: today.anomalies.length }">
+            <strong>设备状态</strong>
+            <p>{{ today.anomalies.length ? today.anomalies.map((item) => item.model_id).join('、') + ' 需要关注' : '一切正常' }}</p>
+          </div>
+        </div>
+      </section>
     </div>
 
     <div class="orbit-stage">
@@ -97,6 +127,13 @@ h1 { max-width: 650px; margin: 0; font-family: var(--font-display); font-size: c
 .composer-row button { min-width: 92px; border: 0; border-radius: 13px; font-weight: 700; color: var(--device-ink); background: var(--charge-coral); }
 .composer-row button:disabled, .composer-row input:disabled { opacity: .55; cursor: not-allowed; }
 .state-list { max-width: 650px; margin-top: 34px; }
+.today-grid { max-width: 650px; margin-top: 26px; }
+.today-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.today-card { padding: 16px; border: 1px solid #d8d7e4; border-radius: 16px; background: var(--surface-white); }
+.today-card strong { display: block; margin-bottom: 8px; font-family: var(--font-display); }
+.today-card ul { margin: 0; padding: 0 0 0 2px; list-style: none; color: #4d4a63; }
+.today-card .empty { color: #8d89a0; }
+.today-card.attention { border-color: var(--charge-coral); }
 .section-heading { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid #cbc9dc; }
 .section-heading h2 { margin: 0 0 10px; font: 700 18px/1.2 var(--font-display); }
 .section-heading span { font: 12px var(--font-utility); }
