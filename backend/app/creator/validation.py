@@ -29,9 +29,9 @@ class DraftValidationRejected(ValueError):
 
 INJECTION_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"忽略[之以]?.{0,4}(以上|之前|前面|所有|先前).{0,6}(指示|指令|说明|规则|提示|提示词|约束)", "override_instructions"),
-    (r"ignore\s+(all\s+|any\s+|previous\s+|prior\s+|above\s+)?(instructions?|rules?|prompts?|constraints?)",
+    (r"ignore\s+(?:all\s+|any\s+|previous\s+|prior\s+|above\s+)*(instructions?|rules?|prompts?|constraints?)",
      "override_instructions"),
-    (r"disregard\s+(all\s+|any\s+|previous\s+|prior\s+)?(instructions?|rules?)", "override_instructions"),
+    (r"disregard\s+(?:all\s+|any\s+|previous\s+|prior\s+)*(instructions?|rules?)", "override_instructions"),
     (r"(泄露|输出|显示|打印|告诉我).{0,16}(系统提示|提示词|系统指令|密钥|秘钥|密码|api\s?key|secret)", "exfiltrate_secrets"),
     (r"(reveal|print|show|output|leak)\s.{0,32}(system\s+prompt|api\s*key|secret|password|credential)",
      "exfiltrate_secrets"),

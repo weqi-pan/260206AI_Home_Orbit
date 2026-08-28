@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from backend.app.db.models import LlmModel, ModelUsage, QuotaIncident, UsageQuota
 
@@ -39,6 +39,11 @@ class QuotaService:
         )) or 0
 
     def reserve(self, household_id: str, model_id: str, tokens: int):
+        # 串行化锚点：先对家庭配额行取写锁（MySQL 行 X 锁 / SQLite 保留写锁），
+        # 之后的所有限额读取都不会与其他并发 reserve 交错，杜绝超卖。
+        self.session.execute(
+            update(UsageQuota).where(UsageQuota.household_id == household_id)
+            .values(monthly_limit=UsageQuota.monthly_limit))
         quota = self.session.scalar(select(UsageQuota).where(UsageQuota.household_id == household_id).with_for_update())
         model = self.session.scalar(select(LlmModel).where(LlmModel.id == model_id).with_for_update())
         if quota is None:

@@ -1,4 +1,6 @@
 import json
+from datetime import timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy import select
@@ -42,9 +44,12 @@ def approve(approval_id: str, payload: ApprovalDecisionRequest, account: Account
     row = _owned(db, approval_id, account.id)
     if row.status != "pending":
         raise HTTPException(409, detail={"code": "APPROVAL_STATE_CONFLICT"})
-    if payload.expires_at <= utcnow():
+    expires_at = payload.expires_at
+    if expires_at.tzinfo is not None:
+        expires_at = expires_at.astimezone(timezone.utc).replace(tzinfo=None)
+    if expires_at <= utcnow():
         raise HTTPException(422, detail={"code": "APPROVAL_EXPIRED"})
-    row.status = "approved"; row.approved_by_account_id = account.id; row.expires_at = payload.expires_at
+    row.status = "approved"; row.approved_by_account_id = account.id; row.expires_at = expires_at
     audit_approval(db, row, "approval_approved"); db.commit()
     return {"id": row.id, "status": row.status, "expires_at": row.expires_at}
 

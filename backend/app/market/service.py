@@ -14,7 +14,7 @@ installer household (cross-household isolation preserved).
 """
 import json
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from backend.app.db.base import utcnow
 
@@ -289,7 +289,10 @@ class MarketInstallService:
         first_install = self.session.scalar(select(MarketInstall.id).where(
             MarketInstall.household_id == household_id, MarketInstall.entry_id == entry.id)) is None
         if first_install:
-            entry.install_count += 1
+            # 原子自增：并发安装不同家庭时不丢失计数（不可用读-改-写）
+            self.session.execute(
+                update(MarketEntry).where(MarketEntry.id == entry.id)
+                .values(install_count=MarketEntry.install_count + 1))
         self.session.add(MarketInstall(household_id=household_id, entry_id=entry.id,
                                        installation_id=installation.id, deployment_id=deployment.id,
                                        agent_version_id=local_version.id,
