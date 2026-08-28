@@ -21,7 +21,8 @@ from backend.app.models.adapters import content_text
 
 
 def build_platform_tool(authority, executor, context, session):
-    metadata = ExecutionAuthority(session).registry.resolve(authority.key).metadata
+    builtin = ExecutionAuthority(session).registry.resolve(authority.key)
+    metadata = builtin.metadata
     def execute(runtime, arguments):
         invocation_id = getattr(runtime, "tool_call_id", None) or str(uuid.uuid4())
         try: return executor.execute(authority.key, arguments, context, invocation_id)
@@ -31,10 +32,26 @@ def build_platform_tool(authority, executor, context, session):
             return ApprovalResumeService(lambda: session, executor.side_effect or
                 ExecutionAuthority(session).registry.resolve(authority.key).handler).claim_and_execute(
                     resumed.get("approval_id", exc.approval_id), context, arguments)
-    if authority.key == "platform.test_high_risk":
-        def callable_tool(value: str, runtime: ToolRuntime): return execute(runtime, {"value": value})
-    else:
+    schema_name = builtin.args_schema.__name__
+    if schema_name == "NoArguments":
         def callable_tool(runtime: ToolRuntime): return execute(runtime, {})
+    elif schema_name == "HighRiskTestArguments":
+        def callable_tool(value: str, runtime: ToolRuntime): return execute(runtime, {"value": value})
+    elif schema_name == "KeywordArguments":
+        def callable_tool(keyword: str, runtime: ToolRuntime): return execute(runtime, {"keyword": keyword})
+    elif schema_name == "ModelArguments":
+        def callable_tool(model_id: str, runtime: ToolRuntime): return execute(runtime, {"model_id": model_id})
+    elif schema_name == "CompareArguments":
+        def callable_tool(model_ids: list[str], runtime: ToolRuntime): return execute(runtime, {"model_ids": model_ids})
+    elif schema_name == "QueryArguments":
+        def callable_tool(query: str, runtime: ToolRuntime): return execute(runtime, {"query": query})
+    elif schema_name == "MonthArguments":
+        def callable_tool(month: str, runtime: ToolRuntime): return execute(runtime, {"month": month})
+    elif schema_name == "TicketArguments":
+        def callable_tool(title: str, content: str, runtime: ToolRuntime):
+            return execute(runtime, {"title": title, "content": content})
+    else:
+        raise PlatformToolError("TOOL_SCHEMA_UNSUPPORTED")
     return StructuredTool.from_function(callable_tool, name=authority.key, description=metadata.description)
 
 

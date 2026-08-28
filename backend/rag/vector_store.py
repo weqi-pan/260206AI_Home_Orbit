@@ -32,7 +32,7 @@ class VectorStoreService:
             raise VectorStoreUnavailable(f"向量库不可用：{exc}") from exc
         return self._vector_store
 
-    def add_file(self, file_id, path, filename):
+    def add_file(self, file_id, path, filename, household_id=None, skill_version_id=None):
         path = Path(path)
         if path.suffix.lower() == ".pdf":
             from pypdf import PdfReader
@@ -43,6 +43,8 @@ class VectorStoreService:
         chunks = self.splitter.split_documents(documents)
         for chunk in chunks:
             chunk.metadata = {"source_file_id": str(file_id), "source_type": "kb", "filename": filename}
+            if household_id: chunk.metadata["household_id"] = str(household_id)
+            if skill_version_id: chunk.metadata["skill_version_id"] = str(skill_version_id)
         ids = [f"kb:{file_id}:{index}" for index in range(len(chunks))]
         store = self._get_store()
         store._collection.delete(where={"source_file_id": str(file_id)})
@@ -55,8 +57,11 @@ class VectorStoreService:
         result = self._get_store()._collection.get(where={"source_file_id": str(file_id)}, limit=1)
         return bool(result.get("ids"))
 
-    def add_faq(self, faq_id, question, answer, source_file_id):
-        metadata = {"source_file_id": str(source_file_id or ""), "source_type": "faq", "filename": "FAQ", "faq_id": str(faq_id)}
+    def add_faq(self, faq_id, question, answer, source_file_id, household_id=None, skill_version_id=None):
+        metadata = {"source_file_id": str(source_file_id or ""), "source_type": "faq", "filename": "FAQ",
+                    "faq_id": str(faq_id)}
+        if household_id: metadata["household_id"] = str(household_id)
+        if skill_version_id: metadata["skill_version_id"] = str(skill_version_id)
         store = self._get_store()
         store._collection.delete(where={"faq_id": str(faq_id)})
         store.add_documents([Document(page_content=f"Q:{question}\nA:{answer}", metadata=metadata)], ids=[f"faq:{faq_id}"])
@@ -72,8 +77,13 @@ class VectorStoreService:
         for faq_id, question, answer, source_file_id in faqs:
             self.add_faq(faq_id, question, answer, source_file_id)
 
-    def search(self, query, k=4):
-        return self._get_store().similarity_search(query, k=k)
+    def search(self, query, k=4, household_id=None, skill_version_ids=()):
+        where = None
+        if household_id:
+            where = {"household_id": str(household_id)}
+            if skill_version_ids:
+                where = {"$and": [where, {"skill_version_id": {"$in": [str(item) for item in skill_version_ids]}}]}
+        return self._get_store().similarity_search(query, k=k, filter=where) if where else self._get_store().similarity_search(query, k=k)
 
 
 def configured_vector_store(session_factory, persist_directory, runtime_factory=None, embedding_builder=None, store_factory=None):

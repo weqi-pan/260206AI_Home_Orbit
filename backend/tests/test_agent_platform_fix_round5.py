@@ -103,6 +103,83 @@ def test_snapshot_rejects_skill_definition_tamper_even_with_recomputed_hash(db_s
     assert error.value.code == "SNAPSHOT_INVALID"
 
 
+def _snapshot_with_complete_bindings(db_session, platform_seed):
+    from sqlalchemy import select
+
+    from backend.agent.platform.snapshots import CompiledSnapshotService
+    from backend.agent.platform.versions import normalize_json, validate_skill_definition
+    from backend.app.db.models import AgentSkillBinding, AgentToolBinding, Skill, SkillVersion, ToolDefinition
+
+    second_tool = db_session.scalar(select(ToolDefinition).where(ToolDefinition.key == "platform.test_high_risk"))
+    second_tool_binding = AgentToolBinding(household_id=platform_seed["household_id"],
+        agent_version_id=platform_seed["context"].agent_version_id, tool_id=second_tool.id)
+    db_session.add(second_tool_binding)
+    for number in (1, 2):
+        skill = Skill(household_id=platform_seed["household_id"], name=f"binding-skill-{number}")
+        db_session.add(skill); db_session.flush()
+        definition = validate_skill_definition({"instructions": f"binding instructions {number}"})
+        version = SkillVersion(household_id=platform_seed["household_id"], skill_id=skill.id, version=1,
+            definition_json=normalize_json(definition), published_at=utcnow())
+        db_session.add(version); db_session.flush()
+        db_session.add(AgentSkillBinding(household_id=platform_seed["household_id"],
+            agent_version_id=platform_seed["context"].agent_version_id, skill_version_id=version.id))
+    db_session.commit()
+    return json.loads(json.dumps(CompiledSnapshotService(db_session).capture(
+        platform_seed["deployment_id"], platform_seed["installation_id"], platform_seed["context"])))
+
+
+@pytest.mark.parametrize("collection,mutation", [
+    ("tools", "remove_all"), ("tools", "remove_one"), ("tools", "duplicate"),
+    ("tools", "reorder"), ("tools", "substitute_binding"),
+    ("skills", "remove_all"), ("skills", "remove_one"), ("skills", "duplicate"),
+    ("skills", "reorder"), ("skills", "substitute_binding"),
+])
+def test_snapshot_rejects_incomplete_or_reordered_authoritative_binding_sets(
+        db_session, platform_seed, collection, mutation):
+    from backend.agent.platform.policy_errors import PlatformToolError
+    from backend.agent.platform.snapshots import SnapshotCompiler
+
+    snapshot = _snapshot_with_complete_bindings(db_session, platform_seed)
+    items = snapshot[collection]
+    if mutation == "remove_all":
+        snapshot[collection] = []
+    elif mutation == "remove_one":
+        snapshot[collection] = items[:-1]
+    elif mutation == "duplicate":
+        snapshot[collection] = [*items, items[0]]
+    elif mutation == "reorder":
+        snapshot[collection] = list(reversed(items))
+    else:
+        items[0]["binding_id"] = items[1]["binding_id"]
+
+    with pytest.raises(PlatformToolError) as error:
+        SnapshotCompiler(db_session).validate_and_load(snapshot, platform_seed["context"])
+    assert error.value.code == "SNAPSHOT_INVALID"
+
+
+@pytest.mark.parametrize("mutation", ["remove_all", "remove_one", "duplicate", "reorder", "substitute"])
+def test_snapshot_rejects_incomplete_or_reordered_grants(db_session, platform_seed, mutation):
+    from backend.agent.platform.policy_errors import PlatformToolError
+    from backend.agent.platform.snapshots import SnapshotCompiler
+
+    snapshot = _snapshot_with_complete_bindings(db_session, platform_seed)
+    grants = list(snapshot["grants"])
+    if mutation == "remove_all":
+        snapshot["grants"] = []
+    elif mutation == "remove_one":
+        snapshot["grants"] = grants[:-1]
+    elif mutation == "duplicate":
+        snapshot["grants"] = [*grants, grants[0]]
+    elif mutation == "reorder":
+        snapshot["grants"] = list(reversed(grants))
+    else:
+        snapshot["grants"][0]["permission_id"] = snapshot["grants"][1]["permission_id"]
+
+    with pytest.raises(PlatformToolError) as error:
+        SnapshotCompiler(db_session).validate_and_load(snapshot, platform_seed["context"])
+    assert error.value.code == "SNAPSHOT_INVALID"
+
+
 def test_parallel_sibling_budget_scopes_do_not_charge_each_other(platform_seed):
     from backend.agent.platform.compiler import BudgetedChildRunnable
     from backend.agent.platform.context import RunBudget

@@ -148,14 +148,14 @@ def test_seed_is_idempotent_and_imports_demo_data(settings):
 
     with database.session_factory() as session:
         assert len(session.scalars(select(Account)).all()) == 2
-        assert len(session.scalars(select(Device)).all()) == 3
-        assert len(session.scalars(select(Inventory)).all()) == 7
+        assert len(session.scalars(select(Device)).all()) == 6
+        assert len(session.scalars(select(Inventory)).all()) == 14
         assert session.get(User, "1001").username == "演示用户"
         assert len(session.scalars(select(DeviceUsageRecord)).all()) == 6
 
 
 def test_seed_does_not_overwrite_existing_device_or_inventory(settings):
-    from backend.app.db.models import Device, Inventory
+    from backend.app.db.models import Account, Device, HouseholdMember, Inventory
     from backend.app.db.seed import seed_database
     from backend.app.db.session import create_database
 
@@ -163,9 +163,12 @@ def test_seed_does_not_overwrite_existing_device_or_inventory(settings):
     database.create_all()
     seed_database(database.session_factory, settings)
     with database.session_factory.begin() as session:
-        session.get(Device, "R1-Lite").model_name = "管理员自定义名称"
+        demo = session.scalar(select(Account).where(Account.username == "demo"))
+        household_id = session.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == demo.id))
+        device = session.scalar(select(Device).where(Device.household_id == household_id, Device.model_id == "R1-Lite"))
+        device.model_name = "管理员自定义名称"
         inventory = session.scalar(select(Inventory).where(
-            Inventory.model_id == "R1-Lite", Inventory.warehouse == "北京仓"
+            Inventory.household_id == household_id, Inventory.model_id == "R1-Lite", Inventory.warehouse == "北京仓"
         ))
         inventory.stock = 999
         inventory.min_stock = 42
@@ -173,9 +176,10 @@ def test_seed_does_not_overwrite_existing_device_or_inventory(settings):
     seed_database(database.session_factory, settings)
 
     with database.session_factory() as session:
-        assert session.get(Device, "R1-Lite").model_name == "管理员自定义名称"
+        device = session.scalar(select(Device).where(Device.household_id == household_id, Device.model_id == "R1-Lite"))
+        assert device.model_name == "管理员自定义名称"
         inventory = session.scalar(select(Inventory).where(
-            Inventory.model_id == "R1-Lite", Inventory.warehouse == "北京仓"
+            Inventory.household_id == household_id, Inventory.model_id == "R1-Lite", Inventory.warehouse == "北京仓"
         ))
         assert (inventory.stock, inventory.min_stock) == (999, 42)
 

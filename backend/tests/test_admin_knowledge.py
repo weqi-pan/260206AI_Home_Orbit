@@ -159,7 +159,10 @@ def test_faq_generation_falls_back_to_bootstrap_and_approved_review_is_idempoten
     bootstrap.write_text("bootstrap faq", encoding="utf-8")
     try:
         with app.state.database.session_factory.begin() as session:
-            item = KnowledgeFile(filename=bootstrap.name, file_md5="f" * 32, file_type=".txt")
+            from backend.app.db.models import Account, HouseholdMember
+            admin = session.scalar(select(Account).where(Account.username == "admin"))
+            household_id = session.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == admin.id))
+            item = KnowledgeFile(household_id=household_id, filename=bootstrap.name, file_md5="f" * 32, file_type=".txt")
             session.add(item)
             session.flush()
             file_id = item.id
@@ -243,7 +246,10 @@ def test_rebuild_rejects_bootstrap_filename_outside_root_and_reports_vector_fail
     outside.write_text("outside", encoding="utf-8")
     try:
         with app.state.database.session_factory.begin() as session:
-            session.add(KnowledgeFile(filename="../outside.txt", file_md5="e" * 32, file_type=".txt"))
+            from backend.app.db.models import Account, HouseholdMember
+            admin = session.scalar(select(Account).where(Account.username == "admin"))
+            household_id = session.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == admin.id))
+            session.add(KnowledgeFile(household_id=household_id, filename="../outside.txt", file_md5="e" * 32, file_type=".txt"))
         app.state.vector_store_service = FailingRebuild()
         response = client.post("/api/knowledge/rebuild", headers=bearer(token))
         assert response.status_code == 503
@@ -293,10 +299,13 @@ def test_admin_account_device_inventory_notification_ticket_crud_and_dashboard(c
     assert client.put("/api/admin/inventory", headers=headers, json={"model_id": "NEW-1", "warehouse": "上海仓", "stock": 0, "min_stock": 3}).status_code == 200
 
     user_token = client.post("/api/auth/login", json={"username": "demo", "password": "Reset@123"}).json()["access_token"]
-    notification = client.post("/api/devices/restock-notify/NEW-1", headers=bearer(user_token)).json()
-    assert client.put(f"/api/admin/restock-notifications/{notification['id']}", headers=headers, json={"status": "notified"}).json()["status"] == "notified"
+    notification = client.post("/api/devices/restock-notify/NEW-1", headers=bearer(user_token))
+    assert notification.status_code == 404
+    existing = client.post("/api/devices/restock-notify/R1-Pro", headers=bearer(user_token)).json()
+    assert existing["status"] == "waiting"
     ticket = client.post("/api/tickets", headers=bearer(user_token), json={"title": "故障", "content": "无法启动"}).json()
-    assert client.put(f"/api/admin/tickets/{ticket['id']}", headers=headers, json={"status": "resolved", "admin_reply": "已处理"}).json()["status"] == "resolved"
+    assert client.put(f"/api/admin/tickets/{ticket['id']}", headers=headers,
+                      json={"status": "resolved", "admin_reply": "已处理"}).status_code == 404
 
     dashboard = client.get("/api/admin/dashboard", headers=headers).json()
     assert dashboard["accounts"] >= 2
@@ -330,7 +339,7 @@ def test_dashboard_counts_only_assistant_feedback_and_uses_total_stock_threshold
 
     token = admin_token(client, settings)
     with app.state.database.session_factory.begin() as session:
-        account = session.scalar(select(Account).where(Account.username == "demo"))
+        account = session.scalar(select(Account).where(Account.username == "admin"))
         from backend.app.db.models import HouseholdMember
         household_id = session.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
         chat = ChatSession(account_id=account.id, household_id=household_id)
@@ -340,11 +349,12 @@ def test_dashboard_counts_only_assistant_feedback_and_uses_total_stock_threshold
             ConversationHistory(session_id=chat.id, user_id=account.user_id, role="user", content="q", feedback="like"),
             ConversationHistory(session_id=chat.id, user_id=account.user_id, role="assistant", content="a", feedback="dislike"),
         ])
-        session.add(Device(model_id="THRESHOLD", model_name="阈值设备", category="x", specs="x", description="x", price=1, features="x"))
+        device = Device(household_id=household_id, model_id="THRESHOLD", model_name="阈值设备", category="x", specs="x", description="x", price=1, features="x")
+        session.add(device)
         session.flush()
         session.add_all([
-            Inventory(model_id="THRESHOLD", warehouse="A", stock=2, min_stock=3),
-            Inventory(model_id="THRESHOLD", warehouse="B", stock=2, min_stock=5),
+            Inventory(household_id=household_id, device_id=device.id, model_id="THRESHOLD", warehouse="A", stock=2, min_stock=3),
+            Inventory(household_id=household_id, device_id=device.id, model_id="THRESHOLD", warehouse="B", stock=2, min_stock=5),
         ])
 
     dashboard = client.get("/api/admin/dashboard", headers=bearer(token)).json()

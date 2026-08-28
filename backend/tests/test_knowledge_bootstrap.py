@@ -21,12 +21,16 @@ class RecordingVectorService:
 
 
 def _create_active_files(app, filenames):
-    from backend.app.db.models import KnowledgeFile
+    from sqlalchemy import select
+    from backend.app.db.models import Account, HouseholdMember, KnowledgeFile
 
     with app.state.database.session_factory.begin() as session:
+        account = session.scalar(select(Account).where(Account.username == "admin"))
+        household_id = session.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
         ids = []
         for index, name in enumerate(filenames):
-            item = KnowledgeFile(filename=name, file_md5=f"{index:032x}"[-32:], file_type=Path(name).suffix)
+            item = KnowledgeFile(household_id=household_id, filename=name,
+                                 file_md5=f"{index:032x}"[-32:], file_type=Path(name).suffix)
             session.add(item)
             session.flush()
             ids.append(item.id)

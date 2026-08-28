@@ -32,8 +32,8 @@ def test_embedding_bind_fails_when_any_active_source_is_unresolved_and_records_a
                                 .where(__import__('backend.app.db.models', fromlist=['ModelHealthCheck']).ModelHealthCheck.model_id == new.id))
         health.capabilities_json = json.dumps({"embedding": "passed"})
         session.delete(session.get(ModelPurposeBinding, "embedding-next"))
-        valid = KnowledgeFile(filename="valid.txt", file_md5="1" * 32, file_type=".txt", uploaded_by=account.id, status="active")
-        missing = KnowledgeFile(filename="missing.txt", file_md5="2" * 32, file_type=".txt", uploaded_by=account.id, status="active")
+        valid = KnowledgeFile(household_id=household_id, filename="valid.txt", file_md5="1" * 32, file_type=".txt", uploaded_by=account.id, status="active")
+        missing = KnowledgeFile(household_id=household_id, filename="missing.txt", file_md5="2" * 32, file_type=".txt", uploaded_by=account.id, status="active")
         session.add_all([valid, missing]); session.flush()
         valid_path = Path(app.state.settings.knowledge_upload_path) / f"{valid.id}.txt"
         valid_path.parent.mkdir(parents=True, exist_ok=True); valid_path.write_text("valid", encoding="utf-8")
@@ -175,7 +175,7 @@ def test_unreadable_active_source_preflight_fails_before_store_creation(client, 
                                 .where(__import__('backend.app.db.models', fromlist=['ModelHealthCheck']).ModelHealthCheck.model_id == new.id))
         health.capabilities_json = json.dumps({"embedding": "passed"})
         session.delete(session.get(ModelPurposeBinding, "embedding-new"))
-        item = KnowledgeFile(filename="unreadable.txt", file_md5="3" * 32, file_type=".txt", uploaded_by=account.id, status="active")
+        item = KnowledgeFile(household_id=household_id, filename="unreadable.txt", file_md5="3" * 32, file_type=".txt", uploaded_by=account.id, status="active")
         session.add(item); session.commit(); new_id = new.id; unreadable_id = item.id
     class UnreadablePath:
         suffix = ".txt"

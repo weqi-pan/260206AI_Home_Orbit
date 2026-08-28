@@ -35,28 +35,28 @@ def get_current_month() -> str:
 @tool
 def search_devices(keyword: str, runtime: ToolRuntime) -> str:
     """按关键词搜索设备。"""
-    items = _repositories(runtime).search_devices(keyword)
+    items = _repositories(runtime).search_devices(_value(runtime, "household_id"), keyword)
     return "\n".join(f"{x.model_id}|{x.model_name}|{x.price:.0f}元|{x.features}" for x in items) or "未找到相关设备。"
 
 
 @tool
 def query_device_info(model_id: str, runtime: ToolRuntime) -> str:
     """查询设备详情。"""
-    x = _repositories(runtime).device(model_id)
+    x = _repositories(runtime).device(_value(runtime, "household_id"), model_id)
     return f"{x.model_id}|{x.model_name}|{x.specs}|{x.description}|{x.price:.0f}元|{x.features}" if x else "未找到设备。"
 
 
 @tool
 def query_inventory(model_id: str, runtime: ToolRuntime) -> str:
     """查询设备库存。"""
-    rows = _repositories(runtime).inventory(model_id)
+    rows = _repositories(runtime).inventory(_value(runtime, "household_id"), model_id)
     return "\n".join(f"{x.warehouse}:{x.stock}台" for x in rows) or "未找到库存。"
 
 
 @tool
 def compare_devices(model_ids: list[str], runtime: ToolRuntime) -> str:
     """以Markdown表格对比多个设备。"""
-    found = {x.model_id: x for x in _repositories(runtime).devices(model_ids)}
+    found = {x.model_id: x for x in _repositories(runtime).devices(_value(runtime, "household_id"), model_ids)}
     lines = ["|型号|名称|价格|规格|特点|", "|---|---|---:|---|---|"]
     lines.extend(f"|{x.model_id}|{x.model_name}|{x.price:.0f}元|{x.specs}|{x.features}|" for x in (found[i] for i in model_ids if i in found))
     return "\n".join(lines)
@@ -77,7 +77,7 @@ def rag_summarize(query: str, runtime: ToolRuntime) -> str:
 @tool
 def search_faq(query: str, runtime: ToolRuntime) -> str:
     """搜索已审核FAQ。"""
-    rows = _repositories(runtime).approved_faq(query)
+    rows = _repositories(runtime).approved_faq(_value(runtime, "household_id"), query)
     return "\n".join(f"Q:{x.question}\nA:{x.answer}" for x in rows) or "未找到已审核FAQ。"
 
 
@@ -87,7 +87,7 @@ def fetch_external_data(month: str, runtime: ToolRuntime) -> str:
     user_id = _value(runtime, "user_id")
     if not user_id:
         raise RuntimeError("当前账号未关联用户档案")
-    x = _repositories(runtime).usage(user_id, month)
+    x = _repositories(runtime).usage(_value(runtime, "household_id"), user_id, month)
     return f"用户ID:{user_id};月份:{month};特征:{x.feature};效率:{x.efficiency};耗材:{x.consumables};对比:{x.comparison}" if x else f"未找到用户ID为{user_id}在{month}的使用记录。"
 
 
@@ -97,7 +97,7 @@ def register_restock_notify(model_id: str, runtime: ToolRuntime) -> dict:
     account_id = _value(runtime, "principal_id") or _value(runtime, "account_id")
     if not account_id:
         raise RuntimeError("缺少当前账号身份")
-    item = _repositories(runtime).register_restock(account_id, model_id)
+    item = _repositories(runtime).register_restock(_value(runtime, "household_id"), account_id, model_id)
     return {"id": item.id, "account_id": item.account_id, "model_id": item.model_id, "status": item.status}
 
 
@@ -107,5 +107,6 @@ def create_ticket(title: str, content: str, runtime: ToolRuntime) -> dict:
     account_id = _value(runtime, "principal_id") or _value(runtime, "account_id")
     if not account_id:
         raise RuntimeError("缺少当前账号身份")
-    item = _repositories(runtime).create_ticket(account_id, _value(runtime, "session_id"), title, content)
+    item = _repositories(runtime).create_ticket(_value(runtime, "household_id"), account_id,
+                                                _value(runtime, "session_id"), title, content)
     return {"id": item.id, "account_id": item.account_id, "title": item.title, "status": item.status}

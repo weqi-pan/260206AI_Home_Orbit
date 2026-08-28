@@ -222,11 +222,11 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
                        model_revision=snapshot.config_revision if snapshot else 1,
                        compiled_snapshot_json=json.dumps(compiled_snapshot, ensure_ascii=False, sort_keys=True),
                        model_snapshot_json=json.dumps(provisional_context.model_snapshot, sort_keys=True),
-                       permission_snapshot_json=json.dumps(dict(compiled_snapshot["grants"]), sort_keys=True),
+                        permission_snapshot_json=json.dumps(list(compiled_snapshot["grants"]), sort_keys=True),
                        consent_snapshot_json="{}", budget_snapshot_json=json.dumps(
                            compiled_snapshot["agent_version"]["definition"].get("budgets", {}), sort_keys=True))
         db.add(run); db.commit(); db.refresh(run)
-        grants = dict(compiled_snapshot["grants"])
+        grants = {item["key"]: item for item in compiled_snapshot["grants"]}
         platform_model = context.get("chat_model")
         context = RunContext(
             principal_id=account.id, household_id=household_id, member_id=member.id, role=member.role,

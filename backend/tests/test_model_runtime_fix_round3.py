@@ -30,7 +30,7 @@ def test_embedding_source_change_during_build_marks_stale_and_retains_pointer_an
         health = session.scalar(select(ModelHealthCheck).where(ModelHealthCheck.model_id == new.id))
         health.capabilities_json = json.dumps({"embedding": "passed"})
         session.delete(session.get(ModelPurposeBinding, "embedding-candidate"))
-        faq = FaqPair(question="before", answer="answer", status="approved", reviewed_at=datetime.now(timezone.utc).replace(tzinfo=None))
+        faq = FaqPair(household_id=household_id, question="before", answer="answer", status="approved", reviewed_at=datetime.now(timezone.utc).replace(tzinfo=None))
         session.add(faq); session.commit()
         old_id, new_id, faq_id = old.id, new.id, faq.id
 

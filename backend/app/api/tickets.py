@@ -28,15 +28,20 @@ def ticket_dict(item):
 
 @router.get("/my")
 def my_tickets(account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
-    return [ticket_dict(item) for item in db.scalars(select(Ticket).where(Ticket.account_id == account.id).order_by(Ticket.id.desc())).all()]
+    household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
+    return [ticket_dict(item) for item in db.scalars(select(Ticket).where(
+        Ticket.household_id == household_id, Ticket.account_id == account.id).order_by(Ticket.id.desc())).all()]
 
 
 @router.post("", status_code=201)
 def create(payload: TicketCreate, request: Request, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
-    if payload.session_id and not db.scalar(select(ChatSession).where(ChatSession.id == payload.session_id, ChatSession.account_id == account.id)):
+    household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
+    if payload.session_id and not db.scalar(select(ChatSession).where(ChatSession.id == payload.session_id,
+                                                                       ChatSession.household_id == household_id,
+                                                                       ChatSession.account_id == account.id)):
         raise HTTPException(status_code=404, detail="会话不存在")
     existing = db.scalar(select(Ticket).where(
-        Ticket.account_id == account.id,
+        Ticket.household_id == household_id, Ticket.account_id == account.id,
         Ticket.session_id == payload.session_id,
         Ticket.status == "open",
         Ticket.title == payload.title,
@@ -46,12 +51,12 @@ def create(payload: TicketCreate, request: Request, account: Account = Depends(g
     try:
         service = getattr(request.app.state, "ticket_summary_service", None)
         if service is None:
-            household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
             service = TicketSummaryService(model_resolver=purpose_model_resolver(request.app.state.database.session_factory, household_id))
         summary = service.summarize(payload.content)
     except Exception:
         summary = payload.content[:200]
-    item = Ticket(account_id=account.id, session_id=payload.session_id, title=payload.title, summary=summary[:1000], emotion=payload.emotion, priority=payload.priority)
+    item = Ticket(household_id=household_id, account_id=account.id, session_id=payload.session_id,
+                  title=payload.title, summary=summary[:1000], emotion=payload.emotion, priority=payload.priority)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -60,7 +65,9 @@ def create(payload: TicketCreate, request: Request, account: Account = Depends(g
 
 @router.get("/my/{ticket_id}")
 def detail(ticket_id: int, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
-    item = db.scalar(select(Ticket).where(Ticket.id == ticket_id, Ticket.account_id == account.id))
+    household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account.id))
+    item = db.scalar(select(Ticket).where(Ticket.id == ticket_id, Ticket.household_id == household_id,
+                                          Ticket.account_id == account.id))
     if not item:
         raise HTTPException(status_code=404, detail="工单不存在")
     return ticket_dict(item)

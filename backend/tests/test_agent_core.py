@@ -4,14 +4,16 @@ from types import SimpleNamespace
 def test_agent_tools_use_runtime_context_identity(client, app):
     from backend.agent.tools.agent_tools import create_ticket, fetch_external_data, register_restock_notify
     from backend.agent.tools.gateways import ToolRepositories
-    from backend.app.db.models import Account
+    from backend.app.db.models import Account, HouseholdMember
     from sqlalchemy import select
 
     with app.state.database.session_factory() as db:
         account_id = db.scalar(select(Account.id).where(Account.username == "demo"))
+        household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == account_id))
     runtime = SimpleNamespace(context={"account_id": account_id, "user_id": "1001", "city": "杭州",
+                                       "household_id": household_id,
                                        "repositories": ToolRepositories(app.state.database.session_factory)})
-    assert "1001" in fetch_external_data.func(month="2025-01", runtime=runtime)
+    assert "1001" in fetch_external_data.func(month="2026-05", runtime=runtime)
     result = register_restock_notify.func(model_id="R1-Pro", runtime=runtime)
     assert result["account_id"] == account_id
     ticket = create_ticket.func(title="工具工单", content="问题描述", runtime=runtime)
@@ -34,6 +36,7 @@ def test_agent_restock_and_ticket_tools_are_idempotent(client, app):
         session_id = chat.id
     runtime = SimpleNamespace(context={
         "account_id": account_id,
+        "household_id": household_id,
         "session_id": session_id,
         "repositories": ToolRepositories(app.state.database.session_factory),
     })

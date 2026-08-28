@@ -40,6 +40,7 @@ class ChatSession(Base):
     __table_args__ = (
         ForeignKeyConstraint(["deployment_id", "household_id"],
                              ["agent_deployments.id", "agent_deployments.household_id"]),
+        UniqueConstraint("id", "household_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
@@ -56,11 +57,14 @@ class Ticket(Base):
     __table_args__ = (
         CheckConstraint("priority IN ('low', 'normal', 'high')", name="ck_tickets_priority"),
         CheckConstraint("status IN ('open', 'processing', 'resolved', 'closed')", name="ck_tickets_status"),
+        ForeignKeyConstraint(["session_id", "household_id"], ["chat_sessions.id", "chat_sessions.household_id"]),
+        UniqueConstraint("id", "household_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
-    session_id: Mapped[str | None] = mapped_column(ForeignKey("chat_sessions.id"))
+    session_id: Mapped[str | None] = mapped_column(String(36))
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
     emotion: Mapped[str | None] = mapped_column(String(32))
@@ -73,11 +77,16 @@ class Ticket(Base):
 
 class KnowledgeFile(Base):
     __tablename__ = "knowledge_files"
-    __table_args__ = (CheckConstraint("status IN ('active', 'deleted')", name="ck_knowledge_files_status"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'deleted')", name="ck_knowledge_files_status"),
+        UniqueConstraint("household_id", "file_md5", name="uq_knowledge_file_household_md5"),
+        UniqueConstraint("id", "household_id"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_md5: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    file_md5: Mapped[str] = mapped_column(String(32), nullable=False)
     file_type: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     uploaded_by: Mapped[str | None] = mapped_column(ForeignKey("accounts.id"))
@@ -86,12 +95,17 @@ class KnowledgeFile(Base):
 
 class FaqPair(Base):
     __tablename__ = "faq_pairs"
-    __table_args__ = (CheckConstraint("status IN ('pending', 'approved', 'rejected')", name="ck_faq_pairs_status"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'approved', 'rejected')", name="ck_faq_pairs_status"),
+        ForeignKeyConstraint(["source_file_id", "household_id"], ["knowledge_files.id", "knowledge_files.household_id"]),
+        UniqueConstraint("id", "household_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
-    source_file_id: Mapped[str | None] = mapped_column(ForeignKey("knowledge_files.id"))
+    source_file_id: Mapped[str | None] = mapped_column(String(36))
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -99,8 +113,12 @@ class FaqPair(Base):
 
 class Device(Base):
     __tablename__ = "devices"
+    __table_args__ = (UniqueConstraint("household_id", "model_id", name="uq_device_household_model"),
+                      UniqueConstraint("id", "household_id"),)
 
-    model_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    model_id: Mapped[str] = mapped_column(String(64), nullable=False)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
     category: Mapped[str] = mapped_column(String(100), nullable=False)
     specs: Mapped[str] = mapped_column(Text, nullable=False)
@@ -111,10 +129,16 @@ class Device(Base):
 
 class Inventory(Base):
     __tablename__ = "inventory"
-    __table_args__ = (UniqueConstraint("model_id", "warehouse"),)
+    __table_args__ = (
+        UniqueConstraint("household_id", "model_id", "warehouse", name="uq_inventory_household_model_warehouse"),
+        ForeignKeyConstraint(["device_id", "household_id"], ["devices.id", "devices.household_id"]),
+        UniqueConstraint("id", "household_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    model_id: Mapped[str] = mapped_column(ForeignKey("devices.model_id"), nullable=False)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(64), nullable=False)
     warehouse: Mapped[str] = mapped_column(String(100), nullable=False)
     stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     min_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
@@ -125,21 +149,27 @@ class RestockNotification(Base):
     __tablename__ = "restock_notifications"
     __table_args__ = (
         CheckConstraint("status IN ('waiting', 'notified')", name="ck_restock_notifications_status"),
-        UniqueConstraint("account_id", "model_id", name="uq_restock_account_model"),
+        UniqueConstraint("household_id", "account_id", "model_id", name="uq_restock_household_account_model"),
+        ForeignKeyConstraint(["device_id", "household_id"], ["devices.id", "devices.household_id"]),
+        UniqueConstraint("id", "household_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), nullable=False)
-    model_id: Mapped[str] = mapped_column(ForeignKey("devices.model_id"), nullable=False)
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="waiting")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class DeviceUsageRecord(Base):
     __tablename__ = "device_usage_records"
-    __table_args__ = (UniqueConstraint("user_id", "month"),)
+    __table_args__ = (UniqueConstraint("household_id", "user_id", "month", name="uq_usage_household_user_month"),
+                      UniqueConstraint("id", "household_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id"), nullable=False)
     month: Mapped[str] = mapped_column(String(16), nullable=False)
     feature: Mapped[str] = mapped_column(Text, nullable=False)

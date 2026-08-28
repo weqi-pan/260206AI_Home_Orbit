@@ -48,14 +48,20 @@ def file_dict(item):
     return {"id": item.id, "filename": item.filename, "file_md5": item.file_md5, "file_type": item.file_type, "status": item.status, "created_at": item.created_at}
 
 
+def admin_household(db, admin):
+    return db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == admin.id))
+
+
 def faq_dict(item):
     return {"id": item.id, "question": item.question, "answer": item.answer, "source_file_id": item.source_file_id, "status": item.status,
             "created_at": item.created_at, "reviewed_at": item.reviewed_at}
 
 
 @router.get("/files")
-def files(db: Session = Depends(get_db)):
-    return [file_dict(item) for item in db.scalars(select(KnowledgeFile).where(KnowledgeFile.status == "active").order_by(KnowledgeFile.created_at.desc())).all()]
+def files(admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    household_id = admin_household(db, admin)
+    return [file_dict(item) for item in db.scalars(select(KnowledgeFile).where(
+        KnowledgeFile.household_id == household_id, KnowledgeFile.status == "active").order_by(KnowledgeFile.created_at.desc())).all()]
 
 
 @router.post("/files", status_code=201)
@@ -67,12 +73,14 @@ async def upload(request: Request, file: UploadFile = File(...), admin: Account 
     if len(content) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=413, detail="文件不能超过20MB")
     digest = hashlib.md5(content).hexdigest()
-    existing = db.scalar(select(KnowledgeFile).where(KnowledgeFile.file_md5 == digest))
+    household_id = admin_household(db, admin)
+    existing = db.scalar(select(KnowledgeFile).where(KnowledgeFile.household_id == household_id,
+                                                      KnowledgeFile.file_md5 == digest))
     if existing and existing.status == "active":
         raise HTTPException(status_code=409, detail="文件内容重复")
     directory = Path(request.app.state.settings.knowledge_upload_path)
     directory.mkdir(parents=True, exist_ok=True)
-    item = existing or KnowledgeFile(file_md5=digest)
+    item = existing or KnowledgeFile(household_id=household_id, file_md5=digest)
     item.filename = Path(file.filename).name
     item.file_type = suffix
     item.uploaded_by = admin.id
@@ -87,7 +95,10 @@ async def upload(request: Request, file: UploadFile = File(...), admin: Account 
     path = directory / f"{item.id}{suffix}"
     path.write_bytes(content)
     try:
-        vector_service(request).add_file(item.id, path, item.filename)
+        try:
+            vector_service(request).add_file(item.id, path, item.filename, household_id=household_id)
+        except TypeError:
+            vector_service(request).add_file(item.id, path, item.filename)
     except Exception as exc:
         db.rollback()
         path.unlink(missing_ok=True)
@@ -98,13 +109,16 @@ async def upload(request: Request, file: UploadFile = File(...), admin: Account 
 
 
 @router.delete("/files/{file_id}", status_code=204)
-def delete_file(file_id: str, request: Request, response: Response, db: Session = Depends(get_db)):
-    item = db.get(KnowledgeFile, file_id)
+def delete_file(file_id: str, request: Request, response: Response, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    household_id = admin_household(db, admin)
+    item = db.scalar(select(KnowledgeFile).where(KnowledgeFile.id == file_id,
+                                                 KnowledgeFile.household_id == household_id))
     if not item or item.status != "active":
         raise HTTPException(status_code=404, detail="知识文件不存在")
     try:
         vector_service(request).delete_file(file_id)
-        for faq in db.scalars(select(FaqPair).where(FaqPair.source_file_id == file_id)).all():
+        for faq in db.scalars(select(FaqPair).where(FaqPair.household_id == household_id,
+                                                     FaqPair.source_file_id == file_id)).all():
             vector_service(request).delete_faq(faq.id)
             faq.status = "rejected"
             faq.reviewed_at = utcnow()
@@ -116,15 +130,18 @@ def delete_file(file_id: str, request: Request, response: Response, db: Session 
 
 
 @router.post("/rebuild")
-def rebuild(request: Request, db: Session = Depends(get_db)):
+def rebuild(request: Request, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    household_id = admin_household(db, admin)
     files = []
-    for item in db.scalars(select(KnowledgeFile).where(KnowledgeFile.status == "active")).all():
+    for item in db.scalars(select(KnowledgeFile).where(KnowledgeFile.household_id == household_id,
+                                                       KnowledgeFile.status == "active")).all():
         path = _knowledge_file_path(request.app.state.settings, item)
         if path:
             files.append((item.id, path, item.filename))
     faqs = [
         (item.id, item.question, item.answer, item.source_file_id)
-        for item in db.scalars(select(FaqPair).where(FaqPair.status == "approved")).all()
+        for item in db.scalars(select(FaqPair).where(FaqPair.household_id == household_id,
+                                                      FaqPair.status == "approved")).all()
     ]
     try:
         vector_service(request).rebuild(files=files, faqs=faqs)
@@ -135,12 +152,13 @@ def rebuild(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/files/{file_id}/generate-faq")
 def generate_faq(file_id: str, request: Request, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
-    item = db.get(KnowledgeFile, file_id)
+    household_id = admin_household(db, admin)
+    item = db.scalar(select(KnowledgeFile).where(KnowledgeFile.id == file_id,
+                                                 KnowledgeFile.household_id == household_id))
     if not item or item.status != "active":
         raise HTTPException(status_code=404, detail="知识文件不存在")
     service = getattr(request.app.state, "faq_generator", None)
     if not service:
-        household_id = db.scalar(select(HouseholdMember.household_id).where(HouseholdMember.account_id == admin.id))
         service = FaqGenerator(model_resolver=purpose_model_resolver(request.app.state.database.session_factory, household_id))
     path = _knowledge_file_path(request.app.state.settings, item)
     if not path:
@@ -153,7 +171,7 @@ def generate_faq(file_id: str, request: Request, admin: Account = Depends(requir
         raise HTTPException(status_code=503, detail={"code": "FAQ_MODEL_UNAVAILABLE"}) from exc
     result = []
     for pair in pairs:
-        faq = FaqPair(question=pair["question"], answer=pair["answer"], source_file_id=item.id)
+        faq = FaqPair(household_id=household_id, question=pair["question"], answer=pair["answer"], source_file_id=item.id)
         db.add(faq)
         db.flush()
         result.append(faq_dict(faq))
@@ -162,23 +180,28 @@ def generate_faq(file_id: str, request: Request, admin: Account = Depends(requir
 
 
 @router.get("/faq")
-def faq_list(status: str | None = None, db: Session = Depends(get_db)):
-    query = select(FaqPair)
+def faq_list(status: str | None = None, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    query = select(FaqPair).where(FaqPair.household_id == admin_household(db, admin))
     if status:
         query = query.where(FaqPair.status == status)
     return [faq_dict(item) for item in db.scalars(query.order_by(FaqPair.id.desc())).all()]
 
 
 @router.put("/faq/{faq_id}/review")
-def review(faq_id: int, payload: ReviewRequest, request: Request, db: Session = Depends(get_db)):
-    item = db.get(FaqPair, faq_id)
+def review(faq_id: int, payload: ReviewRequest, request: Request, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    household_id = admin_household(db, admin)
+    item = db.scalar(select(FaqPair).where(FaqPair.id == faq_id, FaqPair.household_id == household_id))
     if not item:
         raise HTTPException(status_code=404, detail="FAQ不存在")
     try:
         if payload.status == item.status:
             return faq_dict(item)
         if payload.status == "approved":
-            vector_service(request).add_faq(item.id, item.question, item.answer, item.source_file_id)
+            try:
+                vector_service(request).add_faq(item.id, item.question, item.answer, item.source_file_id,
+                                                household_id=household_id)
+            except TypeError:
+                vector_service(request).add_faq(item.id, item.question, item.answer, item.source_file_id)
         else:
             vector_service(request).delete_faq(item.id)
     except VectorStoreUnavailable as exc:

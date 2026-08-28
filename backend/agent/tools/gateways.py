@@ -12,46 +12,55 @@ class ToolRepositories:
 
     _sessions: object
 
-    def search_devices(self, keyword):
+    def search_devices(self, household_id, keyword):
         with self._sessions() as db:
             pattern = f"%{keyword.strip()}%"
-            return list(db.scalars(select(Device).where(or_(Device.model_id.like(pattern), Device.model_name.like(pattern),
-                                                              Device.features.like(pattern)))).all())
+            return list(db.scalars(select(Device).where(Device.household_id == household_id,
+                or_(Device.model_id.like(pattern), Device.model_name.like(pattern), Device.features.like(pattern)))).all())
 
-    def device(self, model_id):
+    def device(self, household_id, model_id):
         with self._sessions() as db:
-            return db.get(Device, model_id)
+            return db.scalar(select(Device).where(Device.household_id == household_id, Device.model_id == model_id))
 
-    def inventory(self, model_id):
+    def inventory(self, household_id, model_id):
         with self._sessions() as db:
-            return list(db.scalars(select(Inventory).where(Inventory.model_id == model_id)).all())
+            return list(db.scalars(select(Inventory).where(Inventory.household_id == household_id,
+                                                            Inventory.model_id == model_id)).all())
 
-    def devices(self, model_ids):
+    def devices(self, household_id, model_ids):
         with self._sessions() as db:
-            return list(db.scalars(select(Device).where(Device.model_id.in_(model_ids))).all())
+            return list(db.scalars(select(Device).where(Device.household_id == household_id,
+                                                         Device.model_id.in_(model_ids))).all())
 
-    def approved_faq(self, query):
+    def approved_faq(self, household_id, query):
         with self._sessions() as db:
             pattern = f"%{query}%"
-            return list(db.scalars(select(FaqPair).where(FaqPair.status == "approved",
+            return list(db.scalars(select(FaqPair).where(FaqPair.household_id == household_id, FaqPair.status == "approved",
                 or_(FaqPair.question.like(pattern), FaqPair.answer.like(pattern)))).all())
 
-    def usage(self, user_id, month):
+    def usage(self, household_id, user_id, month):
         with self._sessions() as db:
-            return db.scalar(select(DeviceUsageRecord).where(DeviceUsageRecord.user_id == user_id,
+            return db.scalar(select(DeviceUsageRecord).where(DeviceUsageRecord.household_id == household_id,
+                                                               DeviceUsageRecord.user_id == user_id,
                                                                DeviceUsageRecord.month == month))
 
-    def register_restock(self, account_id, model_id):
+    def register_restock(self, household_id, account_id, model_id):
         with self._sessions() as db:
-            item = db.scalar(select(RestockNotification).where(RestockNotification.account_id == account_id,
+            device = db.scalar(select(Device).where(Device.household_id == household_id, Device.model_id == model_id))
+            if not device:
+                raise LookupError("DEVICE_NOT_FOUND")
+            item = db.scalar(select(RestockNotification).where(RestockNotification.household_id == household_id,
+                                                                 RestockNotification.account_id == account_id,
                                                                  RestockNotification.model_id == model_id))
             if item is None:
-                item = RestockNotification(account_id=account_id, model_id=model_id); db.add(item)
+                item = RestockNotification(household_id=household_id, account_id=account_id,
+                                           device_id=device.id, model_id=model_id); db.add(item)
                 try:
                     db.commit()
                 except IntegrityError:
                     db.rollback()
-                    item = db.scalar(select(RestockNotification).where(RestockNotification.account_id == account_id,
+                    item = db.scalar(select(RestockNotification).where(RestockNotification.household_id == household_id,
+                                                                         RestockNotification.account_id == account_id,
                                                                          RestockNotification.model_id == model_id))
                     if item is None:
                         raise
@@ -59,12 +68,14 @@ class ToolRepositories:
                     db.refresh(item)
             return item
 
-    def create_ticket(self, account_id, session_id, title, content):
+    def create_ticket(self, household_id, account_id, session_id, title, content):
         with self._sessions.begin() as db:
-            item = db.scalar(select(Ticket).where(Ticket.account_id == account_id, Ticket.session_id == session_id,
+            item = db.scalar(select(Ticket).where(Ticket.household_id == household_id,
+                                                   Ticket.account_id == account_id, Ticket.session_id == session_id,
                                                    Ticket.status == "open", Ticket.title == title))
             if item is None:
-                item = Ticket(account_id=account_id, session_id=session_id, title=title, summary=content[:200])
+                item = Ticket(household_id=household_id, account_id=account_id, session_id=session_id,
+                              title=title, summary=content[:200])
                 db.add(item); db.flush()
             return item
 

@@ -1,4 +1,5 @@
 from datetime import timedelta
+from pathlib import Path
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -45,6 +46,10 @@ def register(payload: RegisterRequest, request: Request, session: Session = Depe
             session.add(household)
             session.flush()
             session.add(HouseholdMember(household_id=household.id, account_id=account.id, role="owner"))
+            from backend.app.db.seed import _seed_devices, _seed_knowledge, seed_official_device_agent
+            _seed_devices(session, household.id)
+            _seed_knowledge(session, Path(request.app.state.settings.knowledge_path), household.id)
+            seed_official_device_agent(session, household.id, account.id)
             session.commit()
         except IntegrityError as exc:
             session.rollback()

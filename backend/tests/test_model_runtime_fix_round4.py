@@ -30,7 +30,7 @@ def test_embedding_build_uses_captured_bytes_when_source_changes_and_is_restored
         health = session.scalar(select(ModelHealthCheck).where(ModelHealthCheck.model_id == new.id))
         health.capabilities_json = json.dumps({"embedding": "passed"})
         session.delete(session.get(ModelPurposeBinding, "embedding-candidate"))
-        source = KnowledgeFile(filename="race.txt", file_md5="a" * 32, file_type=".txt", status="active")
+        source = KnowledgeFile(household_id=household_id, filename="race.txt", file_md5="a" * 32, file_type=".txt", status="active")
         session.add(source)
         session.commit()
         old_id, new_id, source_id = old.id, new.id, source.id
@@ -98,7 +98,7 @@ def test_embedding_staging_is_cleaned_when_build_fails(client, app, monkeypatch)
         health = session.scalar(select(ModelHealthCheck).where(ModelHealthCheck.model_id == model.id))
         health.capabilities_json = json.dumps({"embedding": "passed"})
         session.delete(session.get(ModelPurposeBinding, "embedding-candidate"))
-        source = KnowledgeFile(filename="failure.txt", file_md5="b" * 32, file_type=".txt", status="active")
+        source = KnowledgeFile(household_id=household_id, filename="failure.txt", file_md5="b" * 32, file_type=".txt", status="active")
         session.add(source)
         session.commit()
         model_id, source_id = model.id, source.id

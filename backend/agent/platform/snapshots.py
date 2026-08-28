@@ -15,6 +15,14 @@ def _hash_json(raw):
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _plain(value):
+    if isinstance(value, dict):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    return value
+
+
 class CompiledSnapshotService:
     def __init__(self, session):
         self.session = session
@@ -29,14 +37,24 @@ class CompiledSnapshotService:
         agent = self.session.get(AgentDefinition, version.agent_id)
         definition = validate_agent_definition(json.loads(version.definition_json))
         definition_json = normalize_json(definition)
-        skills = self.session.scalars(select(SkillVersion).join(
-            AgentSkillBinding, AgentSkillBinding.skill_version_id == SkillVersion.id).where(
+        skill_bindings = self.session.execute(select(AgentSkillBinding, SkillVersion).join(
+            SkillVersion, AgentSkillBinding.skill_version_id == SkillVersion.id).where(
                 AgentSkillBinding.agent_version_id == version.id,
-                SkillVersion.household_id == household_id)).all()
-        bound_tool_ids = set(self.session.scalars(select(AgentToolBinding.tool_id).where(
-            AgentToolBinding.agent_version_id == version.id,
-            AgentToolBinding.household_id == household_id)).all())
-        tools = ExecutionAuthority(self.session).tools(deployment.id, household_id, version.id, bound_tool_ids)
+                AgentSkillBinding.household_id == household_id,
+                SkillVersion.household_id == household_id).order_by(AgentSkillBinding.id)).all()
+        tool_bindings = self.session.execute(select(AgentToolBinding, ToolDefinition).join(
+            ToolDefinition, AgentToolBinding.tool_id == ToolDefinition.id).where(
+                AgentToolBinding.agent_version_id == version.id,
+                AgentToolBinding.household_id == household_id).order_by(AgentToolBinding.id)).all()
+        authorities = {row.tool_id: row for row in ExecutionAuthority(self.session).tools(
+            deployment.id, household_id, version.id, {binding.tool_id for binding, _tool in tool_bindings})}
+        tools = []
+        for binding, tool in tool_bindings:
+            authority = authorities.get(tool.id)
+            tools.append({"binding_id": binding.id, "tool_id": tool.id, "key": tool.key, "version": tool.version,
+                          "risk_level": tool.risk_level, "installation_id": installation.id,
+                          "permission_id": authority.permission_id if authority else None,
+                          "granted_by_account_id": authority.granted_by_account_id if authority else None})
         children = []
         for child_id in definition.get("child_deployments", []):
             child_deployment = self.session.get(AgentDeployment, child_id)
@@ -49,14 +67,11 @@ class CompiledSnapshotService:
             "agent": {"id": agent.id, "name": agent.name},
             "agent_version": {"id": version.id, "version": version.version, "definition": definition,
                               "config_hash": _hash_json(definition_json)},
-            "skills": [{"id": row.id, "skill_id": row.skill_id, "version": row.version,
+            "skills": [{"binding_id": binding.id, "id": row.id, "skill_id": row.skill_id, "version": row.version,
                         "definition": validate_skill_definition(json.loads(row.definition_json)),
                         "config_hash": _hash_json(normalize_json(validate_skill_definition(json.loads(row.definition_json))))}
-                       for row in skills],
-            "tools": [{"tool_id": row.tool_id, "key": row.key, "version": row.version,
-                       "risk_level": row.risk_level, "installation_id": row.installation_id,
-                       "permission_id": row.permission_id, "granted_by_account_id": row.granted_by_account_id}
-                      for row in tools],
+                       for binding, row in skill_bindings],
+            "tools": tools,
             "installation": {"id": installation.id, "household_id": installation.household_id,
                              "deployment_id": installation.deployment_id,
                              "agent_version_id": installation.agent_version_id, "status": installation.status},
@@ -64,8 +79,9 @@ class CompiledSnapshotService:
             "budget": definition.get("budgets", {}),
             "model": dict(model_snapshot),
             "consent": dict(consent),
-            "grants": {row.key: {"version": row.version, "risk_level": row.risk_level,
-                                  "permission_id": row.permission_id} for row in tools},
+            "grants": [{"binding_id": row["binding_id"], "tool_id": row["tool_id"], "key": row["key"],
+                        "version": row["version"], "risk_level": row["risk_level"],
+                        "permission_id": row["permission_id"]} for row in tools if row["permission_id"]],
             "children": children,
         }
 
@@ -78,8 +94,9 @@ class CompiledSnapshotService:
             "model": {"id": context.model_id, "revision": context.model_revision,
                       "profile": dict(context.model_snapshot.get("profile", {})),
                       "snapshot": dict(context.model_snapshot)},
-            "grants": {row["key"]: {"version": row["version"], "risk_level": row["risk_level"],
-                                      "permission_id": row["permission_id"]} for row in root["tools"]},
+            "grants": [{"binding_id": row["binding_id"], "tool_id": row["tool_id"], "key": row["key"],
+                        "version": row["version"], "risk_level": row["risk_level"],
+                        "permission_id": row["permission_id"]} for row in root["tools"] if row["permission_id"]],
             "consent": dict(context.consent),
         })
         return _freeze(root)
@@ -92,6 +109,7 @@ class SnapshotCompiler:
 
     def _validate_node(self, node, household_id):
         try:
+            node = _plain(node)
             required = {"deployment", "agent", "agent_version", "skills", "tools", "installation",
                         "workflow", "budget", "model", "consent", "grants", "children"}
             if not isinstance(node, dict) or set(node) != required:
@@ -114,38 +132,40 @@ class SnapshotCompiler:
                                 "deployment_id": deployment["id"], "agent_version_id": version["id"],
                                 "status": "installed"}:
                 raise ValueError
-            expected_grants = {}
-            for tool in node["tools"]:
-                tool_row = self.session.get(ToolDefinition, tool["tool_id"])
-                permission = self.session.get(InstallationPermission, tool["permission_id"])
-                binding = self.session.scalar(select(AgentToolBinding.id).where(
+            live_tool_bindings = self.session.execute(select(AgentToolBinding, ToolDefinition).join(
+                ToolDefinition, AgentToolBinding.tool_id == ToolDefinition.id).where(
                     AgentToolBinding.household_id == household_id,
-                    AgentToolBinding.agent_version_id == version["id"],
-                    AgentToolBinding.tool_id == tool["tool_id"]))
-                if (not tool_row or tool_row.key != tool["key"] or tool_row.version != tool["version"] or
-                        tool_row.risk_level != tool["risk_level"] or tool["installation_id"] != installation["id"] or
-                        not permission or permission.household_id != household_id or
-                        permission.installation_id != installation["id"] or permission.tool_id != tool["tool_id"] or
-                        permission.tool_version != tool["version"] or
-                        permission.granted_by_account_id != tool["granted_by_account_id"] or not binding):
-                    raise ValueError
-                expected_grants[tool["key"]] = {"version": tool["version"], "risk_level": tool["risk_level"],
-                                                "permission_id": tool["permission_id"]}
-            if node["grants"] != expected_grants:
+                    AgentToolBinding.agent_version_id == version["id"]).order_by(AgentToolBinding.id)).all()
+            authorities = {row.tool_id: row for row in ExecutionAuthority(self.session).tools(
+                deployment["id"], household_id, version["id"],
+                {binding.tool_id for binding, _tool in live_tool_bindings})}
+            expected_tools = []
+            for binding, tool_row in live_tool_bindings:
+                authority = authorities.get(tool_row.id)
+                expected_tools.append({"binding_id": binding.id, "tool_id": tool_row.id, "key": tool_row.key,
+                    "version": tool_row.version, "risk_level": tool_row.risk_level,
+                    "installation_id": installation["id"],
+                    "permission_id": authority.permission_id if authority else None,
+                    "granted_by_account_id": authority.granted_by_account_id if authority else None})
+            if list(node["tools"]) != expected_tools:
                 raise ValueError
-            for skill in node["skills"]:
-                safe = validate_skill_definition(skill["definition"])
-                live = self.session.get(SkillVersion, skill["id"])
-                live_definition = validate_skill_definition(json.loads(live.definition_json)) if live else None
-                canonical_definition_json = normalize_json(live_definition) if live_definition else None
-                binding = self.session.scalar(select(AgentSkillBinding.id).where(
+            expected_grants = [{"binding_id": row["binding_id"], "tool_id": row["tool_id"], "key": row["key"],
+                "version": row["version"], "risk_level": row["risk_level"], "permission_id": row["permission_id"]}
+                for row in expected_tools if row["permission_id"]]
+            if list(node["grants"]) != expected_grants:
+                raise ValueError
+            live_skill_bindings = self.session.execute(select(AgentSkillBinding, SkillVersion).join(
+                SkillVersion, AgentSkillBinding.skill_version_id == SkillVersion.id).where(
                     AgentSkillBinding.household_id == household_id,
-                    AgentSkillBinding.agent_version_id == version["id"],
-                    AgentSkillBinding.skill_version_id == skill["id"]))
-                if (not live or live.household_id != household_id or live.skill_id != skill["skill_id"] or
-                        live.version != skill["version"] or safe != live_definition or
-                        skill["config_hash"] != _hash_json(canonical_definition_json) or not binding):
-                    raise ValueError
+                    AgentSkillBinding.agent_version_id == version["id"]).order_by(AgentSkillBinding.id)).all()
+            expected_skills = []
+            for binding, live in live_skill_bindings:
+                live_definition = validate_skill_definition(json.loads(live.definition_json))
+                expected_skills.append({"binding_id": binding.id, "id": live.id, "skill_id": live.skill_id,
+                    "version": live.version, "definition": live_definition,
+                    "config_hash": _hash_json(normalize_json(live_definition))})
+            if list(node["skills"]) != expected_skills:
+                raise ValueError
             for child in node["children"]:
                 self._validate_node(child, household_id)
             declared_children = tuple(definition.get("child_deployments", []))
@@ -171,6 +191,8 @@ class SnapshotCompiler:
                 installation.status != "installed" or installation.authority_slot != "active"):
             raise PlatformToolError("VERSION_CHANGED")
         for tool in snapshot.get("tools", []):
+            if not tool.get("permission_id"):
+                continue
             permission = self.session.get(InstallationPermission, tool["permission_id"])
             definition = self.session.get(ToolDefinition, tool["tool_id"])
             if (not permission or permission.household_id != context.household_id or
@@ -181,7 +203,7 @@ class SnapshotCompiler:
         for child in snapshot.get("children", []): self.validate_safety(child, type(context)(**{
             **context.__dict__, "deployment_id": child["deployment"]["id"],
             "agent_version_id": child["agent_version"]["id"], "deployment_revision": child["deployment"]["revision"],
-            "grants": child.get("grants", {}), "compiled_snapshot": child}))
+            "grants": {item["key"]: item for item in child.get("grants", [])}, "compiled_snapshot": child}))
         return True
 
     def _rehydrate_node(self, node, context):
@@ -193,13 +215,15 @@ class SnapshotCompiler:
         executor = PlatformToolExecutor(self.session)
         tools = []
         for item in node.get("tools", []):
+            if not item.get("permission_id"):
+                continue
             authority = type("SnapshotAuthority", (), item)()
             tools.append(build_platform_tool(authority, executor, context, self.session))
         subagents, names = [], []
         for child in node.get("children", []):
             child_context = type(context)(**{**context.__dict__, "deployment_id": child["deployment"]["id"],
                 "agent_version_id": child["agent_version"]["id"], "deployment_revision": child["deployment"]["revision"],
-                "grants": child.get("grants", {}), "compiled_snapshot": child})
+                "grants": {item["key"]: item for item in child.get("grants", [])}, "compiled_snapshot": child})
             compiled_child = self._rehydrate_node(child, child_context)
             graph = create_secured_deep_agent(model=compiled_child.model, tools=compiled_child.tools,
                 subagents=list(compiled_child.subagents), system_prompt=compiled_child.prompt,
