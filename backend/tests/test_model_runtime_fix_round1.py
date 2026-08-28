@@ -328,9 +328,12 @@ def test_embedding_binding_api_rebuilds_before_atomic_pointer_and_binding_switch
         assert session.get(ModelPurposeBinding, "embedding").model_id == new_id
         assert session.get(ActiveEmbeddingCollection, "knowledge").model_id == new_id
     deletes = [item for item in rebuilt if isinstance(item, dict) and "$and" in item.get("where", {})]
-    assert any(item["where"]["$and"][0] == {"household_id": household_id} for item in deletes)
-    assert all(item["where"]["$and"][2] == {"source_type": {"$in": ["kb", "faq"]}} for item in deletes)
-    assert len(deletes) >= 2
+    # 全量清空删除 = [household, skill_version, source_type] 三段作用域；
+    # add_file 的按份替换删除 = [source_file_id, skill_version_id] 两段（Fix Round 1 起）。
+    wipes = [item for item in deletes if len(item["where"]["$and"]) == 3
+             and item["where"]["$and"][2] == {"source_type": {"$in": ["kb", "faq"]}}]
+    assert any(item["where"]["$and"][0] == {"household_id": household_id} for item in wipes)
+    assert len(wipes) >= 2
 
 
 def test_anthropic_builder_uses_controlled_http_client_without_network():

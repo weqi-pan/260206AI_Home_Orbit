@@ -37,6 +37,10 @@ class InMemoryVectorStore:
         self.documents = []
 
     def add_file(self, file_id, path, filename, household_id=None, skill_version_id=None):
+        # 与生产 VectorStoreService 一致：按 (source_file_id, skill_version_id) 作用域去重
+        self.documents = [item for item in self.documents
+                          if not (item.metadata.get("source_file_id") == str(file_id)
+                                  and item.metadata.get("skill_version_id") == str(skill_version_id))]
         text = path.read_text(encoding="utf-8")
         self.documents.append(Document(page_content=text, metadata={
             "source_file_id": str(file_id), "source_type": "kb", "filename": filename,
@@ -46,8 +50,11 @@ class InMemoryVectorStore:
         self.documents = [item for item in self.documents
                           if item.metadata.get("source_file_id") != str(file_id)]
 
-    def has_file(self, file_id):
-        return any(item.metadata.get("source_file_id") == str(file_id) for item in self.documents)
+    def has_file(self, file_id, skill_version_id=None):
+        return any(item.metadata.get("source_file_id") == str(file_id)
+                   and (skill_version_id is None
+                        or item.metadata.get("skill_version_id") == str(skill_version_id))
+                   for item in self.documents)
 
     def search(self, query, k=4, household_id=None, skill_version_ids=()):
         hits = [item for item in self.documents
@@ -276,6 +283,120 @@ def test_cantonese_chef_e2e_publish_then_chat_answers_from_isolated_knowledge(cl
     assert "token" in events
     assert "白切鸡" in content and "浸煮" in content
     assert "run" in events
+
+
+def _runtime_configured(app, household_id, monkeypatch):
+    from backend.tests.test_model_runtime_fix_round1 import MASTER_KEY, configured_runtime
+
+    monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
+    with app.state.database.session_factory() as db:
+        configured_runtime(db, household_id)
+        configured_runtime(db, household_id, purpose="embedding")
+
+
+class RetrievalChatModel(BaseChatModel):
+    @property
+    def _llm_type(self):
+        return "deterministic-retrieval-chat-model"
+
+    def bind_tools(self, tools, *, tool_choice=None, **kwargs):
+        self._visible = tuple(tool.name for tool in tools)
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        tool_messages = [message for message in messages if isinstance(message, ToolMessage)]
+        if not tool_messages:
+            assert "household.knowledge.search" in self._visible, self._visible
+            call = {"name": "household.knowledge.search", "args": {"query": "白切鸡做法"},
+                    "id": "retrieval-call-1", "type": "tool_call"}
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content="", tool_calls=[call]))])
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(
+            content=f"根据家庭菜谱知识：{tool_messages[-1].content}"))])
+
+
+def test_republish_revectorizes_under_new_skill_version_and_v2_chat_retrieves(client, app, settings,
+                                                                              monkeypatch, fake_vectors):
+    """Fix Round 1 Finding 1: 同一资产在重发布后必须挂到新技能版本的元数据下。"""
+    from backend.app.creator.publishing import PrivatePublishService
+    from backend.app.db.models import CreatorDraft
+
+    account_id, household_id = _home(app)
+    _runtime_configured(app, household_id, monkeypatch)
+    app.state.chat_model_builder = lambda resolved: RetrievalChatModel()
+
+    recipe = "白切鸡：整鸡温水浸煮25分钟，过冰水，配姜葱蘸料。".encode("utf-8")
+    draft_id = _chef_draft(app, household_id, account_id, assets=[("粤菜菜谱.txt", ".txt", recipe)],
+                           settings=settings)
+    service = PrivatePublishService(app.state.database.session_factory, household_id, account_id,
+                                    settings=settings)
+    v1 = service.publish(draft_id, granted_tool_keys=[])
+    sv1 = v1["skills"][0]["skill_version_id"]
+    assert fake_vectors.search("白切鸡", household_id=household_id, skill_version_ids=[sv1])
+
+    # 编辑草稿后重发布：新版本、部署指针移动
+    with app.state.database.session_factory.begin() as db:
+        draft = db.get(CreatorDraft, draft_id)
+        draft.status = "draft"
+        card = json.loads(draft.intent_card_json)
+        card["prompt"] = "你是家庭粤菜大厨，先检索菜谱知识再回答。"
+        draft.intent_card_json = json.dumps(card, ensure_ascii=False)
+    v2 = service.publish(draft_id, granted_tool_keys=[])
+    sv2 = v2["skills"][0]["skill_version_id"]
+    assert sv2 != sv1
+
+    # 新技能版本可检索（回归点：has_file 曾只按 source_file_id 跳过）
+    assert fake_vectors.has_file(v1["vectorized_assets"][0]["asset_id"], skill_version_id=sv2)
+    assert fake_vectors.search("白切鸡", household_id=household_id, skill_version_ids=[sv2])
+    # 旧版本副本与隔离语义不受影响
+    assert fake_vectors.search("白切鸡", household_id=household_id, skill_version_ids=[sv1])
+    assert fake_vectors.search("白切鸡", household_id="other-household", skill_version_ids=[sv2]) == []
+
+    # v2 部署绑定聊天取回知识内容（非空）
+    token = client.post("/api/auth/login", json={"username": "demo", "password": "DemoTest@123"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    session = client.post("/api/chat/sessions", headers=headers,
+                          json={"title": "粤菜v2", "deployment_id": v2["deployment"]["id"]})
+    assert session.status_code == 201, session.text
+    session_id = session.json()["id"]
+    with client.stream("POST", f"/api/chat/sessions/{session_id}/chat", headers=headers,
+                       json={"message": "白切鸡怎么做"}) as response:
+        assert response.status_code == 200
+    content = _read_stream_content(client, session_id, headers)
+    assert "浸煮" in content, content
+
+
+def test_one_asset_attached_to_two_skills_is_retrievable_under_both_versions(client, app, settings, fake_vectors):
+    """Fix Round 1 Finding 1（单发布多技能）：同一资产挂两个 Skill 时两个版本都可检索。"""
+    from backend.app.creator.knowledge import CreatorKnowledgeService
+    from backend.app.creator.publishing import PrivatePublishService
+    from backend.app.db.models import CreatorDraft
+
+    account_id, household_id = _home(app)
+    recipe = "白切鸡：整鸡温水浸煮25分钟，过冰水，配姜葱蘸料。".encode("utf-8")
+    with app.state.database.session_factory.begin() as db:
+        draft = CreatorDraft(household_id=household_id, title="双技能菜谱", status="validated",
+                             created_by_account_id=account_id)
+        db.add(draft)
+        db.flush()
+        draft_id = draft.id
+    service = CreatorKnowledgeService(db_session(app), household_id,
+                                      upload_root=settings.knowledge_upload_path)
+    asset = service.register_asset(draft_id, "粤菜菜谱.txt", ".txt", recipe)
+    card = json.loads(json.dumps(CHEF_CARD, ensure_ascii=False))
+    card["skills"] = [
+        {"name": "粤菜菜谱", "instructions": "根据菜谱知识回答做法。", "knowledge_asset_ids": [asset.id]},
+        {"name": "采购提示", "instructions": "根据菜谱给出采购建议。", "knowledge_asset_ids": [asset.id]},
+    ]
+    with app.state.database.session_factory.begin() as db:
+        draft = db.get(CreatorDraft, draft_id)
+        draft.intent_card_json = json.dumps(card, ensure_ascii=False)
+    publisher = PrivatePublishService(app.state.database.session_factory, household_id, account_id,
+                                      settings=settings)
+    result = publisher.publish(draft_id, granted_tool_keys=[])
+    sv_a, sv_b = (item["skill_version_id"] for item in result["skills"])
+    assert sv_a != sv_b
+    assert fake_vectors.search("白切鸡", household_id=household_id, skill_version_ids=[sv_a])
+    assert fake_vectors.search("白切鸡", household_id=household_id, skill_version_ids=[sv_b])
 
 
 def _read_stream_content(client, session_id, headers):

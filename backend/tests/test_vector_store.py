@@ -85,3 +85,47 @@ def test_vector_store_has_file_checks_collection_ids():
 
     empty = SimpleNamespace(_collection=QueryableCollection([]))
     assert VectorStoreService(vector_store=empty).has_file("file-1") is False
+
+
+def test_vector_store_scopes_has_file_by_skill_version():
+    from backend.rag.vector_store import VectorStoreService
+
+    class QueryableCollection(FakeCollection):
+        def __init__(self, ids):
+            super().__init__()
+            self.ids = ids
+            self.queries = []
+
+        def get(self, **kwargs):
+            self.queries.append(kwargs)
+            return {"ids": self.ids}
+
+    present = SimpleNamespace(_collection=QueryableCollection(["kb:file-1:sv-2:0"]))
+    service = VectorStoreService(vector_store=present)
+    assert service.has_file("file-1", skill_version_id="sv-2") is True
+    assert present._collection.queries == [
+        {"where": {"$and": [{"source_file_id": "file-1"}, {"skill_version_id": "sv-2"}]}, "limit": 1}]
+
+    empty = SimpleNamespace(_collection=QueryableCollection([]))
+    assert VectorStoreService(vector_store=empty).has_file("file-1", skill_version_id="sv-3") is False
+
+
+def test_vector_store_scopes_file_copy_per_skill_version(tmp_path: Path):
+    from backend.rag.vector_store import VectorStoreService
+
+    store = FakeStore()
+    service = VectorStoreService(vector_store=store)
+    path = tmp_path / "guide.txt"
+    path.write_text("维护说明", encoding="utf-8")
+
+    service.add_file("file-1", path, "guide.txt", household_id="h-1", skill_version_id="sv-1")
+    service.add_file("file-1", path, "guide.txt", household_id="h-1", skill_version_id="sv-2")
+
+    # 每个技能版本一份副本：删除作用域与 id 都按 (source_file_id, skill_version_id)，
+    # sv-2 的重加不得清掉 sv-1 的副本
+    assert store._collection.deletes == [
+        {"where": {"$and": [{"source_file_id": "file-1"}, {"skill_version_id": "sv-1"}]}},
+        {"where": {"$and": [{"source_file_id": "file-1"}, {"skill_version_id": "sv-2"}]}},
+    ]
+    assert store.ids == ["kb:file-1:sv-1:0", "kb:file-1:sv-2:0"]
+    assert [document.metadata["skill_version_id"] for document in store.documents] == ["sv-1", "sv-2"]

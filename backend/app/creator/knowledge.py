@@ -90,14 +90,32 @@ class CreatorKnowledgeService:
         if duplicate is not None:
             raise KnowledgeAssetRejected("KNOWLEDGE_DUPLICATE")
 
-        asset = CreatorKnowledgeAsset(household_id=self.household_id, draft_id=draft_id,
-                                      skill_key=skill_key[:100], filename=Path(filename).name[:255],
-                                      file_type=suffix, file_md5=md5,
-                                      content_hash=hashlib.sha256(content).hexdigest(),
-                                      size_bytes=len(content), status="active", scan_status="pending",
-                                      uploaded_by_account_id=uploaded_by)
-        self.session.add(asset)
-        self.session.flush()
+        # uq_creator_asset_draft_md5 覆盖软删行：同 (draft, md5) 已存在时复活该行并重扫，
+        # 避免插入撞唯一约束以未处理 500 逃逸。
+        asset = self.session.scalar(select(CreatorKnowledgeAsset).where(
+            CreatorKnowledgeAsset.draft_id == draft_id,
+            CreatorKnowledgeAsset.household_id == self.household_id,
+            CreatorKnowledgeAsset.file_md5 == md5))
+        if asset is not None:
+            asset.status = "active"
+            asset.scan_status = "pending"
+            asset.scan_reason = None
+            asset.skill_key = skill_key[:100]
+            asset.filename = Path(filename).name[:255]
+            asset.file_type = suffix
+            asset.content_hash = hashlib.sha256(content).hexdigest()
+            asset.size_bytes = len(content)
+            asset.uploaded_by_account_id = uploaded_by
+            self.session.flush()
+        else:
+            asset = CreatorKnowledgeAsset(household_id=self.household_id, draft_id=draft_id,
+                                          skill_key=skill_key[:100], filename=Path(filename).name[:255],
+                                          file_type=suffix, file_md5=md5,
+                                          content_hash=hashlib.sha256(content).hexdigest(),
+                                          size_bytes=len(content), status="active", scan_status="pending",
+                                          uploaded_by_account_id=uploaded_by)
+            self.session.add(asset)
+            self.session.flush()
 
         text = self._extract_text(suffix, content)
         reason = self._scan_text(text)

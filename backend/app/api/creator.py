@@ -218,7 +218,7 @@ def upload_knowledge(draft_id: str, request: Request, file: UploadFile = File(..
         raise HTTPException(status_code, detail={"code": exc.code, "reason": exc.detail}) from exc
     return {"id": asset.id, "filename": asset.filename, "file_type": asset.file_type,
             "size_bytes": asset.size_bytes, "skill_key": asset.skill_key,
-            "scan_status": asset.scan_status, "scan_reason": asset.scan_reason,
+            "status": asset.status, "scan_status": asset.scan_status, "scan_reason": asset.scan_reason,
             "content_hash": asset.content_hash}
 
 

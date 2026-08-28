@@ -132,7 +132,7 @@ def _vectorize_creator_asset(session, payload, record):
     if not path.exists():
         raise _permanent("KNOWLEDGE_SOURCE_MISSING")
     try:
-        if not service.has_file(asset.id):
+        if not service.has_file(asset.id, skill_version_id=skill_version_id):
             service.add_file(asset.id, path, asset.filename, household_id=asset.household_id,
                              skill_version_id=skill_version_id)
     except VectorStoreUnavailable as exc:

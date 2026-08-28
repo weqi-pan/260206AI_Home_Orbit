@@ -45,16 +45,26 @@ class VectorStoreService:
             chunk.metadata = {"source_file_id": str(file_id), "source_type": "kb", "filename": filename}
             if household_id: chunk.metadata["household_id"] = str(household_id)
             if skill_version_id: chunk.metadata["skill_version_id"] = str(skill_version_id)
-        ids = [f"kb:{file_id}:{index}" for index in range(len(chunks))]
         store = self._get_store()
-        store._collection.delete(where={"source_file_id": str(file_id)})
+        if skill_version_id:
+            # 同一文件可在多个技能版本下各持一份副本：替换作用域与 id 均按
+            # (source_file_id, skill_version_id)，重加新版本不清除旧版本副本。
+            store._collection.delete(where={"$and": [{"source_file_id": str(file_id)},
+                                                     {"skill_version_id": str(skill_version_id)}]})
+            ids = [f"kb:{file_id}:{skill_version_id}:{index}" for index in range(len(chunks))]
+        else:
+            store._collection.delete(where={"source_file_id": str(file_id)})
+            ids = [f"kb:{file_id}:{index}" for index in range(len(chunks))]
         store.add_documents(chunks, ids=ids)
 
     def delete_file(self, file_id):
         self._get_store()._collection.delete(where={"source_file_id": str(file_id)})
 
-    def has_file(self, file_id):
-        result = self._get_store()._collection.get(where={"source_file_id": str(file_id)}, limit=1)
+    def has_file(self, file_id, skill_version_id=None):
+        where = {"source_file_id": str(file_id)}
+        if skill_version_id:
+            where = {"$and": [where, {"skill_version_id": str(skill_version_id)}]}
+        result = self._get_store()._collection.get(where=where, limit=1)
         return bool(result.get("ids"))
 
     def add_faq(self, faq_id, question, answer, source_file_id, household_id=None, skill_version_id=None):
