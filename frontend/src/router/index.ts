@@ -22,6 +22,7 @@ const router = createRouter({
       redirect: '/home',
       children: [
         { path: 'home', name: 'home', component: () => import('../views/Home.vue') },
+        { path: 'create', name: 'create', component: () => import('../views/Creator.vue') },
         { path: 'household', name: 'household', component: () => import('../views/Household.vue') },
         { path: 'chat', name: 'chat', component: () => import('../views/Chat.vue'), meta: { ai: true } },
         { path: 'tickets', name: 'tickets', component: () => import('../views/MyTickets.vue') },

@@ -11,7 +11,7 @@ provide(shellModalOpenKey, shellModalOpen)
 const primary = [
   { label: '首页', to: '/home' },
   { label: '发现', unavailable: true },
-  { label: '创建', unavailable: true },
+  { label: '创建', to: '/create' },
   { label: '我的助手', unavailable: true },
   { label: '家庭', to: '/household' },
 ]
