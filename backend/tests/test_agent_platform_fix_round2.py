@@ -276,6 +276,73 @@ def test_public_approval_resume_uses_production_runner(client, app, monkeypatch)
     assert ("resume", approval_id, run_id) in called
 
 
+def test_public_resume_binds_combined_household_gateway(client, app, monkeypatch):
+    from types import SimpleNamespace
+
+    from backend.agent.platform.policy import PlatformToolExecutor
+    from backend.app.api import approvals as approvals_api
+    from backend.app.db.models import (AgentDefinition, AgentDeployment, AgentInstallation, AgentRun, AgentVersion,
+                                       ApprovalRequest, HouseholdMember, InstallationPermission, ToolDefinition)
+
+    outcomes = []
+
+    class Runner:
+        def bind_model(self, run_id, model): pass
+
+        def resume(self, approval_id, context):
+            with app.state.database.session_factory() as db:
+                try:
+                    outcomes.append(("ok", PlatformToolExecutor(db).execute(
+                        "household.shopping.read", {}, context, "resume-household-gateway")))
+                except Exception as exc:
+                    outcomes.append(("error", str(exc)))
+            yield {"event": "run", "data": {"status": "completed"}}
+
+    app.state.deployment_agent_runner = Runner()
+    login = client.post("/api/auth/login", json={"username": "demo", "password": "DemoTest@123"}).json()
+    headers = {"Authorization": f"Bearer {login['access_token']}"}
+    with app.state.database.session_factory.begin() as db:
+        member = db.scalar(select(HouseholdMember).where(HouseholdMember.account_id == login["account"]["id"]))
+        shopping = db.scalar(select(ToolDefinition).where(ToolDefinition.key == "household.shopping.read"))
+        definition = AgentDefinition(household_id=member.household_id, name="resume-household-gateway")
+        db.add(definition); db.flush()
+        version = AgentVersion(household_id=member.household_id, agent_id=definition.id, version=1,
+            definition_json='{"prompt":"resume","tools":["household.shopping.read"]}', published_at=utcnow())
+        db.add(version); db.flush()
+        deployment = AgentDeployment(household_id=member.household_id, agent_version_id=version.id)
+        db.add(deployment); db.flush()
+        installation = AgentInstallation(household_id=member.household_id, deployment_id=deployment.id,
+            agent_version_id=version.id, status="installed", authority_slot="active")
+        db.add(installation); db.flush()
+        db.add(InstallationPermission(household_id=member.household_id, installation_id=installation.id,
+            tool_id=shopping.id, tool_version="1", granted_by_account_id=login["account"]["id"]))
+        run = AgentRun(household_id=member.household_id, deployment_id=deployment.id,
+            principal_id=login["account"]["id"], member_id=member.id, session_id="resume-household-session",
+            agent_version_id=version.id, deployment_revision=1, model_id="model-1", model_revision=1,
+            compiled_snapshot_json='{"grants":{"household.shopping.read":{"version":"1"}},"skills":[]}',
+            model_snapshot_json='{"id":"model-1","revision":1}',
+            consent_snapshot_json="{}", budget_snapshot_json='{"tool_calls":2,"tokens":100,"wall_time_seconds":30,"delegation_depth":1}')
+        db.add(run); db.flush()
+        approval = ApprovalRequest(household_id=member.household_id, run_id=run.id,
+            principal_id=login["account"]["id"], tool_id=shopping.id, tool_version="1",
+            deployment_id=deployment.id, deployment_revision=1, agent_version_id=version.id,
+            arguments_digest="digest", arguments_json="{}", idempotency_key="public-resume-household", status="approved")
+        db.add(approval); db.flush(); approval_id = approval.id
+    snapshot = SimpleNamespace(model_id="model-1", config_revision=1)
+
+    class Runtime:
+        def __init__(self, db): pass
+        def resolve(self, purpose, household_id): return SimpleNamespace(snapshot=snapshot)
+        def build_chat_model(self, resolved): return object()
+
+    monkeypatch.setattr(approvals_api, "ModelRuntimeService", Runtime)
+    response = client.post(f"/api/approvals/{approval_id}/resume", headers=headers)
+    assert response.status_code == 200
+    assert outcomes and outcomes[0][0] == "ok", outcomes
+    assert "HOUSEHOLD_REPOSITORY_REQUIRED" not in str(outcomes[0][1])
+    assert "待购" in str(outcomes[0][1])  # 恢复路径家庭工具可用：读取到购物清单统计
+
+
 def test_budget_restore_preserves_counters_across_resume():
     from backend.agent.platform.context import RunBudget
     budget = RunBudget.restore({"tool_calls": 2, "tokens": 10, "wall_time_seconds": 30, "delegation_depth": 1},

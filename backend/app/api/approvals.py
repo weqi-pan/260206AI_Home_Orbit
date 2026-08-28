@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.security import get_current_account, get_db
 from backend.app.db.models import Account, AgentRun, ApprovalRequest, HouseholdMember
 from backend.agent.platform.context import RunBudget, RunContext
-from backend.agent.tools.gateways import ToolCapabilities, ToolRepositories
+from backend.agent.tools.household_gateways import HouseholdToolRepositories
 from backend.agent.platform.approvals import audit_approval
 from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
 from backend.app.schemas.agent_platform import ApprovalDecisionRequest
@@ -95,7 +95,7 @@ def resume(approval_id: str, request: Request, account: Account = Depends(get_cu
         deployment_revision=run.deployment_revision, model_id=run.model_id, model_revision=run.model_revision,
         model_snapshot=json.loads(run.model_snapshot_json), compiled_snapshot=snapshot,
         skill_version_ids=tuple(item["id"] for item in snapshot.get("skills", [])),
-        repositories=ToolCapabilities.bind(ToolRepositories(request.app.state.database.session_factory)),
+        repositories=HouseholdToolRepositories(request.app.state.database.session_factory),
         vector_store_service=request.app.state.vector_store_service,
         budget=RunBudget.restore(budget_snapshot, budget_snapshot.get("counters", {})))
     request.app.state.deployment_agent_runner.bind_model(run.id, chat_model)

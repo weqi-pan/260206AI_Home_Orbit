@@ -231,6 +231,22 @@ def test_sqlite_mode_never_starts_celery(settings):
         create_celery_app(settings)
 
 
+def test_worker_entry_import_refuses_test_mode():
+    """容器 CLI 入口在测试模式下导入必须守住生产守卫（task-9-report §8 回归）。"""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    env = {**os.environ, "APP_MODE": "test", "DATABASE_URL": "sqlite:///./worker-entry-guard.db",
+           "PYTHONPATH": str(Path(__file__).resolve().parents[2])}
+    result = subprocess.run(
+        [sys.executable, "-c", "import importlib; importlib.import_module('backend.app.tasks.worker_entry')"],
+        capture_output=True, text=True, env=env, timeout=120)
+    assert result.returncode != 0  # 导入即触发守卫，进程以失败退出
+    assert "CELERY_REQUIRES_PRODUCTION_MODE" in result.stderr
+
+
 def test_celery_app_declares_beat_schedule_and_worker_tasks():
     import os
 
