@@ -63,6 +63,25 @@ def upgrade() -> None:
         for unique in inspector.get_unique_constraints("inventory"):
             if unique["column_names"] == ["model_id", "warehouse"] and unique["name"]:
                 op.drop_constraint(unique["name"], "inventory", type_="unique")
+    inventory_source = None
+    if dialect != "mysql":
+        # SQLite 上 0001 基线的全局 UNIQUE(model_id, warehouse) 是无名 sqlite_autoindex，
+        # 无法按名 DROP，且 batch 默认按反射重建会将其保留；改为以 copy_from 显式描述
+        # 当前表结构（不含该遗留约束）完成重建，使迁移链终点与 ORM create_all 一致。
+        source_metadata = sa.MetaData()
+        sa.Table("devices", source_metadata, sa.Column("model_id", sa.String(64), primary_key=True))
+        inventory_source = sa.Table(
+            "inventory", source_metadata,
+            sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column("model_id", sa.String(64), nullable=False),
+            sa.Column("warehouse", sa.String(100), nullable=False),
+            sa.Column("stock", sa.Integer(), nullable=False),
+            sa.Column("min_stock", sa.Integer(), nullable=False),
+            sa.Column("updated_at", sa.DateTime()),
+            sa.Column("household_id", sa.String(36), nullable=True),
+            sa.Column("device_id", sa.String(36), nullable=True),
+            sa.ForeignKeyConstraint(["model_id"], ["devices.model_id"], name="fk_inventory_model_id_devices"),
+        )
     with op.batch_alter_table("devices", naming_convention=naming) as batch:
         batch.drop_constraint("pk_devices", type_="primary")
         batch.alter_column("id", existing_type=sa.String(36), nullable=False)
@@ -71,7 +90,7 @@ def upgrade() -> None:
         batch.create_unique_constraint("uq_device_household_model", ["household_id", "model_id"])
         batch.create_unique_constraint("uq_device_id_household", ["id", "household_id"])
         batch.create_foreign_key("fk_device_household", "households", ["household_id"], ["id"], ondelete="CASCADE")
-    with op.batch_alter_table("inventory", naming_convention=naming) as batch:
+    with op.batch_alter_table("inventory", naming_convention=naming, copy_from=inventory_source) as batch:
         if dialect != "mysql":
             batch.drop_constraint("fk_inventory_model_id_devices", type_="foreignkey")
         batch.alter_column("household_id", existing_type=sa.String(36), nullable=False)
