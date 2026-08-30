@@ -37,7 +37,14 @@ class CapabilityTester:
             states["streaming"] = "passed"
             events.append(streamed)
             stage = "tool_calling"
-            tool = self.adapter.tool_call(messages)
+            tool_messages = [{
+                "role": "user",
+                "content": (
+                    "You must call the echo tool. Do not answer directly. "
+                    "Use empty arguments or set value to hello."
+                ),
+            }]
+            tool = self.adapter.tool_call(tool_messages)
             states["tool_calling"] = "passed"
             events.append(tool)
             stage = "structured_output"

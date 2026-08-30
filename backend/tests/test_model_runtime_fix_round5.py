@@ -142,6 +142,53 @@ def test_structured_output_uses_valid_schema_and_explicit_capability_prompt():
     assert event.structured == {"ok": True}
 
 
+def test_tool_call_probe_explicitly_requires_echo_without_changing_text_prompts():
+    from backend.app.models.adapters import ModelAdapter
+    from backend.app.models.capabilities import CapabilityTester
+
+    class InstructionSensitiveTransport(BaseChatTransport):
+        def __init__(self):
+            self.generate_messages = []
+            self.stream_messages = []
+
+        def generate(self, *, model, messages, tools=None, structured_schema=None):
+            self.generate_messages.append((messages, tools, structured_schema))
+            if tools:
+                prompt = messages[-1]["content"]
+                if "must call the echo tool" in prompt and "Do not answer directly" in prompt:
+                    return {"content": "", "tool_calls": [{"name": "echo", "args": {"value": "hello"}}]}
+                return {"content": "hello", "tool_calls": []}
+            if structured_schema:
+                return {"content": '{"ok":true}'}
+            return {"content": "hello"}
+
+        def stream(self, *, model, messages, cancel_event):
+            self.stream_messages.append(messages)
+            yield {"content": "hello"}
+
+    transport = InstructionSensitiveTransport()
+    result = CapabilityTester(
+        ModelAdapter("openai_compatible", "chat", chat_transport=transport),
+        first_chunk_timeout=0.5,
+        cancel_timeout=0.5,
+    ).run_chat()
+
+    assert result.passed is True
+    assert result.error_code is None
+    assert result.capabilities == {
+        "generation": "passed",
+        "streaming": "passed",
+        "cancellation": "passed",
+        "tool_calling": "passed",
+        "structured_output": "passed",
+    }
+    assert transport.generate_messages[0][0] == [{"role": "user", "content": "Reply with hello."}]
+    assert transport.stream_messages == [
+        [{"role": "user", "content": "Reply with hello."}],
+        [{"role": "user", "content": "Reply with hello."}],
+    ]
+
+
 def test_full_capability_probe_finishes_non_destructive_checks_before_closing_shared_client():
     from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
     from backend.app.models.capabilities import CapabilityTester
