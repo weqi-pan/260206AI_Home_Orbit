@@ -163,6 +163,6 @@ h1 { max-width: 650px; margin: 0; font-family: var(--font-display); font-size: c
 .visual-node { position: absolute; z-index: 2; top: 50%; left: 42%; width: 24px; height: 24px; border: 6px solid var(--surface-white); border-radius: 50%; background: var(--orbit-violet); box-shadow: 0 0 0 2px var(--orbit-violet); transform: translate(-50%, -50%) rotate(var(--node-angle)) translateX(var(--node-radius)); }
 .visual-node:focus-visible { outline: 4px solid var(--charge-coral); outline-offset: 7px; }
 .visual-node.is-attention { background: var(--charge-coral); box-shadow: 0 0 0 2px var(--charge-coral); }
-@media (max-width: 900px) { .home-page { display: block; }.home-copy { padding: 32px 20px 120px; }.orbit-stage { position: absolute; top: 110px; right: -280px; width: 520px; min-height: 520px; opacity: .22; }.visual-node { display: none; }.home-copy > * { position: relative; z-index: 2; } }
+@media (max-width: 900px) { .home-page { position: relative; display: block; overflow-x: clip; overflow-y: visible; }.home-copy { padding: 32px 20px 120px; }.orbit-stage { position: absolute; top: 110px; right: -280px; width: 520px; min-height: 520px; opacity: .22; }.visual-node { display: none; }.home-copy > * { position: relative; z-index: 2; } }
 @media (max-width: 600px) { h1 { font-size: 42px; }.setup-callout { align-items: flex-start; flex-wrap: wrap; }.button-link, .setup-note { width: 100%; margin-left: 26px; }.home-lead { font-size: 15px; }.composer-row { min-height: 56px; } }
 </style>

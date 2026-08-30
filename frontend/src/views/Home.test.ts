@@ -47,6 +47,10 @@ describe('Home Orbit', () => {
     expect(homeSource).not.toMatch(/@media\s*\(max-width:\s*900px\)[\s\S]*?\.state-list\s*\{[^}]*display:\s*none/)
   })
 
+  it('clips the mobile orbit horizontally without disabling vertical page overflow', () => {
+    expect(homeSource).toMatch(/@media\s*\(max-width:\s*900px\)[\s\S]*?\.home-page\s*\{[^}]*position:\s*relative[^}]*overflow-x:\s*clip[^}]*overflow-y:\s*visible/)
+  })
+
   it('surfaces real household daily state from /home/today', async () => {
     const wrapper = mount(Home, { global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } } })
     await vi.waitFor(() => expect(wrapper.text()).toContain('浇花'))
