@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, type CSSProperties } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { fetchHomeToday, fetchOrbit, fetchSetupStatus, type HomeToday, type OrbitNode, type SetupStatus } from '../api/platform'
 
@@ -8,6 +8,14 @@ const nodes = ref<OrbitNode[]>([])
 const setup = ref<SetupStatus | null>(null)
 const today = ref<HomeToday | null>(null)
 const loading = ref(true)
+
+function visualNodeStyle(index: number, total: number): CSSProperties {
+  const angle = -90 + 180 / Math.max(total, 1) + index * 360 / Math.max(total, 1)
+  return {
+    '--node-angle': `${angle}deg`,
+    '--node-radius': 'min(32vw, 340px)',
+  }
+}
 
 onMounted(async () => {
   try {
@@ -101,7 +109,8 @@ onMounted(async () => {
         :key="node.id"
         :to="node.href"
         :aria-label="`${node.label}：${node.detail}`"
-        :class="['visual-node', `node-${index + 1}`, `is-${node.status}`]"
+        :class="['visual-node', `is-${node.status}`]"
+        :style="visualNodeStyle(index, nodes.length)"
       />
       <div class="orbit-core" aria-hidden="true"><span>HOME</span><strong>ORBIT</strong></div>
     </div>
@@ -151,10 +160,9 @@ h1 { max-width: 650px; margin: 0; font-family: var(--font-display); font-size: c
 .orbit-core { position: absolute; top: 50%; left: 42%; display: grid; width: 190px; aspect-ratio: 1; place-content: center; border-radius: 50%; color: var(--surface-white); text-align: center; background: var(--device-ink); transform: translate(-50%, -50%); }
 .orbit-core span { font: 11px var(--font-utility); letter-spacing: .25em; }
 .orbit-core strong { font: 28px var(--font-display); }
-.visual-node { position: absolute; z-index: 2; width: 24px; height: 24px; border: 6px solid var(--surface-white); border-radius: 50%; background: var(--orbit-violet); box-shadow: 0 0 0 2px var(--orbit-violet); }
+.visual-node { position: absolute; z-index: 2; top: 50%; left: 42%; width: 24px; height: 24px; border: 6px solid var(--surface-white); border-radius: 50%; background: var(--orbit-violet); box-shadow: 0 0 0 2px var(--orbit-violet); transform: translate(-50%, -50%) rotate(var(--node-angle)) translateX(var(--node-radius)); }
 .visual-node:focus-visible { outline: 4px solid var(--charge-coral); outline-offset: 7px; }
 .visual-node.is-attention { background: var(--charge-coral); box-shadow: 0 0 0 2px var(--charge-coral); }
-.node-1 { top: 21%; left: 17%; }.node-2 { right: 9%; bottom: 27%; }
-@media (max-width: 900px) { .home-page { display: block; }.home-copy { padding: 32px 20px 120px; }.orbit-stage { position: absolute; top: 110px; right: -280px; width: 520px; min-height: 520px; opacity: .22; }.home-copy > * { position: relative; z-index: 2; } }
+@media (max-width: 900px) { .home-page { display: block; }.home-copy { padding: 32px 20px 120px; }.orbit-stage { position: absolute; top: 110px; right: -280px; width: 520px; min-height: 520px; opacity: .22; }.visual-node { display: none; }.home-copy > * { position: relative; z-index: 2; } }
 @media (max-width: 600px) { h1 { font-size: 42px; }.setup-callout { align-items: flex-start; flex-wrap: wrap; }.button-link, .setup-note { width: 100%; margin-left: 26px; }.home-lead { font-size: 15px; }.composer-row { min-height: 56px; } }
 </style>

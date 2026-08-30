@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import Discover from './Discover.vue'
+import discoverSource from './Discover.vue?raw'
 
 const installMock = vi.fn().mockResolvedValue({
   installation_id: 'i-1', deployment_id: 'd-1', agent_version_id: 'v-2', pinned_version: 2,
@@ -50,6 +51,21 @@ describe('Discover 市场发现页', () => {
     expect(wrapper.text()).toContain('市场采购助手')
     expect(wrapper.text()).toContain('12') // install count
     expect(wrapper.find('.orbit-visual').exists()).toBe(false) // 密集列表，无大轨道
+  })
+
+  it('keeps the official badge intrinsic and gives the content the flexible grid column', async () => {
+    const wrapper = mount(Discover)
+    await flushPromises()
+    const row = wrapper.find('.official-row')
+    const badge = row.find('.badge.official')
+    const main = row.find('.row-main')
+
+    expect(row.exists()).toBe(true)
+    expect(badge.element.nextElementSibling).toBe(main.element)
+    expect(badge.classes()).toContain('official')
+    expect(discoverSource).toMatch(/\.official-row\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/)
+    expect(discoverSource).toMatch(/\.official-row\s+\.badge\.official\s*\{[^}]*align-self:\s*(?:center|start)[^}]*justify-self:\s*start/)
+    expect(discoverSource).toMatch(/@media\s*\(max-width:\s*760px\)[\s\S]*?\.dense-list\s+\.official-row\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)/)
   })
 
   it('filters by search query through the API contract', async () => {

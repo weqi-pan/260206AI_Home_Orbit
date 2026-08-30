@@ -244,14 +244,15 @@ header > p { color: #625f76; }
 h2 { margin: 0 0 12px; font-family: var(--font-display); }
 .dense-list { margin: 0; padding: 0; list-style: none; }
 .dense-list li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 14px; min-height: 62px; border-top: 1px solid var(--orbit-mist); }
+.official-row { grid-template-columns: auto minmax(0, 1fr) auto; }
 .dense-list li:first-child { border-top: 0; }
-.row-main { display: grid; gap: 3px; text-align: left; }
+.row-main { display: grid; min-width: 0; gap: 3px; text-align: left; }
 .row-main small, .dense-list small { color: #777388; }
 .entry-link { border: 0; background: transparent; cursor: pointer; color: var(--device-ink); font: inherit; }
 .entry-link:hover strong { color: var(--orbit-violet); }
 .badge { display: inline-flex; align-items: center; margin-left: 10px; padding: 2px 10px; border-radius: 999px; font: 600 11px var(--font-utility); }
 .badge.official, .installed-mark { color: var(--orbit-violet); background: var(--orbit-mist); }
-.badge.official { margin-left: 0; }
+.official-row .badge.official { align-self: center; justify-self: start; margin-left: 0; }
 .meta { font: 12px var(--font-utility); color: #777388; }
 .row-action { color: var(--orbit-violet); }
 .empty { color: #9996a8; }
@@ -287,5 +288,5 @@ h3 { margin: 18px 0 8px; font-family: var(--font-display); }
 .grant-label.auto { color: #45425c; }
 .auto-mark { font: 600 11px var(--font-utility); color: #2d7a4f; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-@media (max-width: 760px) { .discover-page { padding: 28px 18px 110px; }.dense-list li { grid-template-columns: 1fr; }.facts { flex-wrap: wrap; } }
+@media (max-width: 760px) { .discover-page { padding: 28px 18px 110px; }.dense-list li { grid-template-columns: 1fr; }.dense-list .official-row { grid-template-columns: auto minmax(0, 1fr); align-items: start; }.official-row .row-action { grid-column: 2; justify-self: start; }.facts { flex-wrap: wrap; } }
 </style>

@@ -1,12 +1,16 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import Home from './Home.vue'
+import homeSource from './Home.vue?raw'
 
 vi.mock('../stores/auth', () => ({ useAuthStore: () => ({ account: { username: '测试用户' } }) }))
 vi.mock('../api/platform', () => ({
   fetchOrbit: () => Promise.resolve({ nodes: [
     { id: 'household', label: '家庭空间', kind: 'household', status: 'ready', href: '/household', detail: '1 位家庭成员' },
     { id: 'tasks', label: '今日任务', kind: 'tasks', status: 'attention', href: '/household', detail: '浇花' },
+    { id: 'shopping', label: '购物清单', kind: 'shopping', status: 'ready', href: '/household', detail: '1 项待购' },
+    { id: 'devices', label: '家庭设备', kind: 'devices', status: 'ready', href: '/devices', detail: '2 台在线' },
+    { id: 'support', label: '支持中心', kind: 'support', status: 'ready', href: '/support', detail: '没有新工单' },
   ] }),
   fetchSetupStatus: () => Promise.resolve({ ready: false, can_configure: false }),
   fetchHomeToday: () => Promise.resolve({
@@ -26,6 +30,21 @@ describe('Home Orbit', () => {
     const visual = wrapper.find('.visual-node')
     expect(visual.element.tagName).toBe('A')
     expect(visual.attributes('aria-label')).toContain('家庭空间')
+  })
+
+  it('positions every API-provided visual node at a unique orbit angle', async () => {
+    const wrapper = mount(Home, { global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to" :style="$attrs.style"><slot /></a>' } } } })
+    await vi.waitFor(() => expect(wrapper.findAll('.visual-node')).toHaveLength(5))
+
+    const positions = wrapper.findAll('.visual-node').map((node) => node.attributes('style') ?? '')
+    expect(new Set(positions).size).toBe(5)
+    expect(positions.every((style) => style.includes('--node-angle:'))).toBe(true)
+    expect(positions.every((style) => style.includes('--node-radius:'))).toBe(true)
+  })
+
+  it('hides decorative visual nodes at mobile widths while preserving the state list', () => {
+    expect(homeSource).toMatch(/@media\s*\(max-width:\s*900px\)[\s\S]*?\.visual-node\s*\{[^}]*display:\s*none/)
+    expect(homeSource).not.toMatch(/@media\s*\(max-width:\s*900px\)[\s\S]*?\.state-list\s*\{[^}]*display:\s*none/)
   })
 
   it('surfaces real household daily state from /home/today', async () => {
