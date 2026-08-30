@@ -45,7 +45,7 @@ def test_phase8_revision_upgrades_and_roundtrips(tmp_path):
         }.items():
             assert expected <= _index_names(engine, table), (table, expected - _index_names(engine, table))
         with engine.begin() as connection:
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20260828_0015"
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == "20260828_0016"
     finally:
         engine.dispose()
 
@@ -74,7 +74,7 @@ def test_required_revision_consistent_with_phase8_head(settings):
     from backend.app.db.models import Base
     from backend.app.db.session import REQUIRED_DATABASE_REVISION
 
-    assert REQUIRED_DATABASE_REVISION == "20260828_0015"
+    assert REQUIRED_DATABASE_REVISION == "20260828_0016"
     engine = create_engine(f"sqlite:///{settings.database_url.split('///')[-1]}")
     Base.metadata.create_all(engine)
     try:
