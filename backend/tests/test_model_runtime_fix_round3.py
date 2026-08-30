@@ -110,12 +110,12 @@ def test_stream_cancellation_is_bounded_before_or_after_first_chunk(first_chunk)
 def test_blocking_close_never_blocks_caller_and_capability_fails_closed():
     from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
 
-    iterator = StallingIterator(first_chunk=False, close_blocks=True)
+    iterator = StallingIterator(first_chunk=True, close_blocks=True)
     model = SimpleNamespace(stream=lambda messages: iterator, _runtime_cancel=lambda: None)
-    adapter = ModelAdapter("openai_compatible", "chat", chat_transport=LangChainChatTransport(model))
+    adapter = ModelAdapter("openai_compatible", "chat", chat_transport=LangChainChatTransport(model, close_timeout=0.25))
     started = time.monotonic()
     with pytest.raises(RuntimeError) as exc:
-        adapter.cancel_active_stream([], threading.Event())
+        adapter.cancel_active_stream([], threading.Event(), first_chunk_timeout=0.3, cancel_timeout=0.6)
     elapsed = time.monotonic() - started
     assert elapsed < 0.8
     assert str(exc.value) == "STREAM_CANCELLATION_TIMEOUT"

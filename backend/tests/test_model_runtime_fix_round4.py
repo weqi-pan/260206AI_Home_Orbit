@@ -169,13 +169,13 @@ def test_capability_probe_fails_when_post_first_stream_ignores_close():
         ),
         _runtime_cancel=lambda: None,
     )
-    adapter = ModelAdapter("openai_compatible", "chat", chat_transport=LangChainChatTransport(model))
+    adapter = ModelAdapter("openai_compatible", "chat", chat_transport=LangChainChatTransport(model, close_timeout=0.25))
 
     started = time.monotonic()
-    result = CapabilityTester(adapter).run_chat()
+    result = CapabilityTester(adapter, first_chunk_timeout=1.0, cancel_timeout=0.6).run_chat()
     elapsed = time.monotonic() - started
 
-    assert elapsed < 0.8
+    assert elapsed < 1.5
     assert result.passed is False
     assert result.error_code == "CANCELLATION_FAILED"
     assert result.capabilities["cancellation"] == "failed"

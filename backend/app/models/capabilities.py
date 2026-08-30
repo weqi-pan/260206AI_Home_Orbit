@@ -14,8 +14,10 @@ class CapabilityEvidence:
 
 
 class CapabilityTester:
-    def __init__(self, adapter):
+    def __init__(self, adapter, *, first_chunk_timeout=20.0, cancel_timeout=3.0):
         self.adapter = adapter
+        self.first_chunk_timeout = first_chunk_timeout
+        self.cancel_timeout = cancel_timeout
 
     def run_chat(self) -> CapabilityEvidence:
         states = {name: "failed" for name in ("generation", "streaming", "cancellation", "tool_calling", "structured_output")}
@@ -36,7 +38,11 @@ class CapabilityTester:
             events.append(streamed)
             stage = "cancellation"
             cancelled = threading.Event()
-            self.adapter.cancel_active_stream(messages, cancelled)
+            self.adapter.cancel_active_stream(
+                messages, cancelled,
+                first_chunk_timeout=self.first_chunk_timeout,
+                cancel_timeout=self.cancel_timeout,
+            )
             states["cancellation"] = "passed"
             stage = "tool_calling"
             tool = self.adapter.tool_call(messages)
@@ -47,10 +53,13 @@ class CapabilityTester:
             states["structured_output"] = "passed"
             events.append(structured)
         except Exception as exc:
-            return CapabilityEvidence(False, states, events, {
+            code = {
                 "generation": "GENERATION_FAILED", "streaming": "STREAMING_FAILED", "cancellation": "CANCELLATION_FAILED",
                 "tool_calling": "TOOL_CALLING_FAILED", "structured_output": "STRUCTURED_OUTPUT_FAILED",
-            }[stage])
+            }[stage]
+            if stage == "cancellation" and str(exc) == "STREAM_FIRST_CHUNK_TIMEOUT":
+                code = "STREAM_FIRST_CHUNK_TIMEOUT"
+            return CapabilityEvidence(False, states, events, code)
         return CapabilityEvidence(True, states, events)
 
     def run_embedding(self, expected_dimensions: int | None) -> CapabilityEvidence:

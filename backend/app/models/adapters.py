@@ -1,6 +1,7 @@
 import json
 import queue
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -41,7 +42,7 @@ class ModelAdapter:
         ))
         return StreamEvent("text", text=text)
 
-    def cancel_active_stream(self, messages, cancel_event) -> None:
+    def cancel_active_stream(self, messages, cancel_event, *, first_chunk_timeout=20.0, cancel_timeout=3.0) -> None:
         outcome = []
         first_chunk = threading.Event()
 
@@ -68,9 +69,11 @@ class ModelAdapter:
 
         worker = threading.Thread(target=consume, name="model-stream-cancel-probe", daemon=True)
         worker.start()
-        first_chunk.wait(0.05)
+        got_first_chunk = first_chunk.wait(first_chunk_timeout)
         cancel_event.set()
-        worker.join(timeout=0.5)
+        worker.join(timeout=cancel_timeout)
+        if not got_first_chunk:
+            raise RuntimeError("STREAM_FIRST_CHUNK_TIMEOUT")
         if worker.is_alive():
             raise RuntimeError("STREAM_CANCELLATION_TIMEOUT")
         if outcome:
@@ -98,8 +101,9 @@ class ModelAdapter:
 
 
 class LangChainChatTransport:
-    def __init__(self, chat_model):
+    def __init__(self, chat_model, close_timeout=2.0):
         self.chat_model = chat_model
+        self.close_timeout = close_timeout
 
     def generate(self, *, model, messages, tools=None, structured_schema=None):
         runnable = self.chat_model
@@ -150,10 +154,10 @@ class LangChainChatTransport:
                     thread = threading.Thread(target=operation, name=f"model-stream-close-{name}", daemon=True)
                     thread.start()
                     operations.append(thread)
-            deadline = __import__("time").monotonic() + 0.25
+            deadline = time.monotonic() + self.close_timeout
             for thread in operations:
-                thread.join(timeout=max(0, deadline - __import__("time").monotonic()))
-            worker.join(timeout=max(0, deadline - __import__("time").monotonic()))
+                thread.join(timeout=max(0, deadline - time.monotonic()))
+            worker.join(timeout=max(0, deadline - time.monotonic()))
             if worker.is_alive() or any(thread.is_alive() for thread in operations):
                 cancellation_error = RuntimeError("STREAM_CANCELLATION_TIMEOUT")
                 raise cancellation_error
