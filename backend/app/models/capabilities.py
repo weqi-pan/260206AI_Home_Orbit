@@ -36,14 +36,6 @@ class CapabilityTester:
                 raise RuntimeError("STREAM_EMPTY")
             states["streaming"] = "passed"
             events.append(streamed)
-            stage = "cancellation"
-            cancelled = threading.Event()
-            self.adapter.cancel_active_stream(
-                messages, cancelled,
-                first_chunk_timeout=self.first_chunk_timeout,
-                cancel_timeout=self.cancel_timeout,
-            )
-            states["cancellation"] = "passed"
             stage = "tool_calling"
             tool = self.adapter.tool_call(messages)
             states["tool_calling"] = "passed"
@@ -52,6 +44,14 @@ class CapabilityTester:
             structured = self.adapter.structured_output(messages)
             states["structured_output"] = "passed"
             events.append(structured)
+            stage = "cancellation"
+            cancelled = threading.Event()
+            self.adapter.cancel_active_stream(
+                messages, cancelled,
+                first_chunk_timeout=self.first_chunk_timeout,
+                cancel_timeout=self.cancel_timeout,
+            )
+            states["cancellation"] = "passed"
         except Exception as exc:
             code = {
                 "generation": "GENERATION_FAILED", "streaming": "STREAMING_FAILED", "cancellation": "CANCELLATION_FAILED",

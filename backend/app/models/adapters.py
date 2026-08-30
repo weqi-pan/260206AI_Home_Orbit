@@ -91,7 +91,15 @@ class ModelAdapter:
         return StreamEvent("tool", tool=calls[0])
 
     def structured_output(self, messages) -> StreamEvent:
-        result = self.chat_transport.generate(model=self.model, messages=messages, structured_schema={"type": "object"})
+        schema = {
+            "title": "CapabilityProbe",
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}},
+            "required": ["ok"],
+            "additionalProperties": False,
+        }
+        prompt = [*messages, {"role": "user", "content": "Return JSON with ok=true."}]
+        result = self.chat_transport.generate(model=self.model, messages=prompt, structured_schema=schema)
         return StreamEvent("structured", structured=json.loads(content_text(result.get("content"))))
 
     def embed(self, texts):

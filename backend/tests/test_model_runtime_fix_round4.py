@@ -178,5 +178,11 @@ def test_capability_probe_fails_when_post_first_stream_ignores_close():
     assert elapsed < 1.5
     assert result.passed is False
     assert result.error_code == "CANCELLATION_FAILED"
-    assert result.capabilities["cancellation"] == "failed"
+    assert result.capabilities == {
+        "generation": "passed",
+        "streaming": "passed",
+        "cancellation": "failed",
+        "tool_calling": "passed",
+        "structured_output": "passed",
+    }
     assert stalled.close_called.is_set()

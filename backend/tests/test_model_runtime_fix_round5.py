@@ -110,9 +110,121 @@ def test_capability_evidence_distinguishes_first_chunk_timeout_from_cancellation
         "generation": "passed",
         "streaming": "passed",
         "cancellation": "failed",
-        "tool_calling": "failed",
-        "structured_output": "failed",
+        "tool_calling": "passed",
+        "structured_output": "passed",
     }
+
+
+def test_structured_output_uses_valid_schema_and_explicit_capability_prompt():
+    from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
+
+    class StructuredRunnable:
+        def invoke(self, messages):
+            assert messages[-1] == {"role": "user", "content": "Return JSON with ok=true."}
+            return {"parsed": {"ok": True}, "raw": SimpleNamespace(content='{"ok":true}')}
+
+    class ChatModel:
+        def with_structured_output(self, schema, include_raw=True):
+            assert include_raw is True
+            assert schema == {
+                "title": "CapabilityProbe",
+                "type": "object",
+                "properties": {"ok": {"type": "boolean"}},
+                "required": ["ok"],
+                "additionalProperties": False,
+            }
+            return StructuredRunnable()
+
+    adapter = ModelAdapter("openai_compatible", "chat", chat_transport=LangChainChatTransport(ChatModel()))
+
+    event = adapter.structured_output([{"role": "user", "content": "Reply with hello."}])
+
+    assert event.structured == {"ok": True}
+
+
+def test_full_capability_probe_finishes_non_destructive_checks_before_closing_shared_client():
+    from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
+    from backend.app.models.capabilities import CapabilityTester
+
+    calls = []
+
+    class SharedHttpClient:
+        closed = False
+
+        def close(self):
+            calls.append("cancellation")
+            self.closed = True
+
+    client = SharedHttpClient()
+
+    class CancellationIterator:
+        def __init__(self):
+            self.first = True
+            self.released = threading.Event()
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            if self.first:
+                self.first = False
+                return SimpleNamespace(content="first")
+            self.released.wait(2)
+            raise StopIteration
+
+        def close(self):
+            self.released.set()
+
+    class Runnable:
+        def __init__(self, operation):
+            self.operation = operation
+
+        def invoke(self, messages):
+            assert client.closed is False
+            calls.append(self.operation)
+            if self.operation == "tool_calling":
+                return SimpleNamespace(content="", tool_calls=[{"name": "echo", "args": {}}])
+            return {"parsed": {"ok": True}, "raw": SimpleNamespace(content='{"ok":true}')}
+
+    class ChatModel:
+        def __init__(self):
+            self.stream_calls = 0
+            self._runtime_cancel = client.close
+
+        def invoke(self, messages):
+            assert client.closed is False
+            calls.append("generation")
+            return SimpleNamespace(content="hello", tool_calls=[])
+
+        def stream(self, messages):
+            assert client.closed is False
+            self.stream_calls += 1
+            if self.stream_calls == 1:
+                calls.append("streaming")
+                return iter([SimpleNamespace(content="hello")])
+            return CancellationIterator()
+
+        def bind_tools(self, tools):
+            return Runnable("tool_calling")
+
+        def with_structured_output(self, schema, include_raw=True):
+            assert schema["title"] == "CapabilityProbe"
+            return Runnable("structured_output")
+
+    adapter = ModelAdapter("openai_compatible", "chat", chat_transport=LangChainChatTransport(ChatModel()))
+
+    result = CapabilityTester(adapter, first_chunk_timeout=0.5, cancel_timeout=0.5).run_chat()
+
+    assert result.passed is True
+    assert result.error_code is None
+    assert result.capabilities == {
+        "generation": "passed",
+        "streaming": "passed",
+        "cancellation": "passed",
+        "tool_calling": "passed",
+        "structured_output": "passed",
+    }
+    assert calls == ["generation", "streaming", "tool_calling", "structured_output", "cancellation"]
 
 
 class SlowTeardownIterator:

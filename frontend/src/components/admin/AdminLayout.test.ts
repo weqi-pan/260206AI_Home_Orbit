@@ -5,6 +5,22 @@ import AdminLayout from './AdminLayout.vue'
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('../../stores/auth', () => ({ useAuthStore: () => ({ account: { username: 'admin' }, logout: vi.fn() }) }))
 
+describe('desktop admin layout', () => {
+  it('places the sidebar and main shell in the same grid row', () => {
+    const wrapper = mount(AdminLayout, { attachTo: document.body, global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' }, RouterView: true } } })
+    const aside = wrapper.find('.admin-aside')
+    const shell = wrapper.find('.admin-shell-background')
+
+    expect(aside.exists()).toBe(true)
+    expect(shell.find('#admin-main').exists()).toBe(true)
+    expect(getComputedStyle(aside.element).gridColumn).toBe('1')
+    expect(getComputedStyle(aside.element).gridRow).toBe('1')
+    expect(getComputedStyle(shell.element).gridColumn).toBe('2')
+    expect(getComputedStyle(shell.element).gridRow).toBe('1')
+    wrapper.unmount()
+  })
+})
+
 describe('mobile admin drawer', () => {
   it('contains navigation, return and logout actions with focus restoration', async () => {
     const wrapper = mount(AdminLayout, { attachTo: document.body, global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' }, RouterView: true } } })
