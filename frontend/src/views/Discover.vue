@@ -244,7 +244,7 @@ header > p { color: #625f76; }
 h2 { margin: 0 0 12px; font-family: var(--font-display); }
 .dense-list { margin: 0; padding: 0; list-style: none; }
 .dense-list li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 14px; min-height: 62px; border-top: 1px solid var(--orbit-mist); }
-.official-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+.dense-list .official-row { grid-template-columns: auto minmax(0, 1fr) auto; }
 .dense-list li:first-child { border-top: 0; }
 .row-main { display: grid; min-width: 0; gap: 3px; text-align: left; }
 .row-main small, .dense-list small { color: #777388; }

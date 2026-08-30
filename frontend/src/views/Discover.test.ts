@@ -63,7 +63,7 @@ describe('Discover 市场发现页', () => {
     expect(row.exists()).toBe(true)
     expect(badge.element.nextElementSibling).toBe(main.element)
     expect(badge.classes()).toContain('official')
-    expect(discoverSource).toMatch(/\.official-row\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/)
+    expect(discoverSource).toMatch(/\.dense-list\s+\.official-row\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/)
     expect(discoverSource).toMatch(/\.official-row\s+\.badge\.official\s*\{[^}]*align-self:\s*(?:center|start)[^}]*justify-self:\s*start/)
     expect(discoverSource).toMatch(/@media\s*\(max-width:\s*760px\)[\s\S]*?\.dense-list\s+\.official-row\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)/)
   })
