@@ -14,10 +14,14 @@ export function extractErrorMessage(body: unknown, fallback: string): string {
   if (body && typeof body === 'object' && 'detail' in body) {
     const detail = (body as ApiErrorBody).detail
     if (typeof detail === 'string' && detail) return detail
+    if (detail && typeof detail === 'object' && !Array.isArray(detail) && 'code' in detail) {
+      const code = (detail as { code?: unknown }).code
+      if (typeof code === 'string' && code) return code
+    }
     if (Array.isArray(detail)) {
-      const messages = detail.map((item) =>
-        item && typeof item === 'object' && 'msg' in item ? String((item as { msg: unknown }).msg) : String(item),
-      )
+      const messages = detail
+        .map((item) => (item && typeof item === 'object' && 'msg' in item ? (item as { msg: unknown }).msg : item))
+        .filter((item): item is string => typeof item === 'string' && Boolean(item))
       if (messages.length) return messages.join('; ')
     }
   }

@@ -1,5 +1,5 @@
 import { useAuthStore } from '../stores/auth'
-import http, { forceLogout, refreshAccessToken } from './http'
+import http, { extractErrorMessage, forceLogout, refreshAccessToken } from './http'
 
 export interface ChatSessionInfo {
   id: string
@@ -166,13 +166,12 @@ export async function streamChat(
   }
   if (!response.ok) {
     const text = await response.text().catch(() => '')
-    let detail = ''
+    let body: unknown
     try {
-      detail = String((JSON.parse(text) as { detail?: unknown }).detail ?? '')
+      body = JSON.parse(text)
     } catch {
-      detail = text
     }
-    throw new Error(detail || `请求失败（${response.status}）`)
+    throw new Error(extractErrorMessage(body, `请求失败（${response.status}）`))
   }
   await readStream(response, callbacks)
 }
