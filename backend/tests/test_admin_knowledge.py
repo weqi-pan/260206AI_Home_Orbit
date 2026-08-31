@@ -1,6 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
 
@@ -45,6 +46,19 @@ class FakeFaqGenerator:
         return [{"question": "如何维护？", "answer": "定期清洁。"}]
 
 
+@pytest.fixture(autouse=True)
+def configured_embedding(client, app, monkeypatch):
+    from backend.app.db.models import Account, HouseholdMember
+    from backend.tests.test_model_runtime_fix_round1 import MASTER_KEY, configured_runtime
+
+    monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
+    with app.state.database.session_factory() as session:
+        admin = session.scalar(select(Account).where(Account.username == "admin"))
+        household_id = session.scalar(select(HouseholdMember.household_id).where(
+            HouseholdMember.account_id == admin.id))
+        configured_runtime(session, household_id, purpose="embedding")
+
+
 def test_knowledge_upload_validates_type_size_and_md5(client, app, settings):
     token = admin_token(client, settings)
     app.state.vector_store_service = FakeVectorStore()
@@ -66,6 +80,29 @@ def test_knowledge_upload_validates_type_size_and_md5(client, app, settings):
     assert first.status_code == 201
     assert duplicate.status_code == 409
     assert client.get("/api/knowledge/files", headers=bearer(token)).json()[0]["filename"] == "guide.txt"
+
+
+def test_knowledge_upload_without_embedding_returns_stable_code_before_vector_backend(client, app, settings):
+    from backend.app.db.models import KnowledgeFile, ModelPurposeBinding
+
+    class UnexpectedVectorBackend(FakeVectorStore):
+        def add_file(self, *args, **kwargs):
+            raise AssertionError("embedding 未配置时不得访问 vector backend")
+
+    with app.state.database.session_factory.begin() as session:
+        session.delete(session.get(ModelPurposeBinding, "embedding"))
+    app.state.vector_store_service = UnexpectedVectorBackend()
+    token = admin_token(client, settings)
+
+    response = client.post(
+        "/api/knowledge/files", headers=bearer(token), files={"file": ("disabled.txt", b"content", "text/plain")}
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "EMBEDDING_NOT_CONFIGURED"
+    assert not list(Path(settings.knowledge_upload_path).glob("*"))
+    with app.state.database.session_factory() as session:
+        assert session.scalar(select(KnowledgeFile).where(KnowledgeFile.filename == "disabled.txt")) is None
 
 
 def test_soft_deleted_same_md5_upload_restores_record_and_reindexes(client, app, settings):

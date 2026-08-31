@@ -329,6 +329,7 @@ def test_public_knowledge_is_revectorized_into_installer_household(client, app, 
     monkeypatch.setattr(ModelRuntimeService, "build_chat_model", lambda self, resolved: KnowledgeChatModel())
     with app.state.database.session_factory() as db:
         configured_runtime(db, household_id)
+        configured_runtime(db, household_id, purpose="embedding")
     trial = client.post(f"/api/creator/drafts/{draft['id']}/trial", headers=headers, json={"granted_tool_keys": []})
     assert trial.status_code == 200 and trial.json()["status"] in {"succeeded", "completed"}, trial.text
     assert all(case["status"] == "passed" for case in trial.json()["cases"]), trial.text
@@ -342,7 +343,6 @@ def test_public_knowledge_is_revectorized_into_installer_household(client, app, 
     installer, installer_account = _register(client, "market-knowledge-user")
     installer_household = _household_of(app, installer_account)
     with app.state.database.session_factory() as db:
-        configured_runtime(db, installer_household, purpose="embedding")
         # primary_chat 绑定是平台级：复用既有档案并给安装家庭授权与配额
         from backend.app.db.models import ModelGrant, ModelPurposeBinding, UsageQuota
 

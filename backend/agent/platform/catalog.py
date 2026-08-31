@@ -111,6 +111,8 @@ def _compare(arguments, context):
 
 
 def _knowledge(arguments, context):
+    if context.vector_store_service is None:
+        return "知识增强未启用，暂时无法检索设备知识。"
     rows = _repositories(context).approved_faq(context.household_id, arguments["query"])
     faq = "\n".join(f"Q:{row.question}\nA:{row.answer}" for row in rows)
     documents = []
@@ -326,7 +328,7 @@ def _notification_read(arguments, context):
 def _household_knowledge(arguments, context):
     """Household-isolated vector retrieval only - never an SQL/FAQ fallback."""
     if context.vector_store_service is None:
-        return "知识检索不可用：MODEL_NOT_CONFIGURED"
+        return "知识增强未启用，暂时无法检索家庭知识。"
     try:
         documents = context.vector_store_service.search(arguments["query"], household_id=context.household_id,
                                                         skill_version_ids=context.skill_version_ids)

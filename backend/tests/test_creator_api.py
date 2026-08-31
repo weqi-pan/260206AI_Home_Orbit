@@ -180,6 +180,31 @@ def test_knowledge_upload_scan_list_delete(client, app, monkeypatch):
     assert not store.has_file(asset_id)
 
 
+def test_delete_creator_knowledge_without_embedding_skips_vector_backend(client, app):
+    from backend.app.db.models import ModelPurposeBinding
+
+    headers = _auth(client)
+    draft_id = _make_draft(client, headers)
+    uploaded = client.post(f"/api/creator/drafts/{draft_id}/knowledge", headers=headers,
+                           files={"file": ("菜谱.txt", io.BytesIO("白切鸡做法".encode("utf-8")), "text/plain")})
+    asset_id = uploaded.json()["id"]
+
+    class UnexpectedVectorBackend:
+        def delete_file(self, *args, **kwargs):
+            raise AssertionError("embedding 未配置时不得访问 vector backend")
+
+    with app.state.database.session_factory.begin() as session:
+        binding = session.get(ModelPurposeBinding, "embedding")
+        if binding:
+            session.delete(binding)
+    app.state.vector_store_service = UnexpectedVectorBackend()
+
+    response = client.delete(f"/api/creator/drafts/{draft_id}/knowledge/{asset_id}", headers=headers)
+
+    assert response.status_code == 204
+    assert client.get(f"/api/creator/drafts/{draft_id}/knowledge", headers=headers).json() == []
+
+
 def test_reupload_after_delete_rescans_without_conflict(client, app, monkeypatch):
     """Fix Round 1 Finding 2: 软删行占用 (draft, md5) 唯一约束，重传不得 500。"""
     headers = _auth(client)

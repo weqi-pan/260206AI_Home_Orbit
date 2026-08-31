@@ -66,7 +66,7 @@ onMounted(refresh)
   <section class="setup-page" aria-labelledby="setup-title">
     <header class="page-head">
       <div><p class="eyebrow">INITIALIZATION / 初始化设置</p><h1 id="setup-title">模型控制台</h1></div>
-      <div class="readiness" role="status"><span :class="['status-dot', { ready: setup?.ready }]" aria-hidden="true"></span><div><strong>{{ setup?.ready ? '平台已就绪' : '配置尚未闭环' }}</strong><p>{{ setup?.master_key_valid ? '主密钥有效' : '主密钥缺失或格式无效' }}</p></div></div>
+      <div class="readiness" role="status"><span :class="['status-dot', { ready: setup?.ai_ready }]" aria-hidden="true"></span><div><strong>{{ setup?.ai_ready ? '核心 AI 已就绪' : '核心 AI 等待配置' }}</strong><p>{{ setup?.master_key_valid ? (setup?.embedding_ready ? '知识增强已启用' : '知识增强为可选能力，当前未启用') : '主密钥缺失或格式无效' }}</p></div></div>
     </header>
     <p class="lead">按连接、档案、证据、绑定四道检查完成初始化。每一步都留下可审查的运行证据，不回显凭据。</p>
     <p v-if="message" class="notice" role="status">{{ message }}</p>
@@ -108,7 +108,12 @@ onMounted(refresh)
       </div>
     </section>
 
-    <section class="requirements"><h2>就绪检查</h2><ul><li v-for="purpose in setup?.required_purposes" :key="purpose"><code>{{ purpose }}</code><span>{{ setup?.configured_purposes.includes(purpose) ? '已验证并绑定' : '等待配置' }}</span></li></ul></section>
+    <section class="requirements">
+      <h2>核心 AI 就绪检查</h2>
+      <ul><li v-for="purpose in setup?.required_purposes" :key="purpose"><code>{{ purpose }}</code><span>{{ setup?.configured_purposes.includes(purpose) ? '已验证并绑定' : '等待配置' }}</span></li></ul>
+      <h2 class="optional-title">可选能力</h2>
+      <ul><li v-for="purpose in setup?.optional_purposes" :key="purpose"><code>{{ purpose }}</code><span>{{ setup?.configured_purposes.includes(purpose) ? '已验证并绑定' : '等待配置' }}</span></li></ul>
+    </section>
   </section>
 </template>
 
@@ -123,5 +128,6 @@ h1 { margin: 10px 0 0; font: 700 52px/1 var(--font-display); } h2 { margin: 4px 
 .wizard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }.work-card,.evidence-panel,.requirements { background: white; border: 1px solid #d9d7e5; border-radius: 16px; padding: 24px; box-shadow: 0 12px 32px rgba(33,29,79,.05); }.step-head { display: flex; gap: 12px; align-items: baseline; margin-bottom: 20px; }.step-head>span { font: 600 11px var(--font-utility); text-transform: uppercase; color: var(--charge-coral); }
 label { display: grid; gap: 7px; margin: 14px 0; font: 600 12px var(--font-utility); } input,select { min-height: 44px; border: 1px solid #bbb8cd; border-radius: 9px; padding: 0 12px; color: var(--device-ink); background: var(--surface-white); } input:focus-visible,select:focus-visible,button:focus-visible { outline: 3px solid #bbb5ed; outline-offset: 2px; }.split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 button { min-height: 44px; border: 0; border-radius: 9px; padding: 0 18px; color: white; background: var(--device-ink); font-weight: 700; cursor: pointer; }button:disabled { opacity: .48; cursor: not-allowed; }.secondary { background: var(--orbit-violet); }.key-proof { font: 13px var(--font-utility); }.evidence-panel,.requirements { margin-top: 20px; }.model-row { display: flex; justify-content: space-between; gap: 20px; align-items: center; border-top: 1px solid var(--orbit-mist); padding: 16px 0; }.model-row p { margin: 4px 0 0; color: #77728c; }.proof { margin-top: 16px; padding: 18px; border: 1px solid #91c8ad; background: #f3fbf6; border-radius: 12px; }.proof.failed { border-color: #e2a89f; background: #fff5f2; }.proof ul,.requirements ul { list-style: none; padding: 0; }.proof li,.requirements li { display: flex; justify-content: space-between; padding: 10px 0; border-top: 1px solid #d9d7e5; }.binding { display: flex; justify-content: flex-end; gap: 10px; }.empty { color: #77728c; padding: 18px 0; }
+.optional-title { margin-top: 24px; }
 @media (max-width: 760px) { .setup-page { padding: 28px 18px 72px; }.page-head { align-items: stretch; flex-direction: column; }.readiness { min-width: 0; } h1 { font-size: 40px; }.wizard-grid { grid-template-columns: 1fr; }.split { grid-template-columns: 1fr; }.model-row { align-items: stretch; flex-direction: column; }.binding { flex-direction: column; } }
 </style>

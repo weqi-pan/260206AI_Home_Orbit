@@ -67,7 +67,7 @@ def rag_summarize(query: str, runtime: ToolRuntime) -> str:
     """从向量知识库检索参考资料。"""
     service = _value(runtime, "vector_store_service")
     if not service:
-        return "知识库服务当前不可用。"
+        return "知识增强未启用，暂时无法检索知识库。"
     try:
         return "\n".join(doc.page_content for doc in service.search(query)) or "知识库中未找到相关资料。"
     except Exception as exc:

@@ -108,13 +108,18 @@ def configured_vector_store(session_factory, persist_directory, runtime_factory=
     from backend.app.models.adapters import build_langchain_embeddings
     from backend.app.models.endpoint_security import safe_http_client
     from backend.app.models.runtime_service import ModelRuntimeService
+    from backend.app.models.runtime_service import ModelRuntimeError
 
     def resolve_store():
         with session_factory() as session:
             pointer = session.get(ActiveEmbeddingCollection, "knowledge")
             if pointer is None:
-                raise VectorStoreUnavailable("MODEL_NOT_CONFIGURED")
-            runtime = (runtime_factory or ModelRuntimeService)(session).resolve("embedding", require_grant=False)
+                raise VectorStoreUnavailable("EMBEDDING_NOT_CONFIGURED")
+            try:
+                runtime = (runtime_factory or ModelRuntimeService)(session).resolve("embedding", require_grant=False)
+            except ModelRuntimeError as exc:
+                code = "EMBEDDING_NOT_CONFIGURED" if exc.code == "MODEL_NOT_CONFIGURED" else exc.code
+                raise VectorStoreUnavailable(code) from exc
             if runtime.snapshot.model_id != pointer.model_id:
                 raise VectorStoreUnavailable("EMBEDDING_COLLECTION_STALE")
             profile = runtime.snapshot.profile

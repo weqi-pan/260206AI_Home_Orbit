@@ -130,7 +130,7 @@ def orbit(account: Account = Depends(get_current_account), session: Session = De
     if not setup.ready:
         nodes.append(OrbitNode(
             id="setup", label="完成模型初始化", kind="setup", status="attention", href="/admin/setup",
-            detail="主聊天与向量模型尚未配置",
+            detail="主聊天模型尚未配置",
         ))
     nodes.append(OrbitNode(
         id="household", label="家庭空间", kind="household", status="ready", href="/household",

@@ -155,3 +155,15 @@ def test_knowledge_search_uses_vector_scope_only_without_sql_fallback(app, homes
         homes["demo_home"]: ["家庭知识：红烧肉需要焯水"]}))
     result = _handler("household.knowledge.search")({"query": "红烧肉"}, context)
     assert "红烧肉需要焯水" in str(result)
+
+
+def test_knowledge_tools_degrade_without_embedding_and_non_knowledge_tools_still_work(app, homes):
+    context = _context(app, homes, vector_store_service=None)
+
+    household = _handler("household.knowledge.search")({"query": "红烧肉"}, context)
+    device = _handler("device.knowledge.search")({"query": "保修"}, context)
+    inventory = _handler("device.inventory")({"model_id": "R1-Lite"}, context)
+
+    assert household == "知识增强未启用，暂时无法检索家庭知识。"
+    assert device == "知识增强未启用，暂时无法检索设备知识。"
+    assert "台" in inventory

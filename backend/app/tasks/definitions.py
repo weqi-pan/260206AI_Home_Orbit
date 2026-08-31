@@ -77,6 +77,10 @@ def knowledge_vectorize(session, payload, record):
     创作器资产带 household + skill_version 元数据，与官方/其他家庭检索隔离；
     市场安装以 target_household_id 把已审核知识复制进安装家庭（隔离元数据）。
     """
+    from backend.app.api.setup import purpose_ready
+
+    if not purpose_ready(session, "embedding"):
+        raise _permanent("EMBEDDING_NOT_CONFIGURED")
     creator_asset_id = payload.get("creator_asset_id")
     if creator_asset_id:
         if payload.get("target_household_id"):

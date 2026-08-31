@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 class FakeCollection:
     def __init__(self):
@@ -129,3 +131,53 @@ def test_vector_store_scopes_file_copy_per_skill_version(tmp_path: Path):
     ]
     assert store.ids == ["kb:file-1:sv-1:0", "kb:file-1:sv-2:0"]
     assert [document.metadata["skill_version_id"] for document in store.documents] == ["sv-1", "sv-2"]
+
+
+def test_configured_vector_store_reports_embedding_not_configured_before_store_creation():
+    from backend.app.models.runtime_service import ModelRuntimeError
+    from backend.rag.vector_store import VectorStoreUnavailable, configured_vector_store
+
+    class Runtime:
+        def resolve(self, purpose, require_grant=False):
+            assert purpose == "embedding"
+            raise ModelRuntimeError("MODEL_NOT_CONFIGURED")
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get(self, model, key):
+            return SimpleNamespace(collection_name="knowledge", model_id="embed-model")
+
+    service = configured_vector_store(lambda: Session(), "unused", runtime_factory=lambda session: Runtime(),
+                                      store_factory=lambda *args: (_ for _ in ()).throw(
+                                          AssertionError("embedding 未配置时不得创建 store")))
+
+    with pytest.raises(VectorStoreUnavailable) as exc:
+        service.search("query")
+    assert str(exc.value) == "EMBEDDING_NOT_CONFIGURED"
+
+
+def test_configured_vector_store_reports_embedding_not_configured_without_active_collection():
+    from backend.rag.vector_store import VectorStoreUnavailable, configured_vector_store
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get(self, model, key):
+            return None
+
+    service = configured_vector_store(lambda: Session(), "unused",
+                                      store_factory=lambda *args: (_ for _ in ()).throw(
+                                          AssertionError("embedding 未配置时不得创建 store")))
+
+    with pytest.raises(VectorStoreUnavailable) as exc:
+        service.search("query")
+    assert str(exc.value) == "EMBEDDING_NOT_CONFIGURED"

@@ -170,15 +170,15 @@ def test_chat_title_failure_is_swallowed_and_default_title_kept(client, app, set
         assert session.get(ChatSession, chat_id).title == "新对话"
 
 
-def test_chat_runtime_injects_lazy_vector_store_and_rag_has_clear_key_fallback(client, app, settings):
+def test_chat_without_embedding_does_not_inject_vector_store_and_rag_degrades_cleanly(client, app, settings):
     from backend.agent.tools.agent_tools import rag_summarize
 
     class ContextRunner:
         def bind_model(self, run_id, model): pass
         def stream(self, messages, context):
-            assert context.vector_store_service is app.state.vector_store_service
+            assert context.vector_store_service is None
             fallback = rag_summarize.func(query="售后", runtime=type("Runtime", (), {"context": context})())
-            assert "MODEL_NOT_CONFIGURED" in fallback
+            assert fallback == "知识增强未启用，暂时无法检索知识库。"
             yield {"event": "token", "data": {"content": "完成"}}
 
     app.state.agent_runner = ContextRunner()

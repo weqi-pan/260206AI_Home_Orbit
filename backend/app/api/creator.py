@@ -18,6 +18,7 @@ from backend.app.creator.generation import GenerationError, IntentCardGenerator
 from backend.app.creator.knowledge import CreatorKnowledgeService, KnowledgeAssetRejected
 from backend.app.creator.publishing import PrivatePublishService, PublishRejected
 from backend.app.creator.sandbox import SandboxTrialError, SandboxTrialService
+from backend.app.api.setup import purpose_ready
 from backend.app.creator.validation import DraftValidationRejected, DraftValidator
 from backend.app.creator.schemas import (DraftCreateRequest, DraftUpdateRequest, GenerateRequest,
                                          PublishRequest, TrialRequest)
@@ -263,7 +264,8 @@ def delete_knowledge(draft_id: str, asset_id: str, request: Request,
     service = CreatorKnowledgeService(db, member.household_id, request.app.state.settings.knowledge_upload_path)
     try:
         service.delete_asset(draft_id, asset_id,
-                             vector_service=getattr(request.app.state, "vector_store_service", None))
+                             vector_service=(getattr(request.app.state, "vector_store_service", None)
+                                             if purpose_ready(db, "embedding") else None))
     except KnowledgeAssetRejected as exc:
         raise HTTPException(404, detail={"code": exc.code}) from exc
     return None

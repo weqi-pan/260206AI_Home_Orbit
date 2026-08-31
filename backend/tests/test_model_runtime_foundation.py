@@ -283,7 +283,8 @@ def test_setup_not_ready_when_required_binding_has_incomplete_capability_flags(c
     status = client.get("/api/setup/status", headers={"Authorization": f"Bearer {login['access_token']}"}).json()
     assert status["ready"] is False
     assert status["configured_purposes"] == []
-    assert status["missing_purposes"] == ["primary_chat", "embedding"]
+    assert status["missing_purposes"] == ["primary_chat"]
+    assert status["missing_optional_purposes"] == ["embedding"]
 
 
 def test_model_grants_are_household_scoped_and_idempotent(client, app):

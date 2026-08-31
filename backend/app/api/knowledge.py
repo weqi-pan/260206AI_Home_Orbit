@@ -12,6 +12,7 @@ from backend.app.db.models import Account, FaqPair, HouseholdMember, KnowledgeFi
 from backend.app.models.execution import purpose_model_resolver
 from backend.app.services.faq_gen import FaqGenerationError, FaqGenerator
 from backend.rag.vector_store import VectorStoreService, VectorStoreUnavailable
+from backend.app.api.setup import purpose_ready
 
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"], dependencies=[Depends(require_admin)])
@@ -28,6 +29,11 @@ def vector_service(request):
         service = VectorStoreService(request.app.state.settings.chroma_path)
         request.app.state.vector_store_service = service
     return service
+
+
+def require_embedding(db):
+    if not purpose_ready(db, "embedding"):
+        raise HTTPException(status_code=503, detail={"code": "EMBEDDING_NOT_CONFIGURED"})
 
 
 def _bootstrap_file(settings, filename):
@@ -81,6 +87,7 @@ async def upload(request: Request, file: UploadFile = File(...), admin: Account 
     content = await file.read(MAX_UPLOAD_SIZE + 1)
     if len(content) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=413, detail="文件不能超过20MB")
+    require_embedding(db)
     digest = hashlib.md5(content).hexdigest()
     household_id = admin_household(db, admin)
     skill_version_id = official_knowledge_skill_version(db, household_id)
@@ -123,6 +130,7 @@ def delete_file(file_id: str, request: Request, response: Response, admin: Accou
                                                  KnowledgeFile.household_id == household_id))
     if not item or item.status != "active":
         raise HTTPException(status_code=404, detail="知识文件不存在")
+    require_embedding(db)
     try:
         vector_service(request).delete_file(file_id)
         for faq in db.scalars(select(FaqPair).where(FaqPair.household_id == household_id,
@@ -139,6 +147,7 @@ def delete_file(file_id: str, request: Request, response: Response, admin: Accou
 
 @router.post("/rebuild")
 def rebuild(request: Request, admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
+    require_embedding(db)
     household_id = admin_household(db, admin)
     skill_version_id = official_knowledge_skill_version(db, household_id)
     files = []
@@ -205,6 +214,7 @@ def review(faq_id: int, payload: ReviewRequest, request: Request, admin: Account
     item = db.scalar(select(FaqPair).where(FaqPair.id == faq_id, FaqPair.household_id == household_id))
     if not item:
         raise HTTPException(status_code=404, detail="FAQ不存在")
+    require_embedding(db)
     try:
         if payload.status == item.status:
             return faq_dict(item)

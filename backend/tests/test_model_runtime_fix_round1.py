@@ -117,6 +117,70 @@ def test_chat_reserves_grant_quota_and_records_usage_before_real_runner(client, 
         assert usage.status == "completed"
 
 
+def test_primary_chat_without_embedding_is_ready_and_streams_chat(client, app, monkeypatch):
+    from backend.agent.platform.catalog import BuiltinToolRegistry
+    from backend.app.db.models import Account, HouseholdMember
+
+    monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
+    login = client.post("/api/auth/login", json={"username": "demo", "password": "DemoTest@123"}).json()
+    headers = {"Authorization": f"Bearer {login['access_token']}"}
+    with app.state.database.session_factory() as session:
+        account = session.scalar(select(Account).where(Account.username == "demo"))
+        household_id = session.scalar(select(HouseholdMember.household_id).where(
+            HouseholdMember.account_id == account.id))
+        configured_runtime(session, household_id)
+
+    status = client.get("/api/setup/status", headers=headers).json()
+    assert status["ready"] is True
+    assert status["ai_ready"] is True
+    assert status["embedding_ready"] is False
+    assert status["required_purposes"] == ["primary_chat"]
+    assert status["optional_purposes"] == ["embedding"]
+    assert status["configured_purposes"] == ["primary_chat"]
+    assert status["missing_purposes"] == []
+    assert status["missing_optional_purposes"] == ["embedding"]
+    assert status["degraded_features"] == ["knowledge_retrieval", "vectorization"]
+
+    class UnexpectedVectorBackend:
+        def search(self, *args, **kwargs):
+            raise AssertionError("embedding 未配置时不得访问 vector backend")
+
+    class DeterministicRunner:
+        def bind_model(self, run_id, model):
+            pass
+
+        def stream(self, messages, context):
+            assert context.vector_store_service is None
+            knowledge = BuiltinToolRegistry.default().resolve("household.knowledge.search").handler(
+                {"query": "菜谱"}, context)
+            assert knowledge == "知识增强未启用，暂时无法检索家庭知识。"
+            month = BuiltinToolRegistry.default().resolve("platform.current_month").handler({}, context)
+            assert len(month) == 7
+            yield {"event": "token", "data": {"content": "无向量也可对话"}}
+
+    runner = DeterministicRunner()
+    app.state.agent_runner = runner
+    app.state.deployment_agent_runner = runner
+    app.state.enforce_model_runtime_for_injected_runner = True
+    app.state.chat_model_builder = lambda resolved: object()
+    app.state.vector_store_service = UnexpectedVectorBackend()
+    session_id = client.post("/api/chat/sessions", headers=headers, json={}).json()["id"]
+    response = client.post(f"/api/chat/sessions/{session_id}/chat", headers=headers, json={"message": "你好"})
+
+    assert response.status_code == 200
+    assert "无向量也可对话" in response.text
+    assert "event: done" in response.text
+
+    with app.state.database.session_factory() as session:
+        configured_runtime(session, household_id, purpose="embedding")
+    configured = client.get("/api/setup/status", headers=headers).json()
+    assert configured["ready"] is True
+    assert configured["ai_ready"] is True
+    assert configured["embedding_ready"] is True
+    assert configured["missing_optional_purposes"] == []
+    assert configured["degraded_features"] == []
+
+
 @pytest.mark.parametrize("grant,monthly,household_rpm,expected", [
     (False, 100, 10, "MODEL_NOT_GRANTED"),
     (True, 4, 10, "HOUSEHOLD_MONTHLY_QUOTA_EXCEEDED"),

@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { fetchSetupStatus } from '../api/setup'
 
@@ -54,7 +54,7 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach(async (to) => {
+export async function navigationGuard(to: RouteLocationNormalized) {
   const auth = useAuthStore()
   if (!to.meta.public && !auth.isLoggedIn) return { path: '/login' }
   if (to.path === '/login' && auth.isLoggedIn) return { path: '/home' }
@@ -62,8 +62,10 @@ router.beforeEach(async (to) => {
   if (to.meta.admin && auth.account?.role !== 'admin') return { path: '/home' }
   if (to.meta.ai && auth.isLoggedIn) {
     const setup = await fetchSetupStatus()
-    if (!setup.ready) return { path: '/home', query: { gate: setup.error_code ?? 'MODEL_NOT_CONFIGURED' } }
+    if (!setup.ai_ready) return { path: '/home', query: { gate: setup.error_code ?? 'MODEL_NOT_CONFIGURED' } }
   }
-})
+}
+
+router.beforeEach(navigationGuard)
 
 export default router

@@ -96,10 +96,15 @@ def test_setup_status_is_stable_and_non_ai_household_api_remains_available(clien
     assert status.status_code == 200
     assert status.json() == {
         "ready": False,
+        "ai_ready": False,
+        "embedding_ready": False,
         "error_code": "MODEL_NOT_CONFIGURED",
-        "required_purposes": ["primary_chat", "embedding"],
+        "required_purposes": ["primary_chat"],
+        "optional_purposes": ["embedding"],
         "configured_purposes": [],
-        "missing_purposes": ["primary_chat", "embedding"],
+        "missing_purposes": ["primary_chat"],
+        "missing_optional_purposes": ["embedding"],
+        "degraded_features": ["knowledge_retrieval", "vectorization"],
         "can_configure": False,
         "master_key_valid": False,
     }
@@ -118,7 +123,7 @@ def test_home_orbit_nodes_use_current_household_state(client):
         "kind": "setup",
         "status": "attention",
         "href": "/admin/setup",
-        "detail": "主聊天与向量模型尚未配置",
+        "detail": "主聊天模型尚未配置",
     }
     assert nodes["household"] == {
         "id": "household",

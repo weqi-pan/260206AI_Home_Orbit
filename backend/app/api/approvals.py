@@ -14,6 +14,7 @@ from backend.agent.platform.approvals import audit_approval
 from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
 from backend.app.schemas.agent_platform import ApprovalDecisionRequest
 from backend.app.db.base import utcnow
+from backend.app.api.setup import purpose_ready
 
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
@@ -96,7 +97,8 @@ def resume(approval_id: str, request: Request, account: Account = Depends(get_cu
         model_snapshot=json.loads(run.model_snapshot_json), compiled_snapshot=snapshot,
         skill_version_ids=tuple(item["id"] for item in snapshot.get("skills", [])),
         repositories=HouseholdToolRepositories(request.app.state.database.session_factory),
-        vector_store_service=request.app.state.vector_store_service,
+        vector_store_service=(getattr(request.app.state, "vector_store_service", None)
+                              if purpose_ready(db, "embedding") else None),
         budget=RunBudget.restore(budget_snapshot, budget_snapshot.get("counters", {})))
     request.app.state.deployment_agent_runner.bind_model(run.id, chat_model)
     def events():

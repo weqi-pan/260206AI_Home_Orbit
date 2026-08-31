@@ -201,11 +201,15 @@ def test_publish_reversible_grants_require_explicit_confirmation(client, app, se
     assert exc.value.code in {"TOOL_NOT_IN_CATALOG", "TOOL_NOT_GRANTED"}
 
 
-def test_publish_vectorizes_knowledge_through_task_path_with_isolation(client, app, settings, fake_vectors):
+def test_publish_vectorizes_knowledge_through_task_path_with_isolation(client, app, settings, fake_vectors, monkeypatch):
     from backend.app.creator.publishing import PrivatePublishService
     from backend.app.db.models import CeleryTaskRecord
+    from backend.tests.test_model_runtime_fix_round1 import MASTER_KEY, configured_runtime
 
     account_id, household_id = _home(app)
+    monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
+    with app.state.database.session_factory() as db:
+        configured_runtime(db, household_id, purpose="embedding")
     recipe = "白切鸡：整鸡温水浸煮25分钟，过冰水，配姜葱蘸料。".encode("utf-8")
     draft_id = _chef_draft(app, household_id, account_id, assets=[("粤菜菜谱.txt", ".txt", recipe)],
                            settings=settings)
@@ -224,6 +228,29 @@ def test_publish_vectorizes_knowledge_through_task_path_with_isolation(client, a
     # 隔离：其他家庭或官方技能版本检索不到
     assert fake_vectors.search("白切鸡", household_id="other-household") == []
     assert fake_vectors.search("白切鸡", household_id=household_id, skill_version_ids=["official-sv"]) == []
+
+
+def test_publish_without_embedding_records_stable_degradation_without_vector_backend(client, app, settings, monkeypatch):
+    from backend.app.creator.publishing import PrivatePublishService
+    import backend.rag.vector_store as vector_store_module
+
+    account_id, household_id = _home(app)
+    recipe = "白切鸡：整鸡温水浸煮25分钟。".encode("utf-8")
+    draft_id = _chef_draft(app, household_id, account_id, assets=[("粤菜菜谱.txt", ".txt", recipe)],
+                           settings=settings)
+    monkeypatch.setattr(vector_store_module, "configured_vector_store",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(
+                            AssertionError("embedding 未配置时不得创建 vector store")))
+
+    result = PrivatePublishService(app.state.database.session_factory, household_id, account_id,
+                                   settings=settings).publish(draft_id, granted_tool_keys=[])
+
+    assert result["vectorized_assets"] == [{
+        "asset_id": result["vectorized_assets"][0]["asset_id"],
+        "skill_version_id": result["skills"][0]["skill_version_id"],
+        "status": "dead",
+        "error_code": "EMBEDDING_NOT_CONFIGURED",
+    }]
 
 
 def test_cantonese_chef_e2e_publish_then_chat_answers_from_isolated_knowledge(client, app, settings,
@@ -365,13 +392,19 @@ def test_republish_revectorizes_under_new_skill_version_and_v2_chat_retrieves(cl
     assert "浸煮" in content, content
 
 
-def test_one_asset_attached_to_two_skills_is_retrievable_under_both_versions(client, app, settings, fake_vectors):
+def test_one_asset_attached_to_two_skills_is_retrievable_under_both_versions(client, app, settings, fake_vectors,
+                                                                              monkeypatch):
     """Fix Round 1 Finding 1（单发布多技能）：同一资产挂两个 Skill 时两个版本都可检索。"""
     from backend.app.creator.knowledge import CreatorKnowledgeService
     from backend.app.creator.publishing import PrivatePublishService
     from backend.app.db.models import CreatorDraft
 
     account_id, household_id = _home(app)
+    from backend.tests.test_model_runtime_fix_round1 import MASTER_KEY, configured_runtime
+
+    monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
+    with app.state.database.session_factory() as db:
+        configured_runtime(db, household_id, purpose="embedding")
     recipe = "白切鸡：整鸡温水浸煮25分钟，过冰水，配姜葱蘸料。".encode("utf-8")
     with app.state.database.session_factory.begin() as db:
         draft = CreatorDraft(household_id=household_id, title="双技能菜谱", status="validated",

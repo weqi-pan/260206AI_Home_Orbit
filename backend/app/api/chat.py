@@ -16,7 +16,7 @@ from backend.agent.platform.context import RunBudget, RunContext
 from backend.agent.tools.household_gateways import HouseholdToolRepositories
 from backend.agent.platform.runner import DeploymentAgentRunner
 from backend.app.services.defaults import get_agent_runner, get_followup_service, get_sentiment_service, get_title_service
-from backend.app.api.setup import setup_status
+from backend.app.api.setup import purpose_ready, setup_status
 from backend.app.models.adapters import build_langchain_chat
 from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
 from backend.app.models.quotas import QuotaExceeded, QuotaService
@@ -202,7 +202,7 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
     usage_id = None
     enforce_runtime = injected_runner is None or getattr(request.app.state, "enforce_model_runtime_for_injected_runner", False)
     if enforce_runtime:
-        if not setup_status(db, account).ready:
+        if not setup_status(db, account).ai_ready:
             raise HTTPException(status_code=503, detail={"code": "MODEL_NOT_CONFIGURED"})
         try:
             resolved_runtime = ModelRuntimeService(db).resolve("primary_chat", household_id=household_id)
@@ -223,9 +223,11 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
     db.commit()
     history = db.scalars(select(ConversationHistory).where(ConversationHistory.session_id == session_id).order_by(ConversationHistory.id)).all()
     messages = [{"role": item.role, "content": item.content} for item in history]
+    vector_store_service = (getattr(request.app.state, "vector_store_service", None)
+                            if purpose_ready(db, "embedding") else None)
     context = {"account_id": account.id, "user_id": account.user_id, "city": account.user.city if account.user else None,
                 "session_id": session_id, "repositories": HouseholdToolRepositories(request.app.state.database.session_factory),
-                "vector_store_service": request.app.state.vector_store_service}
+                "vector_store_service": vector_store_service}
     if enforce_runtime:
         context["model_resolver"] = purpose_model_resolver(request.app.state.database.session_factory, household_id)
     if resolved_runtime:
@@ -279,7 +281,7 @@ def chat(session_id: str, payload: ChatRequest, request: Request, account: Accou
             skill_version_ids=tuple(item["id"] for item in compiled_snapshot["skills"]),
             city=account.user.city if account.user else None,
             repositories=HouseholdToolRepositories(request.app.state.database.session_factory),
-            vector_store_service=request.app.state.vector_store_service,
+            vector_store_service=vector_store_service,
             budget=RunBudget(
                 max_delegation_depth=int(compiled_snapshot["budget"].get("delegation_depth", 4)),
                 max_tool_calls=int(compiled_snapshot["budget"].get("tool_calls", 16)),

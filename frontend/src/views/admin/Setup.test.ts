@@ -14,7 +14,7 @@ vi.mock('../../api/models', () => ({
   fetchModels: vi.fn().mockResolvedValue([]),
 }))
 vi.mock('../../api/setup', () => ({
-  fetchSetupStatus: vi.fn().mockResolvedValue({ ready: false, master_key_valid: true, required_purposes: ['primary_chat', 'embedding'], configured_purposes: [], missing_purposes: ['primary_chat', 'embedding'], can_configure: true, error_code: 'MODEL_NOT_CONFIGURED' }),
+  fetchSetupStatus: vi.fn().mockResolvedValue({ ready: true, ai_ready: true, embedding_ready: false, master_key_valid: true, required_purposes: ['primary_chat'], optional_purposes: ['embedding'], configured_purposes: ['primary_chat'], missing_purposes: [], missing_optional_purposes: ['embedding'], degraded_features: ['knowledge_retrieval', 'vectorization'], can_configure: true, error_code: null }),
 }))
 
 describe('model initialization wizard', () => {
@@ -31,5 +31,15 @@ describe('model initialization wizard', () => {
     expect(wrapper.text()).toContain('****9999')
     expect(wrapper.text()).not.toContain('sk-api-9999')
     expect(wrapper.text()).toContain('创建模型档案')
+  })
+
+  it('shows core AI ready while listing embedding as optional and pending', async () => {
+    const wrapper = mount(Setup)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('核心 AI 已就绪')
+    expect(wrapper.text()).toContain('可选能力')
+    expect(wrapper.text()).toContain('embedding')
+    expect(wrapper.text()).toContain('等待配置')
   })
 })

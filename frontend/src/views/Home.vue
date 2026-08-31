@@ -36,7 +36,7 @@ onMounted(async () => {
       <h1 id="home-title">{{ auth.account?.username }}，家里现在怎么样？</h1>
       <p class="home-lead">从一个家庭轨道看清需要处理的事。模型配置完成后，家庭总管会在这里接手自然语言请求。</p>
 
-      <div v-if="!loading && setup && !setup.ready" class="setup-callout" role="status">
+      <div v-if="!loading && setup && !setup.ai_ready" class="setup-callout" role="status">
         <span class="status-dot" aria-hidden="true"></span>
         <div>
           <strong>AI 助手尚未启用</strong>
@@ -45,14 +45,22 @@ onMounted(async () => {
         <router-link v-if="setup.can_configure" to="/admin/setup" class="button-link">查看初始化设置</router-link>
         <span v-else class="setup-note">请联系管理员完成模型初始化</span>
       </div>
+      <div v-else-if="!loading && setup && !setup.embedding_ready" class="setup-callout is-degraded" role="status">
+        <span class="status-dot" aria-hidden="true"></span>
+        <div>
+          <strong>AI 已启用，知识增强未启用</strong>
+          <p>对话与家庭工具可正常使用，知识检索和向量化暂不可用。</p>
+        </div>
+        <router-link v-if="setup.can_configure" to="/admin/setup" class="button-link">配置可选能力</router-link>
+      </div>
 
       <form class="orbit-composer" aria-describedby="composer-help" @submit.prevent>
         <label for="home-request">交给家庭总管</label>
         <div class="composer-row">
-          <input id="home-request" :disabled="!setup?.ready" placeholder="例如：安排周末大扫除" />
-          <button type="submit" :disabled="!setup?.ready">发送</button>
+          <input id="home-request" :disabled="!setup?.ai_ready" placeholder="例如：安排周末大扫除" />
+          <button type="submit" :disabled="!setup?.ai_ready">发送</button>
         </div>
-        <span id="composer-help" class="sr-only">模型初始化完成后可发送请求</span>
+        <span id="composer-help" class="sr-only">核心 AI 初始化完成后可发送请求</span>
       </form>
 
       <section class="state-list" aria-labelledby="state-title">
@@ -126,6 +134,8 @@ h1 { max-width: 650px; margin: 0; font-family: var(--font-display); font-size: c
 .setup-callout { display: flex; align-items: center; gap: 14px; max-width: 650px; padding: 18px; border: 1px solid color-mix(in srgb, var(--charge-coral) 45%, white); border-radius: 18px; background: var(--surface-white); }
 .setup-callout p { margin: 4px 0 0; color: #615d79; }
 .status-dot { width: 12px; height: 12px; flex: 0 0 auto; border-radius: 50%; background: var(--charge-coral); }
+.setup-callout.is-degraded { border-color: color-mix(in srgb, var(--orbit-violet) 45%, white); }
+.setup-callout.is-degraded .status-dot { background: var(--orbit-violet); }
 .button-link { margin-left: auto; white-space: nowrap; }
 .setup-note { margin-left: auto; max-width: 160px; color: #615d79; }
 .orbit-composer { max-width: 650px; margin-top: 24px; }
