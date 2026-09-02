@@ -1,13 +1,19 @@
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BACKEND_DATA_ROOT = REPO_ROOT / "backend" / "data"
+
+# 将仓库根 .env 装载进进程环境（不覆盖已有变量）：保证 LLM_CREDENTIAL_MASTER_KEY 等
+# 通过 os.getenv 读取的配置在本地 uvicorn/celery/alembic 启动时与 Docker 部署行为一致。
+load_dotenv(REPO_ROOT / ".env", override=False)
 
 
 class Settings(BaseSettings):

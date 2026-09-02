@@ -250,9 +250,12 @@ def test_worker_entry_import_refuses_test_mode():
 def test_celery_app_declares_beat_schedule_and_worker_tasks():
     import os
 
+    from backend.app.core.config import get_settings
+
     os.environ["APP_MODE"] = "production"
     os.environ["DATABASE_URL"] = "mysql+pymysql://u:p@localhost:3306/customer_service"
     os.environ["REDIS_URL"] = "redis://localhost:6379/0"
+    get_settings.cache_clear()
     try:
         from backend.app.tasks.celery_app import create_celery_app
 
@@ -265,6 +268,7 @@ def test_celery_app_declares_beat_schedule_and_worker_tasks():
         os.environ.pop("APP_MODE", None)
         os.environ.pop("REDIS_URL", None)
         os.environ["APP_MODE"] = "test"
+        get_settings.cache_clear()
 
 
 def test_admin_task_operations_list_and_manual_run(client, app):
