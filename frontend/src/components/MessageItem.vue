@@ -81,11 +81,11 @@ const sentiment = computed(() => sentimentTag(props.message.sentiment))
 }
 
 .avatar.user {
-  background: #409eff;
+  background: var(--orbit-violet);
 }
 
 .avatar.assistant {
-  background: #67c23a;
+  background: var(--signal-green);
 }
 
 .body {
@@ -108,14 +108,14 @@ const sentiment = computed(() => sentimentTag(props.message.sentiment))
 }
 
 .message.user .bubble {
-  background: #ecf5ff;
-  color: #303133;
+  background: #E4E1EF;
+  color: var(--device-ink);
 }
 
 .bubble.failed {
-  border: 1px solid #fde2e2;
-  background: #fef0f0;
-  color: #f56c6c;
+  border: 1px solid #FAE2E3;
+  background: #FDF1F1;
+  color: var(--signal-red);
 }
 
 .thinking {
@@ -128,7 +128,7 @@ const sentiment = computed(() => sentimentTag(props.message.sentiment))
   height: 14px;
   margin-left: 2px;
   vertical-align: -2px;
-  background: #409eff;
+  background: var(--orbit-violet);
   animation: blink 0.8s infinite;
 }
 

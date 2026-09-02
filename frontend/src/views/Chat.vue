@@ -406,7 +406,7 @@ onMounted(() => {
 }
 
 .session-item.active {
-  background: #ecf5ff;
+  background: #E4E1EF;
 }
 
 .session-name {

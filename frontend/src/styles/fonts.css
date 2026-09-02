@@ -1,0 +1,9 @@
+/* 得意黑（Smiley Sans Oblique）：自托管 @font-face，供展示标题使用 */
+@font-face {
+  font-family: 'Smiley Sans';
+  font-style: oblique;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../../node_modules/@fontpkg/smiley-sans/SmileySans-Oblique.otf.woff2') format('woff2'),
+    url('../../node_modules/@fontpkg/smiley-sans/SmileySans-Oblique.otf') format('opentype');
+}

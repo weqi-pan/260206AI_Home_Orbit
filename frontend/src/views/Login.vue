@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
 import { login } from '../api/auth'
+import AuthShell from '../components/AuthShell.vue'
 import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
@@ -34,56 +35,23 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="auth-page">
-    <el-card class="auth-card">
-      <h2 class="auth-title">智能客服系统</h2>
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @keyup.enter="handleSubmit()">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" :prefix-icon="User" placeholder="请输入用户名" />
-        </el-form-item>
-        <el-form-item label="密码" prop="password">
-          <el-input v-model="form.password" type="password" show-password :prefix-icon="Lock" placeholder="请输入密码" />
-        </el-form-item>
-        <el-button class="auth-submit" type="primary" :loading="loading" @click="handleSubmit()">登 录</el-button>
-      </el-form>
-      <div class="auth-links">
-        <router-link to="/register">没有账号？立即注册</router-link>
-      </div>
-    </el-card>
-  </div>
+  <AuthShell>
+    <h2 class="auth-heading">欢迎回家</h2>
+    <p class="auth-hint">登录 Home Orbit，回到你的家庭轨道。</p>
+    <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @keyup.enter="handleSubmit()">
+      <el-form-item label="用户名" prop="username">
+        <el-input v-model="form.username" :prefix-icon="User" placeholder="请输入用户名" />
+      </el-form-item>
+      <el-form-item label="密码" prop="password">
+        <el-input v-model="form.password" type="password" show-password :prefix-icon="Lock" placeholder="请输入密码" />
+      </el-form-item>
+      <el-button class="auth-submit" type="primary" :loading="loading" @click="handleSubmit()">登 录</el-button>
+    </el-form>
+    <div class="auth-links">
+      <router-link to="/register">没有账号？立即注册</router-link>
+    </div>
+  </AuthShell>
 </template>
 
 <style scoped>
-.auth-page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  background: linear-gradient(180deg, #ecf5ff 0%, #f5f7fa 100%);
-}
-
-.auth-card {
-  width: 380px;
-}
-
-.auth-title {
-  margin: 0 0 20px;
-  text-align: center;
-  color: #409eff;
-}
-
-.auth-submit {
-  width: 100%;
-}
-
-.auth-links {
-  margin-top: 14px;
-  text-align: center;
-}
-
-.auth-links a {
-  color: #409eff;
-  font-size: 13px;
-  text-decoration: none;
-}
 </style>
