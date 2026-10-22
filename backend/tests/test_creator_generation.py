@@ -50,7 +50,7 @@ def _generator(app, model=None):
 
 
 def test_generation_uses_auxiliary_purpose_and_catalog_and_returns_card(client, app):
-    from backend.app.models.execution import purpose_model_resolver
+    from backend.app.llm_runtime.execution import purpose_model_resolver
 
     purposes = []
 
@@ -92,8 +92,8 @@ def test_generation_output_is_untrusted_and_unparsable_output_rejected(client, a
 
 def test_generation_model_unready_maps_to_stable_codes(app, monkeypatch):
     from backend.app.creator.generation import GenerationError, IntentCardGenerator
-    from backend.app.models.quotas import QuotaExceeded
-    from backend.app.models.runtime_service import ModelRuntimeError
+    from backend.app.llm_runtime.quotas import QuotaExceeded
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeError
 
     class BrokenResolver:
         def __call__(self, purpose):

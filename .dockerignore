@@ -1,0 +1,14 @@
+.git
+.github
+.kilo
+.superpowers
+backend/.venv
+backend/__pycache__
+backend/.pytest_cache
+frontend/node_modules
+frontend/dist
+.env
+.env.*
+!.env.example
+docs/
+README.md

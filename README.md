@@ -43,7 +43,8 @@
 │   │   └── services/        # chat_service sentiment title_gen followup faq_gen
 │   ├── agent/               # DeepAgents 组装 + subagents + tools
 │   ├── rag/vector_store.py  # Chroma（metadata 标记/按文件删除/重建）
-│   ├── model/factory.py     # OpenAI-compatible/Anthropic 模型工厂
+│   ├── llm_factory/factory.py # OpenAI-compatible/Anthropic 模型工厂
+│   ├── app/llm_runtime/     # 多模型运行时、配额与凭据
 │   ├── prompts/             # 主代理 + 子代理提示词
 │   ├── alembic/versions/    # 0015 迁移链（清库重建 Schema）
 │   ├── tests/               # pytest（490+ 项，LLM 全 mock）
@@ -72,38 +73,37 @@ docker compose up -d --build
 后端（Python ≥ 3.11，示例 3.12）：
 
 ```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate          # Windows；Linux/macOS: source .venv/bin/activate
-pip install -r requirements.txt
-cd ..
-uvicorn backend.app.main:app --reload --port 8000
+make setup                      # Python 虚拟环境 + npm ci；Python 3.14 环境可用 make setup PYTHON=python3.12
+make backend-test
+make frontend-test
+make frontend-build
 ```
 
-- `APP_MODE=production` 强制使用 MySQL，连接或迁移失败时启动失败，不会自动切换数据库。
+- `APP_MODE=production` 强制使用 MySQL，并拒绝缺失、默认或弱安全配置。
 - 单进程本地预览可显式设置 `APP_MODE=preview` 与 SQLite `DATABASE_URL`；pytest 使用 `APP_MODE=test`。
+- 测试 URL、API Key 只放在本地 `.env` 或 CI secrets 中，不要写入代码、示例文件或数据库迁移。
 - Swagger：http://localhost:8000/docs ；健康检查：`GET /health`。
 
 前端：
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev                    # http://localhost:5173，/api 自动代理到 8000
 ```
 
 测试（490+ 项，从 backend 目录或仓库根均可）：
 
 ```bash
-cd backend && python -m pytest          # 或在仓库根：python -m pytest backend
+make test
 ```
 
 ## 种子账号
 
 | 账号 | 初始密码 | 说明 |
 |------|----------|------|
-| admin | `ADMIN_INITIAL_PASSWORD`（默认 `Admin@123`） | 管理员；**首次登录强制修改密码** |
-| demo | `Demo@1234`（`DEMO_INITIAL_PASSWORD`） | 演示用户，关联档案 user_id=1001，含样例使用记录 |
+| admin | `ADMIN_INITIAL_PASSWORD`（生产必填，不少于 12 字符） | 管理员；**首次登录强制修改密码** |
+| demo | `DEMO_INITIAL_PASSWORD`（生产必填，不少于 12 字符） | 演示用户，关联档案 user_id=1001，含样例使用记录 |
 
 种子在启动时幂等执行；普通注册用户角色为 `user`。
 
@@ -140,17 +140,13 @@ SSE 事件序列：`token`（增量输出）→ `run`（运行状态）→ `tool
 
 ```bash
 # 后端全量测试（LLM 全 mock，含多租户矩阵/安全/并发验收套件）
-cd backend && python -m pytest
+make backend-test
 
 # 前端测试与生产构建
-cd frontend && npm test && npm run build
-
-# 迁移链：空库升级到 head，head 版本降级/升级回环
-cd backend && python -m alembic -c alembic.ini upgrade head
-python -m alembic -c alembic.ini downgrade -1 && python -m alembic -c alembic.ini upgrade head
+make frontend-test frontend-build
 
 # Docker 全栈（mysql healthcheck → 迁移 → API → worker/beat → frontend）
-docker compose up -d --build
+make docker-up
 ```
 
 ## 家庭日常闭环（Phase 5）
@@ -175,11 +171,11 @@ docker compose up -d --build
 | `LLM_CREDENTIAL_MASTER_KEY` | 无 | Base64 编码的 32 字节主密钥；模型 API Key 由管理员向导以 AES-256-GCM 加密入库 |
 | `APP_MODE` | `production` | `production` 强制 MySQL 与 Alembic head；`preview`/`test` 才允许显式 SQLite |
 | `DATABASE_URL` | `mysql+pymysql://root:password@localhost:3306/customer_service` | 数据库连接；不会因连接失败自动切换 |
-| `JWT_SECRET` | 开发默认值（告警） | JWT 签名密钥，生产必须设置 |
-| `ADMIN_INITIAL_PASSWORD` | `Admin@123` | admin 种子初始密码 |
-| `DEMO_INITIAL_PASSWORD` | `Demo@1234` | demo 种子初始密码 |
+| `JWT_SECRET` | 开发默认值 | JWT 签名密钥；生产必须不少于 32 字符 |
+| `ADMIN_INITIAL_PASSWORD` | 开发默认值 | admin 种子初始密码；生产不少于 12 字符 |
+| `DEMO_INITIAL_PASSWORD` | 开发默认值 | demo 种子初始密码；生产不少于 12 字符 |
 | `CORS_ORIGINS` | `http://localhost:5173` | 允许的跨域来源，逗号分隔 |
-| `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` | `change-me-root` / `change-me` | docker-compose 中 MySQL 密码 |
+| `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` | 无 | docker-compose 中 MySQL 密码；生产部署必填 |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis/Celery broker（完整部署必填；SQLite 模式不使用） |
 | `CELERY_RETRY_BACKOFF_SECONDS` | `30` | 任务重试退避基数（指数退避） |
 | `FOLLOWUP_TIMEOUT_SECONDS` | `4` | SSE 追问生成等待秒数，超时降级为空数组 |

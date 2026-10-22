@@ -134,7 +134,7 @@ def test_vector_store_scopes_file_copy_per_skill_version(tmp_path: Path):
 
 
 def test_configured_vector_store_reports_embedding_not_configured_before_store_creation():
-    from backend.app.models.runtime_service import ModelRuntimeError
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeError
     from backend.rag.vector_store import VectorStoreUnavailable, configured_vector_store
 
     class Runtime:

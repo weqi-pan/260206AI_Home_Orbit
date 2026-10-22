@@ -1,3 +1,5 @@
+import base64
+import binascii
 import logging
 import os
 from functools import lru_cache
@@ -46,9 +48,41 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
+def validate_production_settings(settings: "Settings") -> None:
+    """生产模式启动前拒绝可预测或缺失的安全配置。"""
+    errors: list[str] = []
+
+    if not settings.database_url:
+        errors.append("DATABASE_URL 不能为空")
+    if len(settings.jwt_secret) < 32 or settings.jwt_secret == "development-only-change-this-secret":
+        errors.append("JWT_SECRET 必须设置且不少于 32 字符")
+    if len(settings.admin_initial_password) < 12 or settings.admin_initial_password == "Admin@123":
+        errors.append("ADMIN_INITIAL_PASSWORD 必须设置且不少于 12 字符")
+    if len(settings.demo_initial_password) < 12 or settings.demo_initial_password == "Demo@1234":
+        errors.append("DEMO_INITIAL_PASSWORD 必须设置且不少于 12 字符")
+
+    master_key = os.getenv("LLM_CREDENTIAL_MASTER_KEY")
+    if not master_key:
+        errors.append("LLM_CREDENTIAL_MASTER_KEY 不能为空")
+    else:
+        try:
+            decoded = base64.b64decode(master_key, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            errors.append("LLM_CREDENTIAL_MASTER_KEY 必须是有效的 Base64 编码 32 字节值")
+            logging.getLogger(__name__).debug("LLM_CREDENTIAL_MASTER_KEY 解码失败", exc_info=exc)
+        else:
+            if len(decoded) != 32:
+                errors.append("LLM_CREDENTIAL_MASTER_KEY 必须是有效的 Base64 编码 32 字节值")
+
+    if errors:
+        raise ValueError("生产配置校验失败：" + "; ".join(errors))
+
+
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
-    if settings.jwt_secret == "development-only-change-this-secret":
+    if settings.app_mode == "production":
+        validate_production_settings(settings)
+    elif settings.jwt_secret == "development-only-change-this-secret":
         logging.getLogger(__name__).warning("JWT_SECRET 未设置，正在使用仅限开发环境的默认值")
     return settings

@@ -15,9 +15,11 @@ venv/
 .env.*
 !.env.example
 
-# IDE/editor
+# Agent/editor/runtime directories
 .idea/
 .vscode/
+.kilo/
+.superpowers/
 
 # Runtime output（backend/data/：知识库上传、Chroma 向量库、SQLite 兜底库）
 logs/

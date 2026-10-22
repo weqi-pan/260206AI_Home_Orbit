@@ -1,6 +1,6 @@
 import json
 
-from backend.model.factory import get_aux_model
+from backend.llm_factory.factory import get_aux_model
 
 
 class SentimentService:

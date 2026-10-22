@@ -105,10 +105,10 @@ class VectorStoreService:
 
 def configured_vector_store(session_factory, persist_directory, runtime_factory=None, embedding_builder=None, store_factory=None):
     from backend.app.db.models import ActiveEmbeddingCollection
-    from backend.app.models.adapters import build_langchain_embeddings
-    from backend.app.models.endpoint_security import safe_http_client
-    from backend.app.models.runtime_service import ModelRuntimeService
-    from backend.app.models.runtime_service import ModelRuntimeError
+    from backend.app.llm_runtime.adapters import build_langchain_embeddings
+    from backend.app.llm_runtime.endpoint_security import safe_http_client
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeService
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeError
 
     def resolve_store():
         with session_factory() as session:

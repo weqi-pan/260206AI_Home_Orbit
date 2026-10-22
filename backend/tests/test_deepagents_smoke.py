@@ -44,7 +44,7 @@ class ToolCallingChatModel(BaseChatModel):
 
 def test_openai_compatible_instance_constructs_real_deep_agent_without_network():
     from langchain_openai import ChatOpenAI
-    from backend.model.factory import build_chat_model
+    from backend.llm_factory.factory import build_chat_model
 
     model = build_chat_model(protocol="openai_compatible", api_key="not-a-real-key", model_name="test-chat", base_url="https://api.openai.com/v1")
     agent = create_deep_agent(

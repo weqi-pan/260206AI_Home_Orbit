@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from backend.app.api import (admin, agents, approvals, auth, chat, creator, devices, home, households, installations,
-                             knowledge, market, models, reviews, setup, skills, tickets, tools)
+                             knowledge, llm_profiles, market, reviews, setup, skills, tickets, tools)
 from backend.app.audit import api as audit_api
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.seed import seed_database
@@ -89,7 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(households.router, prefix="/api")
     app.include_router(setup.router, prefix="/api")
     app.include_router(home.router, prefix="/api")
-    app.include_router(models.router, prefix="/api")
+    app.include_router(llm_profiles.router, prefix="/api")
     app.include_router(tools.router, prefix="/api")
     app.include_router(agents.router, prefix="/api")
     app.include_router(approvals.router, prefix="/api")

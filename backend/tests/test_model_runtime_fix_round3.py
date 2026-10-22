@@ -90,7 +90,7 @@ class StallingIterator:
 
 @pytest.mark.parametrize("first_chunk", [False, True])
 def test_stream_cancellation_is_bounded_before_or_after_first_chunk(first_chunk):
-    from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
+    from backend.app.llm_runtime.adapters import LangChainChatTransport, ModelAdapter
 
     iterator = StallingIterator(first_chunk=first_chunk)
     runtime_closed = threading.Event()
@@ -108,7 +108,7 @@ def test_stream_cancellation_is_bounded_before_or_after_first_chunk(first_chunk)
 
 
 def test_blocking_close_never_blocks_caller_and_capability_fails_closed():
-    from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
+    from backend.app.llm_runtime.adapters import LangChainChatTransport, ModelAdapter
 
     iterator = StallingIterator(first_chunk=True, close_blocks=True)
     model = SimpleNamespace(stream=lambda messages: iterator, _runtime_cancel=lambda: None)

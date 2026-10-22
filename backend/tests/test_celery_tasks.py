@@ -247,14 +247,19 @@ def test_worker_entry_import_refuses_test_mode():
     assert "CELERY_REQUIRES_PRODUCTION_MODE" in result.stderr
 
 
-def test_celery_app_declares_beat_schedule_and_worker_tasks():
-    import os
+def test_celery_app_declares_beat_schedule_and_worker_tasks(monkeypatch):
+    import base64
 
     from backend.app.core.config import get_settings
 
-    os.environ["APP_MODE"] = "production"
-    os.environ["DATABASE_URL"] = "mysql+pymysql://u:p@localhost:3306/customer_service"
-    os.environ["REDIS_URL"] = "redis://localhost:6379/0"
+    master_key = base64.b64encode(bytes(range(32))).decode("ascii")
+    monkeypatch.setenv("APP_MODE", "production")
+    monkeypatch.setenv("DATABASE_URL", "mysql+pymysql://u:p@localhost:3306/customer_service")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("JWT_SECRET", "celery-production-test-secret-0123456789abcdef")
+    monkeypatch.setenv("ADMIN_INITIAL_PASSWORD", "AdminProduction@12345")
+    monkeypatch.setenv("DEMO_INITIAL_PASSWORD", "DemoProduction@12345")
+    monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", master_key)
     get_settings.cache_clear()
     try:
         from backend.app.tasks.celery_app import create_celery_app
@@ -265,9 +270,7 @@ def test_celery_app_declares_beat_schedule_and_worker_tasks():
         assert "models-health-check" in schedule
         assert app.conf.task_default_queue == "home-orbit"
     finally:
-        os.environ.pop("APP_MODE", None)
-        os.environ.pop("REDIS_URL", None)
-        os.environ["APP_MODE"] = "test"
+        monkeypatch.setenv("APP_MODE", "test")
         get_settings.cache_clear()
 
 

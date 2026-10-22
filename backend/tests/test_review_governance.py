@@ -214,7 +214,7 @@ def test_review_risk_summary_advisory_only_never_sets_approval_state(client, app
         configured_runtime(db, household_id, purpose="review_model")
 
     advisory = AdvisoryChatModel("整体风险较低，建议人工关注购物清单写入权限。")
-    from backend.app.models.runtime_service import ModelRuntimeService
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeService
 
     monkeypatch.setattr(ModelRuntimeService, "build_chat_model", lambda self, resolved: advisory)
     draft_id = _validated_draft(client, app, household_id)

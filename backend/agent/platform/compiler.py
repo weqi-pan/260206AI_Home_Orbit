@@ -17,7 +17,7 @@ from backend.agent.platform.policy_errors import PlatformToolError
 from backend.agent.platform.workflow import validate_workflow
 from backend.agent.platform.workflow import WorkflowExecutor
 from backend.app.db.models import AgentDefinition, AgentDeployment, AgentSkillBinding, AgentToolBinding, AgentVersion, SkillVersion
-from backend.app.models.adapters import content_text
+from backend.app.llm_runtime.adapters import content_text
 
 
 def build_platform_tool(authority, executor, context, session):

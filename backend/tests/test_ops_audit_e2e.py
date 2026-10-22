@@ -53,7 +53,7 @@ def test_governance_e2e_numbers_reconcile_and_audit_trail_is_complete(client, ap
 
     # ---- 1. setup：管理员通过真实 API 配置模型（密钥只留掩码）
     endpoint = client.post("/api/models/endpoints", headers=admin, json={
-        "protocol": "openai_compatible", "display_name": "E2E Gateway", "base_url": "https://api.openai.com/v1",
+        "protocol": "openai_compatible", "display_name": "E2E Gateway", "base_url": "https://8.8.8.8/v1",
         "api_key": SECRET, "timeout_seconds": 30, "max_retries": 2, "enabled": True}).json()
     profile = client.post("/api/models/profiles", headers=admin, json={
         "endpoint_id": endpoint["id"], "model_name": "e2e-chat", "model_type": "chat", "max_tokens": 8,

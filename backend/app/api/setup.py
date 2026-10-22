@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_current_account, get_db
 from backend.app.db.models import Account, LlmEndpoint, LlmModel, ModelPurposeBinding
-from backend.app.models.credentials import master_key_is_valid
-from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
+from backend.app.llm_runtime.credentials import master_key_is_valid
+from backend.app.llm_runtime.runtime_service import ModelRuntimeError, ModelRuntimeService
 
 
 router = APIRouter(prefix="/setup", tags=["setup"])

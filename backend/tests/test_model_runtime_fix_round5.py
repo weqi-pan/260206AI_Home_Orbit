@@ -25,7 +25,7 @@ class DelayedFirstChunkTransport:
 
 
 def test_cancel_probe_passes_with_realistic_first_token_latency():
-    from backend.app.models.adapters import ModelAdapter
+    from backend.app.llm_runtime.adapters import ModelAdapter
 
     transport = DelayedFirstChunkTransport(1.5)
     adapter = ModelAdapter("openai_compatible", "chat", chat_transport=transport)
@@ -48,7 +48,7 @@ class UninterruptibleStreamTransport:
 
 
 def test_cancel_probe_fails_closed_when_stream_cannot_be_interrupted():
-    from backend.app.models.adapters import ModelAdapter
+    from backend.app.llm_runtime.adapters import ModelAdapter
 
     adapter = ModelAdapter("openai_compatible", "chat", chat_transport=UninterruptibleStreamTransport())
     started = time.monotonic()
@@ -69,7 +69,7 @@ class SilentFirstChunkTransport:
 
 
 def test_cancel_probe_reports_first_chunk_timeout_as_distinct_stable_code():
-    from backend.app.models.adapters import ModelAdapter
+    from backend.app.llm_runtime.adapters import ModelAdapter
 
     adapter = ModelAdapter("openai_compatible", "chat", chat_transport=SilentFirstChunkTransport())
     started = time.monotonic()
@@ -97,8 +97,8 @@ class ProbeSilentTransport(BaseChatTransport):
 
 
 def test_capability_evidence_distinguishes_first_chunk_timeout_from_cancellation():
-    from backend.app.models.adapters import ModelAdapter
-    from backend.app.models.capabilities import CapabilityTester
+    from backend.app.llm_runtime.adapters import ModelAdapter
+    from backend.app.llm_runtime.capabilities import CapabilityTester
 
     transport = ProbeSilentTransport()
     adapter = ModelAdapter("openai_compatible", "chat", chat_transport=transport)
@@ -116,7 +116,7 @@ def test_capability_evidence_distinguishes_first_chunk_timeout_from_cancellation
 
 
 def test_structured_output_uses_valid_schema_and_explicit_capability_prompt():
-    from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
+    from backend.app.llm_runtime.adapters import LangChainChatTransport, ModelAdapter
 
     class StructuredRunnable:
         def invoke(self, messages):
@@ -143,8 +143,8 @@ def test_structured_output_uses_valid_schema_and_explicit_capability_prompt():
 
 
 def test_tool_call_probe_explicitly_requires_echo_without_changing_text_prompts():
-    from backend.app.models.adapters import ModelAdapter
-    from backend.app.models.capabilities import CapabilityTester
+    from backend.app.llm_runtime.adapters import ModelAdapter
+    from backend.app.llm_runtime.capabilities import CapabilityTester
 
     class InstructionSensitiveTransport(BaseChatTransport):
         def __init__(self):
@@ -190,8 +190,8 @@ def test_tool_call_probe_explicitly_requires_echo_without_changing_text_prompts(
 
 
 def test_full_capability_probe_finishes_non_destructive_checks_before_closing_shared_client():
-    from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
-    from backend.app.models.capabilities import CapabilityTester
+    from backend.app.llm_runtime.adapters import LangChainChatTransport, ModelAdapter
+    from backend.app.llm_runtime.capabilities import CapabilityTester
 
     calls = []
 
@@ -302,7 +302,7 @@ class SlowTeardownIterator:
 
 
 def test_stream_cancellation_survives_realistic_slow_teardown():
-    from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
+    from backend.app.llm_runtime.adapters import LangChainChatTransport, ModelAdapter
 
     iterator = SlowTeardownIterator(1.0)
     model = SimpleNamespace(stream=lambda messages: iterator)

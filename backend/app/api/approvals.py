@@ -11,7 +11,7 @@ from backend.app.db.models import Account, AgentRun, ApprovalRequest, HouseholdM
 from backend.agent.platform.context import RunBudget, RunContext
 from backend.agent.tools.household_gateways import HouseholdToolRepositories
 from backend.agent.platform.approvals import audit_approval
-from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
+from backend.app.llm_runtime.runtime_service import ModelRuntimeError, ModelRuntimeService
 from backend.app.schemas.agent_platform import ApprovalDecisionRequest
 from backend.app.db.base import utcnow
 from backend.app.api.setup import purpose_ready

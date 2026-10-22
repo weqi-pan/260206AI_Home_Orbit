@@ -54,7 +54,7 @@ def test_embedding_build_uses_captured_bytes_when_source_changes_and_is_restored
 
     app.state.embedding_store_factory = lambda name, model_id: Store()
 
-    real_capture = __import__("backend.app.api.models", fromlist=["capture_embedding_sources"]).capture_embedding_sources
+    real_capture = __import__("backend.app.api.llm_profiles.bindings", fromlist=["capture_embedding_sources"]).capture_embedding_sources
     capture_count = 0
 
     def mutate_after_initial_capture(*args, **kwargs):
@@ -65,7 +65,7 @@ def test_embedding_build_uses_captured_bytes_when_source_changes_and_is_restored
             source_path.write_bytes(uncaptured)
         return snapshot
 
-    monkeypatch.setattr("backend.app.api.models.capture_embedding_sources", mutate_after_initial_capture)
+    monkeypatch.setattr("backend.app.api.llm_profiles.bindings.capture_embedding_sources", mutate_after_initial_capture)
     response = client.put("/api/models/bindings/embedding", headers=headers,
                           json={"purpose": "embedding", "model_id": new_id})
 
@@ -127,8 +127,8 @@ def test_embedding_staging_is_cleaned_when_build_fails(client, app, monkeypatch)
 
 
 def test_capability_probe_fails_when_post_first_stream_ignores_close():
-    from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
-    from backend.app.models.capabilities import CapabilityTester
+    from backend.app.llm_runtime.adapters import LangChainChatTransport, ModelAdapter
+    from backend.app.llm_runtime.capabilities import CapabilityTester
 
     class StalledIterator:
         def __init__(self):

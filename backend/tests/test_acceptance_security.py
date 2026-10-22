@@ -22,7 +22,7 @@ from backend.tests.test_acceptance_matrix import login
 from backend.tests.test_model_runtime_fix_round1 import MASTER_KEY
 
 SCAN_KEY = "sk-accept-scan-9f3a11c4"
-BASE_URL = "https://api.openai.com/v1"
+BASE_URL = "https://8.8.8.8/v1"
 
 
 def _admin_headers(client):
@@ -192,7 +192,7 @@ def test_security_master_key_rotation_disables_then_rekey_restores(client, app, 
 
         db_endpoint = db.get(LlmEndpoint, endpoint["id"])
         credential = db.scalar(select(LlmCredential).where(LlmCredential.endpoint_id == endpoint["id"]))
-        from backend.app.models.credentials import CredentialCipher
+        from backend.app.llm_runtime.credentials import CredentialCipher
 
         assert CredentialCipher(rotated_key).decrypt(
             endpoint["id"], db_endpoint.protocol, credential) == "sk-rotated-77aa21"

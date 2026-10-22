@@ -1,11 +1,12 @@
 import gc
 import os
 import shutil
+import tempfile
 import uuid
 from pathlib import Path
 
 
-PYTEST_TEMP_ROOT = Path(r"C:\Users\31346\AppData\Local\Temp\kilo\ai-customer-service-pytest")
+PYTEST_TEMP_ROOT = Path(tempfile.gettempdir()) / "ai-customer-service-pytest"
 
 
 def _process_is_running(pid: int) -> bool:

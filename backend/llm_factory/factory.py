@@ -1,4 +1,4 @@
-from backend.app.models.adapters import build_langchain_chat
+from backend.app.llm_runtime.adapters import build_langchain_chat
 
 
 def build_chat_model(protocol: str, api_key: str, model_name: str, base_url: str, timeout_seconds: int = 30,

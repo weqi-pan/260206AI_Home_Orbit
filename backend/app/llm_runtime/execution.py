@@ -1,5 +1,5 @@
-from backend.app.models.quotas import QuotaService
-from backend.app.models.runtime_service import ModelRuntimeService
+from backend.app.llm_runtime.quotas import QuotaService
+from backend.app.llm_runtime.runtime_service import ModelRuntimeService
 
 
 class BudgetedModel:

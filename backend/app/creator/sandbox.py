@@ -161,8 +161,8 @@ class SandboxTrialService:
     def _resolve_model(self):
         if self.model is not None:
             return self.model
-        from backend.app.models.quotas import QuotaExceeded
-        from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
+        from backend.app.llm_runtime.quotas import QuotaExceeded
+        from backend.app.llm_runtime.runtime_service import ModelRuntimeError, ModelRuntimeService
 
         try:
             if self.model_resolver is not None:
@@ -189,7 +189,7 @@ class SandboxTrialService:
         """Platform-model sandbox cases go through the chat quota lifecycle:
         reserve before the request, complete after; over-limit is a silent
         stable failure (incident already persisted by QuotaService)."""
-        from backend.app.models.quotas import QuotaExceeded, QuotaService
+        from backend.app.llm_runtime.quotas import QuotaExceeded, QuotaService
 
         if self._quota_model_id is None:
             return self._run_case(compiled, case, report, card)
