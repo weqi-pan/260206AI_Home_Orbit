@@ -173,15 +173,24 @@ class LangChainChatTransport:
         try:
             while True:
                 if cancel_event.is_set():
-                    bounded_cancel()
-                    return
-                try:
-                    kind, value = output.get(timeout=0.02)
-                except queue.Empty:
-                    continue
+                    # 取消前已有分片进入内部队列时，先交付该分片，避免丢数据。
+                    try:
+                        kind, value = output.get_nowait()
+                    except queue.Empty:
+                        bounded_cancel()
+                        return
+                else:
+                    try:
+                        kind, value = output.get(timeout=0.02)
+                    except queue.Empty:
+                        continue
                 if kind == "chunk":
-                    if not cancel_event.is_set():
-                        yield {"content": getattr(value, "content", "")}
+                    # 取消信号和首个分片可能同时到达。已到达的数据应先交给调用方，
+                    # 随后立即停止读取并关闭底层连接。
+                    yield {"content": getattr(value, "content", "")}
+                    if cancel_event.is_set():
+                        bounded_cancel()
+                        return
                 elif kind == "error":
                     raise value
                 else:
