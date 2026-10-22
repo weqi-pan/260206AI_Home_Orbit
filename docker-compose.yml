@@ -3,10 +3,10 @@ services:
     image: mysql:8.4
     container_name: ai-customer-service-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
       MYSQL_DATABASE: customer_service
       MYSQL_USER: customer_service
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change-me}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -43,13 +43,13 @@ services:
       dockerfile: backend/Dockerfile
     container_name: ai-customer-service-backend
     environment:
-      DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:-change-me}@mysql:3306/customer_service
+      DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}@mysql:3306/customer_service
       REDIS_URL: redis://redis:6379/0
       APP_MODE: production
-      LLM_CREDENTIAL_MASTER_KEY: ${LLM_CREDENTIAL_MASTER_KEY:-}
-      JWT_SECRET: ${JWT_SECRET:-development-only-change-this-secret}
-      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-Admin@123}
-      DEMO_INITIAL_PASSWORD: ${DEMO_INITIAL_PASSWORD:-Demo@1234}
+      LLM_CREDENTIAL_MASTER_KEY: ${LLM_CREDENTIAL_MASTER_KEY:?LLM_CREDENTIAL_MASTER_KEY is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?ADMIN_INITIAL_PASSWORD is required}
+      DEMO_INITIAL_PASSWORD: ${DEMO_INITIAL_PASSWORD:?DEMO_INITIAL_PASSWORD is required}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
     depends_on:
       mysql:
@@ -67,10 +67,10 @@ services:
       dockerfile: backend/Dockerfile
     container_name: ai-customer-service-celery-worker
     environment:
-      DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:-change-me}@mysql:3306/customer_service
+      DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}@mysql:3306/customer_service
       REDIS_URL: redis://redis:6379/0
       APP_MODE: production
-      LLM_CREDENTIAL_MASTER_KEY: ${LLM_CREDENTIAL_MASTER_KEY:-}
+      LLM_CREDENTIAL_MASTER_KEY: ${LLM_CREDENTIAL_MASTER_KEY:?LLM_CREDENTIAL_MASTER_KEY is required}
     depends_on:
       mysql:
         condition: service_healthy
@@ -95,10 +95,10 @@ services:
       dockerfile: backend/Dockerfile
     container_name: ai-customer-service-celery-beat
     environment:
-      DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:-change-me}@mysql:3306/customer_service
+      DATABASE_URL: mysql+pymysql://customer_service:${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}@mysql:3306/customer_service
       REDIS_URL: redis://redis:6379/0
       APP_MODE: production
-      LLM_CREDENTIAL_MASTER_KEY: ${LLM_CREDENTIAL_MASTER_KEY:-}
+      LLM_CREDENTIAL_MASTER_KEY: ${LLM_CREDENTIAL_MASTER_KEY:?LLM_CREDENTIAL_MASTER_KEY is required}
     depends_on:
       mysql:
         condition: service_healthy
