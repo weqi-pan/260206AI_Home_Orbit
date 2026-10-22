@@ -1,5 +1,6 @@
 from backend.app.api.home.base import *
 from backend.app.api.home.base import _low_stock_models, _parse_datetime, _shopping_view
+from backend.app.api.households import _membership
 
 @router.get("/memos")
 def list_memos(account: Account = Depends(get_current_account), session: Session = Depends(get_db)):

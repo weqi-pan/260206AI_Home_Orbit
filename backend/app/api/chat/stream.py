@@ -1,5 +1,6 @@
 from backend.app.api.chat.base import *
-from backend.app.api.chat.base import official_household_deployment, owned_session, submit_title_generation
+from backend.app.api.chat.base import owned_session, submit_title_generation
+from backend.app.api.chat.sessions import official_household_deployment
 
 @router.post("/sessions/{session_id}/chat")
 def chat(session_id: str, payload: ChatRequest, request: Request, account: Account = Depends(get_current_account), db: Session = Depends(get_db)):

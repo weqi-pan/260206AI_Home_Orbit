@@ -1,5 +1,5 @@
 from backend.app.api.creator.base import *
-from backend.app.api.creator.base import _draft, _guard_draft_not_locked_in_review, _household, _run_review_tasks, _submission_view
+from backend.app.api.creator.base import _draft, _guard_draft_not_locked_in_review, _household
 
 @router.post("/drafts/{draft_id}/publish", status_code=201)
 def publish_draft(draft_id: str, payload: PublishRequest, request: Request,

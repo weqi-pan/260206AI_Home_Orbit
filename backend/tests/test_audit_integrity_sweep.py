@@ -26,7 +26,7 @@ def test_models_mutations_are_audited_with_sanitized_payloads(client, app, monke
     headers = _admin_headers(client)
 
     created = client.post("/api/models/endpoints", headers=headers, json={
-        "protocol": "openai_compatible", "display_name": "Sweep Gateway", "base_url": "https://api.openai.com/v1",
+        "protocol": "openai_compatible", "display_name": "Sweep Gateway", "base_url": "https://8.8.8.8/v1",
         "api_key": SECRET, "timeout_seconds": 30, "max_retries": 2, "enabled": True})
     assert created.status_code == 201, created.text
     endpoint_id = created.json()["id"]

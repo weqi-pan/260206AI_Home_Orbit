@@ -1,5 +1,6 @@
 from backend.app.api.creator.base import *
-from backend.app.api.creator.base import _draft, _draft_view, _guard_draft_not_locked_in_review, _household, _validation_report
+from backend.app.api.creator.base import _draft, _draft_view, _guard_draft_not_locked_in_review, _household
+from backend.app.api.creator.drafts import _validation_report
 
 @router.post("/drafts/{draft_id}/generate")
 def generate_card(draft_id: str, payload: GenerateRequest, request: Request,

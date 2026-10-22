@@ -145,7 +145,7 @@ def test_quota_is_household_isolated_and_returns_stable_over_limit_codes(setting
         second = Household(name="Second", created_by_account_id=owner.id)
         session.add_all([first, second])
         session.flush()
-        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Quota", base_url="https://api.openai.com/v1", enabled=True)
+        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Quota", base_url="https://8.8.8.8/v1", enabled=True)
         session.add(endpoint); session.flush()
         model = LlmModel(endpoint_id=endpoint.id, model_name="chat", model_type="chat", enabled=True)
         session.add(model); session.flush()
@@ -185,7 +185,7 @@ def test_model_admin_api_masks_keys_preserves_omitted_key_and_requires_admin(cli
     login = client.post("/api/auth/login", json={"username": "admin", "password": "AdminTest@123"}).json()
     headers = {"Authorization": f"Bearer {login['access_token']}"}
     created = client.post("/api/models/endpoints", headers=headers, json={
-        "protocol": "openai_compatible", "display_name": "Gateway", "base_url": "https://api.openai.com/v1",
+        "protocol": "openai_compatible", "display_name": "Gateway", "base_url": "https://8.8.8.8/v1",
         "api_key": "sk-api-9999", "timeout_seconds": 30, "max_retries": 2, "enabled": True,
     })
     assert created.status_code == 201, created.text
@@ -222,7 +222,7 @@ def test_runtime_resolves_verified_binding_decrypts_credential_and_freezes_profi
     database = create_database(settings)
     database.create_all()
     with database.session_factory() as session:
-        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Gateway", base_url="https://api.openai.com/v1", enabled=True, revision=4)
+        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Gateway", base_url="https://8.8.8.8/v1", enabled=True, revision=4)
         session.add(endpoint); session.flush()
         encrypted = CredentialCipher(MASTER_KEY).encrypt(endpoint.id, endpoint.protocol, 1, "sk-runtime-1234")
         session.add(LlmCredential(endpoint_id=endpoint.id, ciphertext=encrypted.ciphertext, nonce=encrypted.nonce, key_version=1, last_four=encrypted.last_four))
@@ -251,7 +251,7 @@ def test_invalid_master_key_disables_affected_endpoint_without_secret_or_traceba
     monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", "invalid")
     database = create_database(settings); database.create_all()
     with database.session_factory() as session:
-        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Gateway", base_url="https://api.openai.com/v1", enabled=True)
+        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Gateway", base_url="https://8.8.8.8/v1", enabled=True)
         session.add(endpoint); session.flush()
         session.add(LlmCredential(endpoint_id=endpoint.id, ciphertext=b"secret-ciphertext", nonce=b"123456789012", key_version=1, last_four="1234"))
         model = LlmModel(endpoint_id=endpoint.id, model_name="chat", model_type="chat", enabled=True)
@@ -271,7 +271,7 @@ def test_setup_not_ready_when_required_binding_has_incomplete_capability_flags(c
 
     monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
     with app.state.database.session_factory.begin() as session:
-        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Gateway", base_url="https://api.openai.com/v1", enabled=True)
+        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Gateway", base_url="https://8.8.8.8/v1", enabled=True)
         session.add(endpoint); session.flush()
         chat = LlmModel(endpoint_id=endpoint.id, model_name="chat", model_type="chat", enabled=True,
                         capability_flags_json=json.dumps({"generation": "passed"}))
@@ -294,7 +294,7 @@ def test_model_grants_are_household_scoped_and_idempotent(client, app):
     headers = {"Authorization": f"Bearer {login['access_token']}"}
     household = client.get("/api/households/current", headers=headers).json()
     with app.state.database.session_factory.begin() as session:
-        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Gateway", base_url="https://api.openai.com/v1", enabled=True)
+        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Gateway", base_url="https://8.8.8.8/v1", enabled=True)
         session.add(endpoint); session.flush()
         model = LlmModel(endpoint_id=endpoint.id, model_name="chat", model_type="chat", enabled=True)
         session.add(model); session.flush(); model_id = model.id
@@ -315,7 +315,7 @@ def test_model_profile_rate_limit_returns_stable_code(settings):
     with database.session_factory() as session:
         owner = Account(username="rate-owner", password_hash="hash"); session.add(owner); session.flush()
         household = Household(name="Rate", created_by_account_id=owner.id); session.add(household)
-        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Gateway", base_url="https://api.openai.com/v1", enabled=True)
+        endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Gateway", base_url="https://8.8.8.8/v1", enabled=True)
         session.add(endpoint); session.flush()
         model = LlmModel(endpoint_id=endpoint.id, model_name="chat", model_type="chat", requests_per_minute=1, enabled=True)
         session.add(model); session.flush()

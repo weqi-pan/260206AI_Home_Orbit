@@ -1,5 +1,5 @@
 from backend.app.api.creator.base import *
-from backend.app.api.creator.base import _draft, _household, _trial_summary
+from backend.app.api.creator.base import _draft, _household
 
 @router.post("/drafts/{draft_id}/trial")
 def run_trial(draft_id: str, payload: TrialRequest, request: Request,

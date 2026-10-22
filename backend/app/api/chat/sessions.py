@@ -1,5 +1,5 @@
 from backend.app.api.chat.base import *
-from backend.app.api.chat.base import official_device_deployment, official_household_deployment, owned_session, session_dict, exactly_one_household
+from backend.app.api.chat.base import official_device_deployment, owned_session, session_dict, exactly_one_household
 
 @router.get("/sessions")
 def list_sessions(account: Account = Depends(get_current_account), db: Session = Depends(get_db)):

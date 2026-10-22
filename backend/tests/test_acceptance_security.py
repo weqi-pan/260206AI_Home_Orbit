@@ -22,7 +22,7 @@ from backend.tests.test_acceptance_matrix import login
 from backend.tests.test_model_runtime_fix_round1 import MASTER_KEY
 
 SCAN_KEY = "sk-accept-scan-9f3a11c4"
-BASE_URL = "https://api.openai.com/v1"
+BASE_URL = "https://8.8.8.8/v1"
 
 
 def _admin_headers(client):

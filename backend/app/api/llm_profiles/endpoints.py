@@ -7,7 +7,7 @@ from backend.app.api.llm_profiles import router
 from backend.app.api.llm_profiles.security import _cipher
 from backend.app.api.llm_profiles.views import endpoint_view
 from backend.app.core.security import get_db, require_admin
-from backend.app.db.models import Account, LlmCredential, LlmEndpoint
+from backend.app.db.models import Account, LlmCredential, LlmEndpoint, LlmModel
 from backend.app.llm_runtime.endpoint_security import UnsafeEndpointUrl, validate_endpoint_url
 from backend.app.llm_runtime.schemas import EndpointCreate, EndpointUpdate
 

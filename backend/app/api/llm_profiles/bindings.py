@@ -1,10 +1,12 @@
+import json
+
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.llm_profiles import router
-from backend.app.core.security import get_db
-from backend.app.db.models import FaqPair, Household, KnowledgeFile, ModelPurposeBinding
+from backend.app.core.security import get_db, require_admin
+from backend.app.db.models import Account, FaqPair, Household, KnowledgeFile, ModelPurposeBinding
 from backend.app.llm_runtime.collections import DatabaseCollectionSwitchService
 from backend.app.llm_runtime.registry import BindingRejected, ModelRegistry
 from backend.app.llm_runtime.runtime_service import ModelRuntimeError
