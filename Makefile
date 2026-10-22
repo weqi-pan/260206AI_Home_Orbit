@@ -8,7 +8,7 @@ backend-setup:
 	cd backend && $(PYTHON) -m venv .venv && .venv/bin/pip install -U pip && .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
 
 frontend-setup:
-	cd frontend && npm ci
+	cd frontend && npm ci --fetch-retries=10 --fetch-retry-mintimeout=5000 --fetch-retry-maxtimeout=60000
 
 backend-test:
 	cd backend && .venv/bin/python -m pytest -q
