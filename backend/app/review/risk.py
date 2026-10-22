@@ -22,7 +22,7 @@ class ReviewRiskService:
         self._model = model  # 注入确定性模型（测试）；生产走 BudgetedModel
 
     def _budgeted_model(self):
-        from backend.app.models.execution import BudgetedModel
+        from backend.app.llm_runtime.execution import BudgetedModel
 
         return BudgetedModel(self.session_factory, self.household_id, self.purpose)
 
@@ -44,8 +44,8 @@ class ReviewRiskService:
         Returns {"status": "done", "summary", "risk_level"} or
         {"status": "unavailable", "code": <stable code>}.
         """
-        from backend.app.models.quotas import QuotaExceeded
-        from backend.app.models.runtime_service import ModelRuntimeError
+        from backend.app.llm_runtime.quotas import QuotaExceeded
+        from backend.app.llm_runtime.runtime_service import ModelRuntimeError
 
         model = self._model or self._budgeted_model()
         try:

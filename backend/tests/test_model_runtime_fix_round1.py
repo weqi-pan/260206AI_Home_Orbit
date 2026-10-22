@@ -22,7 +22,7 @@ class BaseChatTransport:
 
 def configured_runtime(session, household_id, *, purpose="primary_chat", grant=True, max_tokens=8, model_rpm=10, household_rpm=10, monthly=100):
     from backend.app.db.models import LlmCredential, LlmEndpoint, LlmModel, ModelGrant, ModelHealthCheck, ModelPurposeBinding, UsageQuota
-    from backend.app.models.credentials import CredentialCipher
+    from backend.app.llm_runtime.credentials import CredentialCipher
 
     endpoint = LlmEndpoint(protocol="openai_compatible", display_name="Gateway", base_url="https://models.example/v1", enabled=True, revision=3)
     session.add(endpoint); session.flush()
@@ -51,7 +51,7 @@ def configured_runtime(session, household_id, *, purpose="primary_chat", grant=T
 def test_runtime_requires_household_grant_and_current_evidence(settings, monkeypatch):
     from backend.app.db.models import Account, Household
     from backend.app.db.session import create_database
-    from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeError, ModelRuntimeService
 
     monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
     database = create_database(settings); database.create_all()
@@ -71,7 +71,7 @@ def test_runtime_requires_household_grant_and_current_evidence(settings, monkeyp
 def test_usage_reservation_fails_closed_without_household_quota(settings):
     from backend.app.db.models import Account, Household, LlmEndpoint, LlmModel
     from backend.app.db.session import create_database
-    from backend.app.models.quotas import QuotaExceeded, QuotaService
+    from backend.app.llm_runtime.quotas import QuotaExceeded, QuotaService
 
     database = create_database(settings); database.create_all()
     with database.session_factory() as session:
@@ -231,8 +231,8 @@ def test_clear_key_and_wrong_master_key_break_readiness_without_leak(client, app
 def test_endpoint_change_and_failed_retest_invalidate_new_runs(settings, monkeypatch):
     from backend.app.db.models import Account, Household
     from backend.app.db.session import create_database
-    from backend.app.models.registry import ModelRegistry
-    from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
+    from backend.app.llm_runtime.registry import ModelRegistry
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeError, ModelRuntimeService
 
     monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
     database = create_database(settings); database.create_all()
@@ -251,7 +251,7 @@ def test_endpoint_change_and_failed_retest_invalidate_new_runs(settings, monkeyp
 
 
 def test_rebinding_is_rejected_before_outbound_connect():
-    from backend.app.models.endpoint_security import PinnedNetworkBackend, UnsafeEndpointUrl
+    from backend.app.llm_runtime.endpoint_security import PinnedNetworkBackend, UnsafeEndpointUrl
 
     calls = []
     backend = PinnedNetworkBackend(resolver=lambda host: ["127.0.0.1"], connector=lambda **kwargs: calls.append(kwargs))
@@ -261,8 +261,8 @@ def test_rebinding_is_rejected_before_outbound_connect():
 
 
 def test_active_stream_cancellation_closes_and_stops_emission():
-    from backend.app.models.adapters import ModelAdapter
-    from backend.app.models.capabilities import CapabilityTester
+    from backend.app.llm_runtime.adapters import ModelAdapter
+    from backend.app.llm_runtime.capabilities import CapabilityTester
 
     class Transport(BaseChatTransport):
         def __init__(self): self.closed = False; self.after_cancel = 0; self.stream_calls = 0
@@ -283,8 +283,8 @@ def test_active_stream_cancellation_closes_and_stops_emission():
 
 
 def test_capability_errors_are_allowlisted_and_never_persist_exception_text():
-    from backend.app.models.adapters import ModelAdapter
-    from backend.app.models.capabilities import CapabilityTester
+    from backend.app.llm_runtime.adapters import ModelAdapter
+    from backend.app.llm_runtime.capabilities import CapabilityTester
 
     class SecretTransport(BaseChatTransport):
         def generate(self, **kwargs):
@@ -308,7 +308,7 @@ def test_auxiliary_services_resolve_purpose_model_and_preserve_degradation():
 def test_db_collection_build_switches_only_after_success_and_vector_reads_active(settings, tmp_path):
     from backend.app.db.models import Account, ActiveEmbeddingCollection, Household, LlmEndpoint, LlmModel
     from backend.app.db.session import create_database
-    from backend.app.models.collections import DatabaseCollectionSwitchService
+    from backend.app.llm_runtime.collections import DatabaseCollectionSwitchService
     from backend.rag.vector_store import VectorStoreService
 
     database = create_database(settings); database.create_all()
@@ -336,7 +336,7 @@ def test_db_collection_build_switches_only_after_success_and_vector_reads_active
 def test_vector_store_constructs_configured_openai_embedding_for_active_collection(settings, monkeypatch):
     from backend.app.db.models import Account, ActiveEmbeddingCollection, Household
     from backend.app.db.session import create_database
-    from backend.app.models.runtime_service import ModelRuntimeService
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeService
     from backend.rag.vector_store import configured_vector_store
 
     monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
@@ -402,7 +402,7 @@ def test_embedding_binding_api_rebuilds_before_atomic_pointer_and_binding_switch
 
 def test_anthropic_builder_uses_controlled_http_client_without_network():
     import httpx
-    from backend.app.models.adapters import build_langchain_chat
+    from backend.app.llm_runtime.adapters import build_langchain_chat
 
     client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json={})))
     model = build_langchain_chat("anthropic", api_key="key", model="claude-test", base_url="https://api.anthropic.com",

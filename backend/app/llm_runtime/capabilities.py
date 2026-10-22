@@ -1,7 +1,7 @@
 import threading
 from dataclasses import dataclass
 
-from backend.app.models.adapters import StreamEvent
+from backend.app.llm_runtime.adapters import StreamEvent
 
 
 @dataclass(frozen=True)

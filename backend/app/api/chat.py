@@ -17,10 +17,10 @@ from backend.agent.tools.household_gateways import HouseholdToolRepositories
 from backend.agent.platform.runner import DeploymentAgentRunner
 from backend.app.services.defaults import get_agent_runner, get_followup_service, get_sentiment_service, get_title_service
 from backend.app.api.setup import purpose_ready, setup_status
-from backend.app.models.adapters import build_langchain_chat
-from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
-from backend.app.models.quotas import QuotaExceeded, QuotaService
-from backend.app.models.execution import purpose_model_resolver
+from backend.app.llm_runtime.adapters import build_langchain_chat
+from backend.app.llm_runtime.runtime_service import ModelRuntimeError, ModelRuntimeService
+from backend.app.llm_runtime.quotas import QuotaExceeded, QuotaService
+from backend.app.llm_runtime.execution import purpose_model_resolver
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])

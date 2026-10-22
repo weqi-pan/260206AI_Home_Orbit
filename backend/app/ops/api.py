@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from backend.app.audit.service import audit_admin_action, sanitize_detail
 from backend.app.core.security import get_db, require_admin
 from backend.app.db.models import Account, Household
-from backend.app.models.quotas import QuotaService
+from backend.app.llm_runtime.quotas import QuotaService
 from backend.app.ops.service import (MAX_WINDOW_DAYS, MIN_WINDOW_DAYS, OpsOverviewService,
                                      QuotaGovernanceService)
 

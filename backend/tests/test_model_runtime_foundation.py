@@ -29,7 +29,7 @@ class FakeEmbeddingTransport:
 
 
 def test_aes_gcm_credentials_use_endpoint_protocol_version_aad_and_hide_plaintext():
-    from backend.app.models.credentials import CredentialCipher, InvalidMasterKey
+    from backend.app.llm_runtime.credentials import CredentialCipher, InvalidMasterKey
 
     cipher = CredentialCipher(MASTER_KEY)
     first = cipher.encrypt("ep-1", "openai_compatible", 1, "sk-secret-1234")
@@ -55,14 +55,14 @@ def test_aes_gcm_credentials_use_endpoint_protocol_version_aad_and_hide_plaintex
     "file:///etc/passwd",
 ])
 def test_endpoint_url_policy_rejects_local_metadata_private_and_non_http(url):
-    from backend.app.models.endpoint_security import UnsafeEndpointUrl, validate_endpoint_url
+    from backend.app.llm_runtime.endpoint_security import UnsafeEndpointUrl, validate_endpoint_url
 
     with pytest.raises(UnsafeEndpointUrl):
         validate_endpoint_url(url, resolver=lambda host: [host])
 
 
 def test_endpoint_url_policy_checks_all_dns_answers_to_resist_rebinding():
-    from backend.app.models.endpoint_security import UnsafeEndpointUrl, validate_endpoint_url
+    from backend.app.llm_runtime.endpoint_security import UnsafeEndpointUrl, validate_endpoint_url
 
     with pytest.raises(UnsafeEndpointUrl):
         validate_endpoint_url("https://models.example/v1", resolver=lambda host: ["8.8.8.8", "127.0.0.1"])
@@ -70,8 +70,8 @@ def test_endpoint_url_policy_checks_all_dns_answers_to_resist_rebinding():
 
 
 def test_adapter_normalizes_openai_and_anthropic_content_and_exercises_capabilities():
-    from backend.app.models.adapters import ModelAdapter
-    from backend.app.models.capabilities import CapabilityTester
+    from backend.app.llm_runtime.adapters import ModelAdapter
+    from backend.app.llm_runtime.capabilities import CapabilityTester
 
     adapter = ModelAdapter("openai_compatible", "demo", chat_transport=FakeChatTransport(), embedding_transport=FakeEmbeddingTransport())
     evidence = CapabilityTester(adapter).run_chat()
@@ -94,7 +94,7 @@ def test_adapter_normalizes_openai_and_anthropic_content_and_exercises_capabilit
 def test_capability_failure_gates_binding_and_does_not_accept_generation_only(settings):
     from backend.app.db.platform_models import LlmEndpoint, LlmModel
     from backend.app.db.session import create_database
-    from backend.app.models.registry import BindingRejected, ModelRegistry
+    from backend.app.llm_runtime.registry import BindingRejected, ModelRegistry
 
     database = create_database(settings)
     database.create_all()
@@ -116,7 +116,7 @@ def test_capability_failure_gates_binding_and_does_not_accept_generation_only(se
 def test_anthropic_embedding_profile_is_rejected(settings):
     from backend.app.db.platform_models import LlmEndpoint
     from backend.app.db.session import create_database
-    from backend.app.models.registry import ModelRegistry, RegistryValidationError
+    from backend.app.llm_runtime.registry import ModelRegistry, RegistryValidationError
 
     database = create_database(settings)
     database.create_all()
@@ -133,7 +133,7 @@ def test_quota_is_household_isolated_and_returns_stable_over_limit_codes(setting
     from backend.app.db.household_models import Household
     from backend.app.db.models import Account, LlmEndpoint, LlmModel
     from backend.app.db.session import create_database
-    from backend.app.models.quotas import QuotaExceeded, QuotaService
+    from backend.app.llm_runtime.quotas import QuotaExceeded, QuotaService
 
     database = create_database(settings)
     database.create_all()
@@ -159,7 +159,7 @@ def test_quota_is_household_isolated_and_returns_stable_over_limit_codes(setting
 
 
 def test_runtime_snapshot_is_immutable_after_binding_revision_changes():
-    from backend.app.models.runtime import ModelRuntimeSnapshot
+    from backend.app.llm_runtime.runtime import ModelRuntimeSnapshot
 
     snapshot = ModelRuntimeSnapshot(purpose="primary_chat", model_id="m1", endpoint_id="e1", config_revision=7, profile={"temperature": 0.2})
     with pytest.raises((TypeError, AttributeError)):
@@ -168,7 +168,7 @@ def test_runtime_snapshot_is_immutable_after_binding_revision_changes():
 
 
 def test_collection_switch_builds_new_version_then_atomically_activates_and_retains_old():
-    from backend.app.models.collections import CollectionSwitchService, InMemoryCollectionCatalog
+    from backend.app.llm_runtime.collections import CollectionSwitchService, InMemoryCollectionCatalog
 
     catalog = InMemoryCollectionCatalog(active="knowledge-v1")
     service = CollectionSwitchService(catalog)
@@ -215,8 +215,8 @@ def test_setup_readiness_requires_valid_master_key_and_verified_required_binding
 def test_runtime_resolves_verified_binding_decrypts_credential_and_freezes_profile(settings, monkeypatch):
     from backend.app.db.models import LlmCredential, LlmEndpoint, LlmModel, ModelHealthCheck, ModelPurposeBinding
     from backend.app.db.session import create_database
-    from backend.app.models.credentials import CredentialCipher
-    from backend.app.models.runtime_service import ModelRuntimeService
+    from backend.app.llm_runtime.credentials import CredentialCipher
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeService
 
     monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
     database = create_database(settings)
@@ -246,7 +246,7 @@ def test_runtime_resolves_verified_binding_decrypts_credential_and_freezes_profi
 def test_invalid_master_key_disables_affected_endpoint_without_secret_or_traceback(settings, monkeypatch):
     from backend.app.db.models import LlmCredential, LlmEndpoint, LlmModel, ModelPurposeBinding
     from backend.app.db.session import create_database
-    from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeError, ModelRuntimeService
 
     monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", "invalid")
     database = create_database(settings); database.create_all()
@@ -309,7 +309,7 @@ def test_model_grants_are_household_scoped_and_idempotent(client, app):
 def test_model_profile_rate_limit_returns_stable_code(settings):
     from backend.app.db.models import Account, Household, LlmEndpoint, LlmModel
     from backend.app.db.session import create_database
-    from backend.app.models.quotas import QuotaExceeded, QuotaService
+    from backend.app.llm_runtime.quotas import QuotaExceeded, QuotaService
 
     database = create_database(settings); database.create_all()
     with database.session_factory() as session:

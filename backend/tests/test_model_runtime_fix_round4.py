@@ -127,8 +127,8 @@ def test_embedding_staging_is_cleaned_when_build_fails(client, app, monkeypatch)
 
 
 def test_capability_probe_fails_when_post_first_stream_ignores_close():
-    from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
-    from backend.app.models.capabilities import CapabilityTester
+    from backend.app.llm_runtime.adapters import LangChainChatTransport, ModelAdapter
+    from backend.app.llm_runtime.capabilities import CapabilityTester
 
     class StalledIterator:
         def __init__(self):

@@ -61,7 +61,7 @@ def test_embedding_bind_fails_when_any_active_source_is_unresolved_and_records_a
 
 
 def test_stalled_production_stream_can_be_cancelled_promptly_and_closes_underlying_iterator():
-    from backend.app.models.adapters import LangChainChatTransport, ModelAdapter
+    from backend.app.llm_runtime.adapters import LangChainChatTransport, ModelAdapter
 
     class BlockingIterator:
         def __init__(self): self.release = threading.Event(); self.closed = threading.Event(); self.count = 0
@@ -93,7 +93,7 @@ def test_stalled_production_stream_can_be_cancelled_promptly_and_closes_underlyi
 
 
 def test_runtime_snapshot_is_recursively_immutable_and_detached_from_source():
-    from backend.app.models.runtime import ModelRuntimeSnapshot
+    from backend.app.llm_runtime.runtime import ModelRuntimeSnapshot
 
     source = {"capabilities": {"generation": "passed"}, "stops": ["a"], "modes": {"safe"}}
     snapshot = ModelRuntimeSnapshot("primary_chat", "m", "e", 1, source)
@@ -193,9 +193,9 @@ def test_unreadable_active_source_preflight_fails_before_store_creation(client, 
 
 
 def test_auxiliary_execution_rejects_missing_effective_budget_before_reservation(settings, monkeypatch):
-    from backend.app.models.execution import BudgetedModel
-    from backend.app.models.runtime import ModelRuntimeSnapshot
-    import backend.app.models.execution as execution_module
+    from backend.app.llm_runtime.execution import BudgetedModel
+    from backend.app.llm_runtime.runtime import ModelRuntimeSnapshot
+    import backend.app.llm_runtime.execution as execution_module
 
     resolved = SimpleNamespace(snapshot=ModelRuntimeSnapshot("auxiliary_generation", "m", "e", 1,
                                                               {"agent_token_budget": None, "max_tokens": None}))

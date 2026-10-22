@@ -324,7 +324,7 @@ def test_public_knowledge_is_revectorized_into_installer_household(client, app, 
             return ChatResult(generations=[ChatGeneration(message=AIMessage(
                 content=f"根据采购知识：{tool_messages[-1].content}"))])
 
-    from backend.app.models.runtime_service import ModelRuntimeService
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeService
 
     monkeypatch.setattr(ModelRuntimeService, "build_chat_model", lambda self, resolved: KnowledgeChatModel())
     with app.state.database.session_factory() as db:

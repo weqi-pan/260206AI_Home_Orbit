@@ -162,9 +162,9 @@ def _validation_report(db, household_id, draft, card):
 @router.post("/drafts/{draft_id}/generate")
 def generate_card(draft_id: str, payload: GenerateRequest, request: Request,
                   account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
-    from backend.app.models.execution import purpose_model_resolver
-    from backend.app.models.quotas import QuotaExceeded
-    from backend.app.models.runtime_service import ModelRuntimeError
+    from backend.app.llm_runtime.execution import purpose_model_resolver
+    from backend.app.llm_runtime.quotas import QuotaExceeded
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeError
 
     member = _household(db, account.id)
     if member.role not in WRITER_ROLES:

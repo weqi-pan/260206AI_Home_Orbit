@@ -48,7 +48,7 @@ def test_concurrent_quota_reservations_never_oversubscribe_the_monthly_limit(cli
     """两个并发 reserve 同时进入限额判断：月度额度只允许一次入场（聊天链路
     所用的同一 QuotaService.reserve 串行化在家庭配额行上）。"""
     from backend.app.db.models import LlmEndpoint, LlmModel, UsageQuota
-    from backend.app.models.quotas import QuotaExceeded, QuotaService
+    from backend.app.llm_runtime.quotas import QuotaExceeded, QuotaService
 
     _, household_id = _new_household(app, "quota-race")
     with app.state.database.session_factory.begin() as db:

@@ -1,6 +1,6 @@
 from langchain_core.messages import AIMessage, AIMessageChunk
 
-from backend.app.models.adapters import content_text
+from backend.app.llm_runtime.adapters import content_text
 
 
 class UnavailableAgentRunner:

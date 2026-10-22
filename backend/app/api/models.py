@@ -9,17 +9,17 @@ from sqlalchemy.orm import Session
 from backend.app.core.security import get_db, require_admin
 from backend.app.db.models import (Account, FaqPair, Household, KnowledgeFile, LlmCredential, LlmEndpoint, LlmModel,
                                    ModelGrant, ModelPurposeBinding)
-from backend.app.models.collections import DatabaseCollectionSwitchService
-from backend.app.models.credentials import CredentialCipher, InvalidMasterKey
-from backend.app.models.endpoint_security import UnsafeEndpointUrl, validate_endpoint_url
-from backend.app.models.quotas import QuotaService
-from backend.app.models.registry import BindingRejected, ModelRegistry, RegistryValidationError
-from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
-from backend.app.models.source_snapshot import (
+from backend.app.llm_runtime.collections import DatabaseCollectionSwitchService
+from backend.app.llm_runtime.credentials import CredentialCipher, InvalidMasterKey
+from backend.app.llm_runtime.endpoint_security import UnsafeEndpointUrl, validate_endpoint_url
+from backend.app.llm_runtime.quotas import QuotaService
+from backend.app.llm_runtime.registry import BindingRejected, ModelRegistry, RegistryValidationError
+from backend.app.llm_runtime.runtime_service import ModelRuntimeError, ModelRuntimeService
+from backend.app.llm_runtime.source_snapshot import (
     EmbeddingSourceIncomplete, EmbeddingSourceSnapshotStale,
     capture_embedding_sources, cleanup_embedding_sources,
 )
-from backend.app.models.schemas import EndpointCreate, EndpointUpdate, ModelCreate, ModelUpdate, PurposeBindingRequest, QuotaRequest
+from backend.app.llm_runtime.schemas import EndpointCreate, EndpointUpdate, ModelCreate, ModelUpdate, PurposeBindingRequest, QuotaRequest
 
 
 router = APIRouter(prefix="/models", tags=["models"], dependencies=[Depends(require_admin)])

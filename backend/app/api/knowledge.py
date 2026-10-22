@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_db, require_admin
 from backend.app.db.models import Account, FaqPair, HouseholdMember, KnowledgeFile, utcnow
-from backend.app.models.execution import purpose_model_resolver
+from backend.app.llm_runtime.execution import purpose_model_resolver
 from backend.app.services.faq_gen import FaqGenerationError, FaqGenerator
 from backend.rag.vector_store import VectorStoreService, VectorStoreUnavailable
 from backend.app.api.setup import purpose_ready

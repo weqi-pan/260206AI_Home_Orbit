@@ -49,7 +49,7 @@ def test_household_quota_view_reconciles_usage_trend_and_incidents(client, app, 
 
 def test_quota_adjustment_is_audited_validated_and_applies_to_new_reservations_only(client, app, monkeypatch):
     from backend.app.db.models import AdminActionAudit, ModelUsage, UsageQuota
-    from backend.app.models.quotas import QuotaService
+    from backend.app.llm_runtime.quotas import QuotaService
 
     monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
     account_id, household_id = _home(app)
@@ -102,7 +102,7 @@ def test_quota_incident_listing_paginated_and_filtered(client, app):
 def test_release_expired_reconciles_stale_reservations_conservatively(client, app, monkeypatch):
     from backend.app.db.base import utcnow
     from backend.app.db.models import AdminActionAudit, ModelUsage
-    from backend.app.models.quotas import QuotaService
+    from backend.app.llm_runtime.quotas import QuotaService
 
     monkeypatch.setenv("LLM_CREDENTIAL_MASTER_KEY", MASTER_KEY)
     account_id, household_id = _home(app)

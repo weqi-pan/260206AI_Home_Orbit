@@ -5,14 +5,14 @@ from dataclasses import dataclass
 from sqlalchemy import select
 
 from backend.app.db.models import LlmCredential, LlmEndpoint, LlmModel, ModelGrant, ModelHealthCheck, ModelPurposeBinding
-from backend.app.models.credentials import CredentialCipher
-from backend.app.models.adapters import (
+from backend.app.llm_runtime.credentials import CredentialCipher
+from backend.app.llm_runtime.adapters import (
     LangChainChatTransport, LangChainEmbeddingTransport, ModelAdapter,
     build_langchain_chat, build_langchain_embeddings,
 )
-from backend.app.models.capabilities import CapabilityTester
-from backend.app.models.runtime import ModelRuntimeSnapshot
-from backend.app.models.endpoint_security import safe_http_client, validate_endpoint_url, UnsafeEndpointUrl
+from backend.app.llm_runtime.capabilities import CapabilityTester
+from backend.app.llm_runtime.runtime import ModelRuntimeSnapshot
+from backend.app.llm_runtime.endpoint_security import safe_http_client, validate_endpoint_url, UnsafeEndpointUrl
 
 
 class ModelRuntimeError(RuntimeError):

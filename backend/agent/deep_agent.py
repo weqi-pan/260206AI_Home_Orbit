@@ -6,7 +6,7 @@ from langchain.agents.middleware import TodoListMiddleware
 from backend.agent.subagents import AFTERSALES_SUBAGENT, PRESALES_SUBAGENT, REPORT_TICKET_SUBAGENT
 from backend.agent.tools.agent_tools import get_current_month, get_weather
 from backend.agent.tools.middleware import log_before_model, monitor_tool
-from backend.model.factory import get_chat_model
+from backend.llm_factory.factory import get_chat_model
 
 
 PROMPTS = Path(__file__).parents[1] / "prompts"

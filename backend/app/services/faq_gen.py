@@ -2,7 +2,7 @@ import json
 import re
 from pathlib import Path
 
-from backend.model.factory import get_chat_model
+from backend.llm_factory.factory import get_chat_model
 
 
 class FaqGenerationError(RuntimeError):

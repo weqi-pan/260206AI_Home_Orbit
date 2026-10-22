@@ -202,8 +202,8 @@ def faq_generate(session, payload, record):
     path = _knowledge_file_path(get_settings(), item)
     if path is None:
         raise _permanent("KNOWLEDGE_SOURCE_MISSING")
-    from backend.app.models.execution import purpose_model_resolver
-    from backend.app.models.runtime_service import ModelRuntimeError
+    from backend.app.llm_runtime.execution import purpose_model_resolver
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeError
     from backend.app.services.faq_gen import FaqGenerationError, FaqGenerator
 
     resolver = purpose_model_resolver(_session_factory(), item.household_id)
@@ -268,8 +268,8 @@ def sandbox_trial(session, payload, record):
 def models_health_check(session, payload, record):
     """模型健康检查：对启用的模型档案跑最小能力测试并落库证据。"""
     from backend.app.db.models import LlmModel
-    from backend.app.models.registry import ModelRegistry
-    from backend.app.models.runtime_service import ModelRuntimeError, ModelRuntimeService
+    from backend.app.llm_runtime.registry import ModelRegistry
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeError, ModelRuntimeService
 
     model_id = payload.get("model_id")
     if model_id:

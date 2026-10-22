@@ -49,7 +49,7 @@ def _echo_model(app, monkeypatch):
         def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
             return ChatResult(generations=[ChatGeneration(message=AIMessage(content="换算完成：鸡蛋需要8个"))])
 
-    from backend.app.models.runtime_service import ModelRuntimeService
+    from backend.app.llm_runtime.runtime_service import ModelRuntimeService
 
     monkeypatch.setattr(ModelRuntimeService, "build_chat_model", lambda self, resolved: EchoChatModel())
     return EchoChatModel

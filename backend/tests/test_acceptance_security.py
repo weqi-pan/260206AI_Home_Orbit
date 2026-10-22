@@ -192,7 +192,7 @@ def test_security_master_key_rotation_disables_then_rekey_restores(client, app, 
 
         db_endpoint = db.get(LlmEndpoint, endpoint["id"])
         credential = db.scalar(select(LlmCredential).where(LlmCredential.endpoint_id == endpoint["id"]))
-        from backend.app.models.credentials import CredentialCipher
+        from backend.app.llm_runtime.credentials import CredentialCipher
 
         assert CredentialCipher(rotated_key).decrypt(
             endpoint["id"], db_endpoint.protocol, credential) == "sk-rotated-77aa21"

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.security import get_current_account, get_db
 from backend.agent.tools.gateways import ToolRepositories
 from backend.app.db.models import Account, ChatSession, HouseholdMember, Ticket
-from backend.app.models.execution import purpose_model_resolver
+from backend.app.llm_runtime.execution import purpose_model_resolver
 from backend.app.services.ticket_summary import TicketSummaryService
 
 

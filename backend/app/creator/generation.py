@@ -9,8 +9,8 @@ untrusted JSON that the platform validates separately.
 import json
 import re
 
-from backend.app.models.quotas import QuotaExceeded
-from backend.app.models.runtime_service import ModelRuntimeError
+from backend.app.llm_runtime.quotas import QuotaExceeded
+from backend.app.llm_runtime.runtime_service import ModelRuntimeError
 
 GENERATION_PURPOSE = "auxiliary_generation"
 
@@ -75,7 +75,7 @@ class IntentCardGenerator:
             elif self._model_resolver is not None:
                 model = self._model_resolver(GENERATION_PURPOSE)
             else:
-                from backend.model.factory import get_chat_model
+                from backend.llm_factory.factory import get_chat_model
 
                 model = get_chat_model()
             content = model.invoke([
