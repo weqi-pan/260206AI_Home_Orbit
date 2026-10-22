@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { bindPurpose, createEndpoint, createModel, fetchEndpoints, fetchModels, runCapabilityTest, type CapabilityResult, type ModelEndpoint, type ModelProfile, type ModelProtocol, type ModelType } from '../../api/models'
+import { bindPurpose, createEndpoint, createModel, fetchEndpoints, fetchModels, runCapabilityTest, type CapabilityResult, type ModelEndpoint, type ModelProfile, type ModelProtocol, type ModelType } from '../../api/llmProfiles'
 import { fetchSetupStatus, type SetupStatus } from '../../api/setup'
 
 const setup = ref<SetupStatus | null>(null)

@@ -5,7 +5,7 @@ import Setup from './Setup.vue'
 const createEndpoint = vi.fn().mockResolvedValue({ id: 'e1', display_name: 'Gateway', has_api_key: true, masked_api_key: '****9999' })
 const runCapabilityTest = vi.fn().mockResolvedValue({ passed: true, capabilities: { generation: 'passed', streaming: 'passed' }, error_code: null })
 
-vi.mock('../../api/models', () => ({
+vi.mock('../../api/llmProfiles', () => ({
   createEndpoint: (...args: unknown[]) => createEndpoint(...args),
   createModel: vi.fn().mockResolvedValue({ id: 'm1' }),
   runCapabilityTest: (...args: unknown[]) => runCapabilityTest(...args),

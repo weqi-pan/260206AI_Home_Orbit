@@ -54,7 +54,7 @@ def test_embedding_build_uses_captured_bytes_when_source_changes_and_is_restored
 
     app.state.embedding_store_factory = lambda name, model_id: Store()
 
-    real_capture = __import__("backend.app.api.models", fromlist=["capture_embedding_sources"]).capture_embedding_sources
+    real_capture = __import__("backend.app.api.llm_profiles.bindings", fromlist=["capture_embedding_sources"]).capture_embedding_sources
     capture_count = 0
 
     def mutate_after_initial_capture(*args, **kwargs):
@@ -65,7 +65,7 @@ def test_embedding_build_uses_captured_bytes_when_source_changes_and_is_restored
             source_path.write_bytes(uncaptured)
         return snapshot
 
-    monkeypatch.setattr("backend.app.api.models.capture_embedding_sources", mutate_after_initial_capture)
+    monkeypatch.setattr("backend.app.api.llm_profiles.bindings.capture_embedding_sources", mutate_after_initial_capture)
     response = client.put("/api/models/bindings/embedding", headers=headers,
                           json={"purpose": "embedding", "model_id": new_id})
 
