@@ -19,7 +19,7 @@ const api = vi.hoisted(() => ({
 }))
 
 vi.mock('../api/creator', () => api)
-vi.mock('element-plus', () => ({ ElMessage: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
+vi.mock('element-plus/es/components/message/index.mjs', () => ({ ElMessage: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 
 const TOOLS = [
   { tool_id: 't1', key: 'household.recipe.scale', version: '1', risk_level: 'low', display_name: '菜谱用量换算', description: '' },

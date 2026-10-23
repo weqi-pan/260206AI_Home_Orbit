@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { fetchAccounts, fetchAdminHouseholds, resetAccountPassword, updateAccount, type AdminAccount, type AdminHousehold } from '../../api/admin'
 import { adjustHouseholdQuota, fetchHouseholdQuota, type HouseholdQuotaView } from '../../api/ops'
 import { useAuthStore } from '../../stores/auth'

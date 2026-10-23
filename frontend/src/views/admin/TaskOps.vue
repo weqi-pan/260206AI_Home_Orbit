@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { fetchCeleryTaskDetail, fetchCeleryTasks, type CeleryTaskDetail, type CeleryTaskItem } from '../../api/audit'
 import { fetchTaskTypes, runAdminTask, type TaskTypeSpec } from '../../api/ops'
 import { formatDateTime } from '../../utils/format'

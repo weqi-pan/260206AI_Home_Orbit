@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { fetchAdminTickets, updateTicket, type AdminTicket } from '../../api/admin'
 import { formatDateTime, sentimentTag, ticketPriorityTag, ticketStatusTag } from '../../utils/format'
 

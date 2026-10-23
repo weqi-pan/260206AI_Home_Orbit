@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import type { FormInstance, FormRules } from 'element-plus/es/components/form/index.mjs'
 import { Plus } from '@element-plus/icons-vue'
 import { createTicket, myTickets, type TicketInfo } from '../api/tickets'
 import { formatDateTime, ticketPriorityTag, ticketStatusTag } from '../utils/format'

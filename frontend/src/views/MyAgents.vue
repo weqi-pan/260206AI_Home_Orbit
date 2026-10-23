@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { inject, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { fetchMyAgents } from '../api/creator'
 import { fetchMyInstalls, uninstallMarketInstall, upgradeMarketInstall } from '../market/api'
 import { RISK_LABELS, type MyMarketInstall } from '../market/types'
