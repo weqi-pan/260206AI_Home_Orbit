@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import {
   decideReviewSubmission, fetchReviewQueue, fetchReviewReports, fetchReviewSubmission, handleReviewReport,
@@ -7,10 +7,10 @@ import {
 } from '../../review/api'
 import { REVIEW_STATUS_LABELS, type ReviewAction, type ReviewQueueItem, type ReviewReportItem, type ReviewSubmissionDetail } from '../../review/types'
 import { RISK_LABELS } from '../../market/types'
+import { useRequest } from '../../composables/useRequest'
+import ErrorState from '../../components/ErrorState.vue'
 
-const queue = ref<ReviewQueueItem[]>([])
 const statusFilter = ref('review_pending')
-const reports = ref<ReviewReportItem[]>([])
 const reportStatusFilter = ref('open')
 
 const detail = ref<ReviewSubmissionDetail | null>(null)
@@ -23,14 +23,23 @@ const reportNotes = ref<Record<string, string>>({})
 
 const STATUS_OPTIONS = ['', 'precheck_pending', 'precheck_failed', 'review_pending', 'returned', 'rejected', 'approved']
 
-async function load() {
-  const [queueResult, reportsResult] = await Promise.all([
-    fetchReviewQueue(statusFilter.value), fetchReviewReports(reportStatusFilter.value)])
-  queue.value = queueResult.items
-  reports.value = reportsResult.items
-}
+// 队列与举报一次拉取：任一失败都算页面数据不完整
+const {
+  data: pageData,
+  loading,
+  error,
+  run: load,
+} = useRequest(
+  async () => {
+    const [queueResult, reportsResult] = await Promise.all([
+      fetchReviewQueue(statusFilter.value), fetchReviewReports(reportStatusFilter.value)])
+    return { queue: queueResult.items, reports: reportsResult.items }
+  },
+  { initial: { queue: [] as ReviewQueueItem[], reports: [] as ReviewReportItem[] }, immediate: true },
+)
 
-onMounted(load)
+const queue = computed(() => pageData.value.queue)
+const reports = computed(() => pageData.value.reports)
 
 async function openDetail(item: ReviewQueueItem) {
   detail.value = await fetchReviewSubmission(item.submission_id)
@@ -86,6 +95,8 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
       <p>自动预检证据 + 审核模型风险摘要仅供参考；通过与否只能由管理员人工决定，全部动作留痕审计。</p>
     </header>
 
+    <ErrorState v-if="error" :message="error" :retrying="loading" @retry="load" />
+
     <section class="panel" aria-labelledby="queue-title">
       <div class="panel-title">
         <h2 id="queue-title">审核队列</h2>
@@ -110,7 +121,7 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
             <td class="mono">{{ item.submitted_at?.slice(0, 19).replace('T', ' ') }}</td>
             <td><button type="button" data-testid="open-submission" @click="openDetail(item)">证据详情</button></td>
           </tr>
-          <tr v-if="!queue.length"><td colspan="8" class="empty">队列为空</td></tr>
+          <tr v-if="!queue.length && !error"><td colspan="8" class="empty">队列为空</td></tr>
         </tbody>
       </table>
     </section>
@@ -147,7 +158,7 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
             </td>
             <td v-else></td>
           </tr>
-          <tr v-if="!reports.length"><td colspan="5" class="empty">暂无举报</td></tr>
+          <tr v-if="!reports.length && !error"><td colspan="5" class="empty">暂无举报</td></tr>
         </tbody>
       </table>
     </section>

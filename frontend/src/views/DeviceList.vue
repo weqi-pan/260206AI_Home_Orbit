@@ -1,25 +1,21 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { Search } from '@element-plus/icons-vue'
 import { restockNotify, searchDevices, type DeviceInfo } from '../api/devices'
+import { useRequest } from '../composables/useRequest'
+import ErrorState from '../components/ErrorState.vue'
 
 const router = useRouter()
 const keyword = ref('')
-const devices = ref<DeviceInfo[]>([])
 const selected = ref<DeviceInfo[]>([])
-const loading = ref(false)
 
-async function loadDevices() {
-  loading.value = true
-  try {
-    devices.value = await searchDevices(keyword.value.trim())
-  } catch {
-  } finally {
-    loading.value = false
-  }
-}
+// 原来这里是一个空 catch：搜索失败时表格静默留空，用户会误以为「没有匹配设备」。
+const { data: devices, loading, error, run: loadDevices } = useRequest(
+  () => searchDevices(keyword.value.trim()),
+  { initial: [] as DeviceInfo[], immediate: true },
+)
 
 function handleSelectionChange(rows: DeviceInfo[]) {
   selected.value = rows
@@ -36,6 +32,7 @@ async function handleRestock(row: DeviceInfo) {
     await restockNotify(row.model_id)
     ElMessage.success('已登记到货通知，到货后可在工单中查看处理结果')
   } catch {
+    // http 拦截器已统一弹出错误提示；这里不再重复提示，也不影响列表本身
   }
 }
 
@@ -51,10 +48,6 @@ function goCompare() {
   const ids = selected.value.map((item) => item.model_id).join(',')
   void router.push({ path: '/devices/compare', query: { ids } })
 }
-
-onMounted(() => {
-  void loadDevices()
-})
 </script>
 
 <template>
@@ -74,6 +67,7 @@ onMounted(() => {
         对比所选（{{ selected.length }}/4）
       </el-button>
     </div>
+    <ErrorState v-if="error" :message="error" :retrying="loading" @retry="loadDevices" />
     <el-table v-loading="loading" :data="devices" row-key="model_id" border @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="45" reserve-selection />
       <el-table-column prop="model_id" label="型号" width="110" />
@@ -97,7 +91,7 @@ onMounted(() => {
         </template>
       </el-table-column>
     </el-table>
-    <el-empty v-if="!devices.length && !loading" description="未找到匹配设备" />
+    <el-empty v-if="!devices.length && !loading && !error" description="未找到匹配设备" />
   </div>
 </template>
 

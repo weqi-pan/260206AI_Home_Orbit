@@ -234,3 +234,19 @@ button, a, input, select { min-height: 44px; }
 .toolbar-spacer {
   flex: 1;
 }
+
+/* ---- 页面级错误态（components/ErrorState.vue） ---- */
+.page-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  border: 1px solid var(--el-color-error-light-8);
+  border-radius: 10px;
+  background: var(--el-color-error-light-9);
+}
+.page-error-message { flex: 1; min-width: 200px; margin: 0; color: var(--signal-red); }
+.page-error-retry { padding: 0 16px; border: 0; border-radius: 8px; color: #FFFFFF; font-weight: 600; background: var(--signal-red); }
+.page-error-retry:disabled { opacity: .6; }

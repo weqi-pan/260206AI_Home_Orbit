@@ -1,21 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { fetchOpsOverview, type OpsOverview } from '../../api/ops'
+import { useRequest } from '../../composables/useRequest'
+import ErrorState from '../../components/ErrorState.vue'
 
-const overview = ref<OpsOverview | null>(null)
 const windowDays = ref(7)
-const loading = ref(false)
 
-async function load() {
-  loading.value = true
-  try {
-    overview.value = await fetchOpsOverview(windowDays.value)
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
+const { data: overview, loading, error, run: load } = useRequest(
+  () => fetchOpsOverview(windowDays.value),
+  { immediate: true },
+)
 
 function pct(value: number) {
   return `${Math.round(value * 100)}%`
@@ -57,6 +51,8 @@ const cards = [
       </label>
     </header>
     <p class="lead">所有指标来自真实记录（运行、工具执行、任务、审核、用量、事故）并按所选窗口聚合，读取本身留痕审计。</p>
+
+    <ErrorState v-if="error" :message="error" :retrying="loading" @retry="load" />
 
     <div v-if="overview" class="metric-grid" data-testid="ops-cards">
       <article v-for="card in cards" :key="card.key" class="metric-card">
@@ -125,7 +121,7 @@ const cards = [
         </dl>
       </section>
     </div>
-    <p v-else-if="!loading" class="dim">暂无数据</p>
+    <p v-else-if="!loading && !error" class="dim">暂无数据</p>
   </section>
 </template>
 

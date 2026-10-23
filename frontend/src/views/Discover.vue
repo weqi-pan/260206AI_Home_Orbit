@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { inject, onMounted, ref } from 'vue'
+import { inject, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { useModalFocus } from '../composables/useModalFocus'
 import { shellModalOpenKey } from '../composables/shellModal'
+import { useRequest } from '../composables/useRequest'
+import ErrorState from '../components/ErrorState.vue'
 import { favoriteEntry, fetchEntry, fetchListings, installEntry, MARKET_CATEGORIES, reportEntry, unfavoriteEntry } from '../market/api'
 import { RISK_LABELS, type MarketEntryDetail, type MarketListings } from '../market/types'
 
 const shellModalOpen = inject(shellModalOpenKey, ref(false))
-const listings = ref<MarketListings>({ official: [], entries: [] })
 const query = ref('')
 const category = ref('')
-const loading = ref(false)
 
 const detailOpen = ref(false)
 const detail = ref<MarketEntryDetail | null>(null)
@@ -26,16 +26,17 @@ const grantedKeys = ref<string[]>([])
 const installing = ref(false)
 const reportReason = ref('')
 
-async function load() {
-  loading.value = true
-  try {
-    listings.value = await fetchListings(query.value.trim(), category.value)
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
+// 列表加载失败不再静默：页面显示错误块并可重试，而不是停在「没有匹配的助手」这种
+// 与真实原因无关的空态提示上。
+const {
+  data: listings,
+  loading,
+  error,
+  run: load,
+} = useRequest(() => fetchListings(query.value.trim(), category.value), {
+  initial: { official: [], entries: [] } as MarketListings,
+  immediate: true,
+})
 
 function selectCategory(value: string) {
   category.value = value
@@ -119,6 +120,8 @@ async function submitReport() {
       </div>
     </header>
 
+    <ErrorState v-if="error" :message="error" :retrying="loading" @retry="load" />
+
     <section class="panel" aria-labelledby="official-title">
       <div class="panel-title"><h2 id="official-title">官方内容</h2><span>{{ listings.official.length }}</span></div>
       <ul class="dense-list">
@@ -127,7 +130,7 @@ async function submitReport() {
           <span class="row-main"><strong>{{ item.name }}</strong><small>{{ item.description }}</small></span>
           <router-link :to="`/chat?deployment=${item.deployment_id}`" class="row-action">对话</router-link>
         </li>
-        <li v-if="!listings.official.length" class="empty">暂无官方内容</li>
+        <li v-if="!error && !listings.official.length" class="empty">暂无官方内容</li>
       </ul>
     </section>
 
@@ -143,7 +146,7 @@ async function submitReport() {
           <span class="meta">v{{ item.current_version }} · {{ item.install_count }} 次安装</span>
           <span v-if="item.my_installation" class="installed-mark">已安装 v{{ item.my_installation.pinned_version }}</span>
         </li>
-        <li v-if="!loading && !listings.entries.length" class="empty">没有匹配的助手，换个关键词试试</li>
+        <li v-if="!loading && !error && !listings.entries.length" class="empty">没有匹配的助手，换个关键词试试</li>
       </ul>
     </section>
 

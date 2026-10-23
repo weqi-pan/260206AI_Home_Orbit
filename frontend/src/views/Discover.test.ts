@@ -105,4 +105,25 @@ describe('Discover 市场发现页', () => {
     await wrapper.find('[data-testid="submit-report"]').trigger('click')
     expect(reportMock).toHaveBeenCalledWith('entry-1', '描述与行为不符')
   })
+  it('列表接口失败时显示可重试的错误块，而不是「没有匹配的助手」', async () => {
+    const { fetchListings } = await import('../market/api')
+    const mocked = vi.mocked(fetchListings)
+    mocked.mockRejectedValueOnce({ response: { data: { detail: 'UPSTREAM_UNAVAILABLE' } } })
+    const wrapper = mount(Discover)
+    await flushPromises()
+
+    const banner = wrapper.find('[data-testid="page-error"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('UPSTREAM_UNAVAILABLE')
+    // 失败时不能被误读成空结果
+    expect(wrapper.text()).not.toContain('没有匹配的助手')
+
+    mocked.mockResolvedValueOnce({
+      official: [], entries: [{ id: 'e-9', name: '重试后的助手', description: '', category: '生活', official: false, install_count: 1, current_version: 1, my_installation: null }],
+    })
+    await banner.find('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="page-error"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('重试后的助手')
+  })
 })

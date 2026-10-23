@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, onMounted, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { fetchMyAgents } from '../api/creator'
 import { fetchMyInstalls, uninstallMarketInstall, upgradeMarketInstall } from '../market/api'
@@ -7,10 +7,28 @@ import { RISK_LABELS, type MyMarketInstall } from '../market/types'
 import type { PublishedAgent } from '../creator/types'
 import { useModalFocus } from '../composables/useModalFocus'
 import { shellModalOpenKey } from '../composables/shellModal'
+import { useRequest } from '../composables/useRequest'
+import ErrorState from '../components/ErrorState.vue'
 
 const shellModalOpen = inject(shellModalOpenKey, ref(false))
-const selfBuilt = ref<PublishedAgent[]>([])
-const installed = ref<MyMarketInstall[]>([])
+
+// 两个来源在一次失败里合并汇报：任一接口挂掉都说明页面数据不完整，
+// 不应该只显示半张页面而不告诉用户为什么缺一半。
+const {
+  data: pageData,
+  loading,
+  error,
+  run: load,
+} = useRequest(
+  async () => {
+    const [agents, installs] = await Promise.all([fetchMyAgents(), fetchMyInstalls()])
+    return { agents, installs }
+  },
+  { initial: { agents: [] as PublishedAgent[], installs: [] as MyMarketInstall[] }, immediate: true },
+)
+
+const selfBuilt = computed(() => pageData.value.agents)
+const installed = computed(() => pageData.value.installs)
 
 const upgradeTarget = ref<MyMarketInstall | null>(null)
 const upgradeOpen = ref(false)
@@ -26,14 +44,6 @@ const uninstallDialog = ref<HTMLElement>()
 const uninstallTrigger = ref<HTMLButtonElement>()
 const uninstallFocus = useModalFocus(uninstallOpen, uninstallDialog, uninstallTrigger)
 const revokePermissions = ref(false)
-
-async function load() {
-  const [agents, installs] = await Promise.all([fetchMyAgents(), fetchMyInstalls()])
-  selfBuilt.value = agents
-  installed.value = installs
-}
-
-onMounted(load)
 
 async function openUpgrade(item: MyMarketInstall, trigger?: EventTarget | null) {
   if (!item.update) return
@@ -94,6 +104,8 @@ async function confirmUninstall() {
       <p>自建助手与市场安装的助手；安装固定在审核版本，升级需要你确认并重新授权新增权限。</p>
     </header>
 
+    <ErrorState v-if="error" :message="error" :retrying="loading" @retry="load" />
+
     <section class="panel" aria-labelledby="selfbuilt-title">
       <div class="panel-title"><h2 id="selfbuilt-title">自建</h2><span>{{ selfBuilt.length }}</span></div>
       <ul class="dense-list">
@@ -102,7 +114,7 @@ async function confirmUninstall() {
           <span class="meta">v{{ agent.versions[agent.versions.length - 1]?.version ?? 1 }}</span>
           <router-link v-if="agent.deployment_id" :to="`/chat?deployment=${agent.deployment_id}`" class="row-action">对话</router-link>
         </li>
-        <li v-if="!selfBuilt.length" class="empty">还没有自建助手，去「创建」开始一句话创作。</li>
+        <li v-if="!error && !selfBuilt.length" class="empty">还没有自建助手，去「创建」开始一句话创作。</li>
       </ul>
     </section>
 
@@ -125,7 +137,7 @@ async function confirmUninstall() {
             <button type="button" data-testid="start-uninstall" @click="openUninstall(item, $event.currentTarget)">卸载</button>
           </span>
         </li>
-        <li v-if="!installed.length" class="empty">还没有安装市场助手，去「发现」看看。</li>
+        <li v-if="!error && !installed.length" class="empty">还没有安装市场助手，去「发现」看看。</li>
       </ul>
     </section>
 
