@@ -6,12 +6,12 @@ import type { FormInstance, FormRules } from 'element-plus/es/components/form/in
 import { Plus } from '@element-plus/icons-vue'
 import { createTicket, myTickets, type TicketInfo } from '../api/tickets'
 import { formatDateTime, ticketPriorityTag, ticketStatusTag } from '../utils/format'
+import { useRequest } from '../composables/useRequest'
+import ErrorState from '../components/ErrorState.vue'
 
 const route = useRoute()
 const router = useRouter()
 
-const tickets = ref<TicketInfo[]>([])
-const loading = ref(false)
 const detailVisible = ref(false)
 const current = ref<TicketInfo | null>(null)
 const createVisible = ref(false)
@@ -27,15 +27,8 @@ const rules: FormRules = {
   content: [{ required: true, message: '请描述问题', trigger: 'blur' }],
 }
 
-async function loadTickets() {
-  loading.value = true
-  try {
-    tickets.value = await myTickets()
-  } catch {
-  } finally {
-    loading.value = false
-  }
-}
+// 原来这里的空 catch 会让接口失败静默变成「暂无工单」
+const { data: tickets, loading, error, run: loadTickets } = useRequest(myTickets, { initial: [] as TicketInfo[] })
 
 function openDetail(row: TicketInfo) {
   current.value = row
@@ -86,6 +79,7 @@ onMounted(() => {
       <div class="toolbar-spacer"></div>
       <el-button type="primary" :icon="Plus" @click="createVisible = true">新建工单</el-button>
     </div>
+    <ErrorState v-if="error" :message="error" :retrying="loading" @retry="loadTickets" />
     <el-table v-loading="loading" :data="tickets" border>
       <el-table-column prop="id" label="编号" width="80" />
       <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
@@ -113,7 +107,7 @@ onMounted(() => {
         </template>
       </el-table-column>
     </el-table>
-    <el-empty v-if="!tickets.length && !loading" description="暂无工单" />
+    <el-empty v-if="!tickets.length && !loading && !error" description="暂无工单" />
 
     <el-dialog v-model="detailVisible" title="工单详情" width="560px">
       <el-descriptions v-if="current" :column="2" border>

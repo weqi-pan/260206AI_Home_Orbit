@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
-import { fetchHousehold, inviteMember, type Household } from '../api/platform'
+import { fetchHousehold, inviteMember } from '../api/platform'
+import { useRequest } from '../composables/useRequest'
+import ErrorState from '../components/ErrorState.vue'
 
-const household = ref<Household | null>(null)
 const username = ref('')
 const role = ref('member')
 const inviting = ref(false)
-const canInvite = computed(() => ['owner', 'admin'].includes(household.value?.role ?? ''))
 
-onMounted(async () => { household.value = await fetchHousehold() })
+const { data: household, loading, error, run: load } = useRequest(fetchHousehold, { immediate: true })
+const canInvite = computed(() => ['owner', 'admin'].includes(household.value?.role ?? ''))
 
 async function submitInvitation() {
   if (!household.value || !username.value.trim()) return
@@ -31,7 +32,8 @@ async function submitInvitation() {
       <h1 id="household-title">{{ household?.name ?? '家庭空间' }}</h1>
       <p>首版每个账号只属于一个家庭。家庭内资源遵循成员角色隔离。</p>
     </header>
-    <div class="household-grid">
+    <ErrorState v-if="error" :message="error" :retrying="loading" @retry="load" />
+    <div v-else class="household-grid">
       <section class="panel" aria-labelledby="members-title">
         <div class="panel-title"><h2 id="members-title">家庭成员</h2><span>{{ household?.members.length ?? 0 }}</span></div>
         <ul>

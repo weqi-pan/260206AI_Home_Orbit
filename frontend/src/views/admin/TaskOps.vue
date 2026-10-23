@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { fetchCeleryTaskDetail, fetchCeleryTasks, type CeleryTaskDetail, type CeleryTaskItem } from '../../api/audit'
 import { fetchTaskTypes, runAdminTask, type TaskTypeSpec } from '../../api/ops'
 import { formatDateTime } from '../../utils/format'
+import { useRequest } from '../../composables/useRequest'
+import ErrorState from '../../components/ErrorState.vue'
 
-const items = ref<CeleryTaskItem[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 20
@@ -19,16 +20,28 @@ const detailOpen = ref(false)
 const trigger = reactive({ taskType: 'household.reminders.dispatch', householdId: '', payloadJson: '{}' })
 const triggering = ref(false)
 
-async function load() {
-  const result = await fetchCeleryTasks({
-    page: page.value, page_size: pageSize,
-    status: statusFilter.value || undefined,
-    task_type: typeFilter.value || undefined,
-    error_code: errorFilter.value || undefined,
-  })
-  items.value = result.items
-  total.value = result.total
-}
+// 任务列表失败时不能继续显示上一页的旧数据当成本页结果，
+// 因此这里把错误交给 ErrorState，列表区在 error 时整体让位。
+const {
+  data: taskPage,
+  loading,
+  error,
+  run: load,
+} = useRequest(
+  async () => {
+    const result = await fetchCeleryTasks({
+      page: page.value, page_size: pageSize,
+      status: statusFilter.value || undefined,
+      task_type: typeFilter.value || undefined,
+      error_code: errorFilter.value || undefined,
+    })
+    total.value = result.total
+    return result.items
+  },
+  { initial: [] as CeleryTaskItem[] },
+)
+
+const items = computed(() => taskPage.value)
 
 async function openDetail(item: CeleryTaskItem) {
   detail.value = await fetchCeleryTaskDetail(item.id)
@@ -69,6 +82,8 @@ onMounted(async () => {
     </header>
     <p class="lead">幂等键、尝试次数、退避与死信全部来自真实任务记录；手动触发是既有管理边界，全部动作留痕审计。</p>
 
+    <ErrorState v-if="error" :message="error" :retrying="loading" @retry="load" />
+
     <section class="panel" aria-labelledby="task-list-title">
       <div class="panel-title">
         <h2 id="task-list-title">任务列表</h2>
@@ -104,7 +119,7 @@ onMounted(async () => {
             <td class="mono">{{ formatDateTime(item.updated_at) }}</td>
             <td><button type="button" data-testid="open-task" @click="openDetail(item)">详情</button></td>
           </tr>
-          <tr v-if="!items.length"><td colspan="9" class="empty">没有匹配的任务</td></tr>
+          <tr v-if="!items.length && !error"><td colspan="9" class="empty">没有匹配的任务</td></tr>
         </tbody>
       </table>
       <div class="pager">
