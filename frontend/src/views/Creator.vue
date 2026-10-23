@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import {
   createDraft, deleteKnowledge, fetchCeilingTools, fetchDraft, fetchDrafts, fetchTrial,
   generateCard, publishDraft, runTrial, updateDraft, uploadKnowledge, validateDraft,

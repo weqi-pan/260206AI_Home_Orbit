@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { fetchUsageAccounting, type UsageAccounting } from '../../api/audit'
 import { releaseExpiredReservations } from '../../api/ops'
 import { formatDateTime } from '../../utils/format'

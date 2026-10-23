@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import type { FormInstance, FormRules } from 'element-plus/es/components/form/index.mjs'
 import { Key, Lock } from '@element-plus/icons-vue'
 import { changePassword } from '../api/auth'
 import AuthShell from '../components/AuthShell.vue'

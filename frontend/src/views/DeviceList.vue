@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { Search } from '@element-plus/icons-vue'
 import { restockNotify, searchDevices, type DeviceInfo } from '../api/devices'
 

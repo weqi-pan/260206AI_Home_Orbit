@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { inject, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { useModalFocus } from '../composables/useModalFocus'
 import { shellModalOpenKey } from '../composables/shellModal'
 import { favoriteEntry, fetchEntry, fetchListings, installEntry, MARKET_CATEGORIES, reportEntry, unfavoriteEntry } from '../market/api'

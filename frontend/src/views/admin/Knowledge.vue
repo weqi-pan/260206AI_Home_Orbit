@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox, type UploadRequestOptions } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
+import type { UploadRequestOptions } from 'element-plus/es/components/upload/index.mjs'
 import { Delete, RefreshRight, UploadFilled } from '@element-plus/icons-vue'
 import {
   MAX_UPLOAD_SIZE,

@@ -4,6 +4,5 @@
   font-style: oblique;
   font-weight: 400;
   font-display: swap;
-  src: url('../../node_modules/@fontpkg/smiley-sans/SmileySans-Oblique.otf.woff2') format('woff2'),
-    url('../../node_modules/@fontpkg/smiley-sans/SmileySans-Oblique.otf') format('opentype');
+  src: url('../../node_modules/@fontpkg/smiley-sans/SmileySans-Oblique.otf.woff2') format('woff2');
 }
