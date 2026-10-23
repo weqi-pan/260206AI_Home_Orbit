@@ -37,7 +37,7 @@ export interface ModelProfile {
   enabled: boolean
 }
 
-export interface ModelPayload extends Omit<ModelProfile, 'id' | 'capability_flags'> {}
+export type ModelPayload = Omit<ModelProfile, 'id' | 'capability_flags'>
 export interface CapabilityResult { passed: boolean; capabilities: Record<string, string>; error_code: string | null; dimensions: number | null }
 
 export const fetchEndpoints = () => http.get<ModelEndpoint[]>('/models/endpoints').then((response) => response.data)
