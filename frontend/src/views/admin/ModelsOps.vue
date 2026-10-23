@@ -28,7 +28,7 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="modelsops-page" aria-labelledby="modelsops-title">
+  <section class="ops-page modelsops-page" aria-labelledby="modelsops-title">
     <header class="page-head">
       <div>
         <p class="eyebrow">MODEL OPERATIONS / 模型与能力</p>
@@ -102,25 +102,14 @@ onMounted(load)
 </template>
 
 <style scoped>
-.modelsops-page { display: grid; gap: 18px; }
+/* 这一族的骨架（页面网格、页头、.panel 网格、表格、.facts、.empty）
+   见 styles/global.css 的 .ops-page 段；这里只留本页差异。 */
+/* 页头横排只有本页与 OpsOverview 需要，不进 .ops-page 共享段 */
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.page-head label { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
 .head-actions { display: flex; gap: 10px; align-items: center; }
-.eyebrow { margin: 0; font: 10px var(--font-utility, monospace); letter-spacing: .2em; opacity: .6; }
-h1 { margin: 4px 0 0; font-size: 24px; }
 h3 { margin: 8px 0 0; font-size: 13px; }
-.lead { margin: 0; opacity: .74; font-size: 13px; }
-.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
-.panel { padding: 14px; border: 1px solid #e3e1ee; border-radius: 10px; background: #fff; display: grid; gap: 10px; align-content: start; }
-.panel h2 { margin: 0; font-size: 15px; }
-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th { text-align: left; padding: 4px 6px; border-bottom: 1px solid #eee; opacity: .6; }
-td { padding: 5px 6px; border-bottom: 1px solid #f3f2f8; }
-.mono { font-family: ui-monospace, monospace; }
 .clip { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.empty { opacity: .5; text-align: center; }
-.facts { display: grid; gap: 6px; margin: 0; }
-.facts > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
-.facts dt { opacity: .66; }
-.facts dd { margin: 0; font-weight: 600; }
-label { font-size: 13px; display: inline-flex; gap: 8px; align-items: center; }
+.panel { align-content: start; }
+.facts dd { font-weight: 700; }
 </style>

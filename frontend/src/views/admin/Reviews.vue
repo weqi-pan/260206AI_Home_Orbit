@@ -88,7 +88,7 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
 </script>
 
 <template>
-  <section class="reviews-page" aria-labelledby="reviews-title">
+  <section class="page reviews-page" aria-labelledby="reviews-title">
     <header>
       <p class="eyebrow">GOVERNANCE / Agent 审核</p>
       <h1 id="reviews-title">审核工作台</h1>
@@ -286,55 +286,41 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
 </template>
 
 <style scoped>
-.reviews-page { max-width: 1120px; margin: auto; padding: clamp(28px, 6vw, 72px); }
-.eyebrow { font: 600 12px var(--font-utility); letter-spacing: .16em; color: var(--orbit-violet); }
-h1 { margin: 12px 0; font: 700 clamp(34px, 4vw, 52px)/1 var(--font-display); color: var(--device-ink); }
-header > p { color: #625f76; }
-.panel { margin-top: 26px; padding: 24px 28px; border-radius: 22px; background: var(--surface-white); box-shadow: 0 20px 60px rgba(33,29,79,.08); }
-.panel-title { display: flex; justify-content: space-between; align-items: baseline; }
-h2 { margin: 0 0 14px; font-family: var(--font-display); }
+/* 骨架（页宽、页头说明、.panel、.panel-title、.empty、.facts、.risk、.modal*、.close）
+   见 styles/global.css；这里只留本页差异。 */
+/* 审核页的 h1 比用户端小一档 */
+h1 { font: 700 clamp(34px, 4vw, 52px)/1 var(--font-display); }
+.panel { margin-top: 26px; }
+.panel h2 { margin-bottom: 14px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { padding: 8px 10px; text-align: left; font: 600 11px var(--font-utility); letter-spacing: .1em; color: #777388; border-bottom: 2px solid var(--orbit-mist); }
+th { padding: 8px 10px; text-align: left; font: 600 11px var(--font-utility); letter-spacing: .1em; color: var(--ink-quiet); border-bottom: 2px solid var(--orbit-mist); }
 td { padding: 10px; border-bottom: 1px solid var(--orbit-mist); vertical-align: top; }
-td small { display: block; color: #777388; }
+td small { display: block; color: var(--ink-quiet); }
 .mono { font: 12px var(--font-utility); }
-.state { padding: 2px 10px; border-radius: 999px; font: 600 11px var(--font-utility); background: var(--orbit-mist); color: var(--orbit-violet); }
-.state[data-status='approved'] { color: #2d7a4f; background: #e3f3e9; }
-.state[data-status='rejected'], .state[data-status='precheck_failed'] { color: #a13c30; background: #f9e3df; }
-td[data-precheck='failed'], td[data-risk-summary='unavailable'] { color: #a13c30; }
-td[data-precheck='passed'], td[data-risk-summary='done'] { color: #2d7a4f; }
-button { min-height: 42px; padding: 0 14px; border: 1px solid #c9c6d9; border-radius: 10px; background: transparent; cursor: pointer; }
-.empty { color: #9996a8; }
+.state { background: var(--orbit-mist); color: var(--orbit-violet); }
+.state[data-status='approved'] { color: var(--risk-low-fg); background: var(--risk-low-bg); }
+.state[data-status='rejected'], .state[data-status='precheck_failed'] { color: var(--risk-high-fg); background: var(--risk-high-bg); }
+td[data-precheck='failed'], td[data-risk-summary='unavailable'] { color: var(--risk-high-fg); }
+td[data-precheck='passed'], td[data-risk-summary='done'] { color: var(--risk-low-fg); }
+/* 弹窗关闭按钮的 44px 触控高度由全局 .close 提供，别被本页 42px 的按钮度量压掉 */
+button:not(.close) { min-height: 42px; padding: 0 14px; border: 1px solid var(--hairline-strong); border-radius: 10px; background: transparent; cursor: pointer; }
 .actions { display: flex; gap: 8px; }
-.modal-backdrop { position: fixed; z-index: 40; inset: 0; background: rgba(33,29,79,.4); }
-.modal { position: fixed; z-index: 41; inset: 6vh 50% auto 50%; width: min(92vw, 720px); max-height: 88vh; overflow: auto; padding: 28px; border-radius: 22px; transform: translateX(-50%); background: var(--surface-white); }
-.modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.modal-head h2 { margin: 0; }
-.close { min-height: 44px; padding: 0 14px; border: 1px solid #c9c6d9; border-radius: 10px; background: transparent; cursor: pointer; }
+.modal { inset: 6vh 50% auto 50%; width: min(92vw, 720px); transform: translateX(-50%); }
 h3 { margin: 20px 0 8px; font-family: var(--font-display); }
-.facts { display: flex; gap: 26px; margin: 0; }
-.facts dt { font: 600 11px var(--font-utility); color: #777388; letter-spacing: .12em; }
-.facts dd { margin: 4px 0 0; font-weight: 700; }
-.detail-desc { color: #45425c; }
+.detail-desc { color: var(--ink-body); }
+/* 证据弹窗的权限行比用户端更紧凑 */
+.perm-list li { padding: 8px 0; }
 .evidence-list { margin: 0; padding-left: 18px; }
-.evidence-list li[data-passed='false'], .evidence-list li[data-changed='false'] { color: #777388; }
-.evidence-list li[data-passed='true'] { color: #2d7a4f; }
-.evidence-list li[data-changed='true'] { color: #a13c30; font-weight: 600; }
-.evidence-list small { display: block; color: #777388; }
-.perm-list { margin: 0; padding: 0; list-style: none; }
-.perm-list li { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--orbit-mist); }
-.perm-list li > small { grid-column: 1 / -1; color: #777388; }
-.perm-name { font-weight: 700; }
-.risk { padding: 2px 10px; border-radius: 999px; font: 600 11px var(--font-utility); }
-.risk[data-risk='low'] { color: #2d7a4f; background: #e3f3e9; }
-.risk[data-risk='reversible'] { color: #8a6116; background: #f7edd6; }
-.risk[data-risk='high'] { color: #a13c30; background: #f9e3df; }
+.evidence-list li[data-passed='false'], .evidence-list li[data-changed='false'] { color: var(--ink-quiet); }
+.evidence-list li[data-passed='true'] { color: var(--risk-low-fg); }
+.evidence-list li[data-changed='true'] { color: var(--risk-high-fg); font-weight: 700; }
+.evidence-list small { display: block; color: var(--ink-quiet); }
 .risk-summary { padding: 12px 14px; border-left: 4px solid var(--orbit-violet); background: var(--orbit-mist); }
-.risk-summary small { display: block; margin-top: 6px; color: #777388; }
+.risk-summary small { display: block; margin-top: 6px; color: var(--ink-quiet); }
 .advisory { display: inline-flex; margin-right: 8px; padding: 2px 10px; border-radius: 999px; font: 600 11px var(--font-utility); color: var(--orbit-violet); background: var(--surface-white); }
-.decision-block { display: grid; gap: 10px; margin-top: 18px; padding: 16px; border: 1px solid #c9c6d9; border-radius: 14px; }
+.decision-block { display: grid; gap: 10px; margin-top: 18px; padding: 16px; border: 1px solid var(--hairline-strong); border-radius: 14px; }
 .decision-block label { display: grid; gap: 4px; font-weight: 700; }
-.decision-block select, .decision-block input { min-height: 44px; padding: 0 12px; border: 1px solid #c9c6d9; border-radius: 10px; }
+.decision-block select, .decision-block input { min-height: 44px; padding: 0 12px; border: 1px solid var(--hairline-strong); border-radius: 10px; }
 .decision-block button { justify-self: start; border: 0; font-weight: 700; color: var(--device-ink); background: var(--charge-coral); }
-.danger-block button { color: #a13c30; background: #f9e3df; }
+.danger-block button { color: var(--risk-high-fg); background: var(--risk-high-bg); }
 </style>

@@ -107,7 +107,4 @@ function goCompare() {
   width: 300px;
 }
 
-.dim {
-  color: #c0c4cc;
-}
 </style>

@@ -17,6 +17,38 @@ body,
   --signal-red: #E5484D;
   --ink-muted: #615D79;
   --hairline: #DCD9EA;
+
+  /* ---- 语义层级：此前散落在各视图里的硬编码灰度 ---- */
+  --ink-subtle: #625F76;      /* 次级正文：页头说明、modal 提示 */
+  --ink-quiet: #777388;       /* 辅助说明：小字、元信息、表头 */
+  --ink-faint: #9996A8;       /* 空态文案 */
+  --ink-disabled: #C0C4CC;    /* 禁用/占位（表格里的「—」） */
+  --ink-body: #45425C;        /* modal 正文 */
+  --hairline-strong: #C9C6D9; /* 输入框与次级按钮描边 */
+  --hairline-soft: #E3E1EE;   /* 运营页面板描边 */
+  --hairline-softer: #F3F2F8; /* 运营页表格行分隔 */
+  --surface-sunken: #F4F2FB;  /* chip 底色 */
+
+  /* ---- 运营后台状态色（TaskOps / AuditRelease 的任务与发布状态） ---- */
+  --status-ok-fg: #1D7A3A;
+  --status-ok-bg: #E7F6EC;
+  --status-bad-fg: #B03030;
+  --status-bad-bg: #FDEAEA;
+  --status-warn-fg: #9A6B00;
+  --status-warn-bg: #FDF3E0;
+
+  /* ---- 面板与遮罩（此前在每个视图里逐字重复） ---- */
+  --shadow-panel: 0 20px 60px rgba(33, 29, 79, .08);
+  --scrim: rgba(33, 29, 79, .4);
+
+  /* ---- 风险分级（三处风险标签共用；文字标签见 market/types.ts RISK_LABELS） ---- */
+  --risk-low-fg: #2D7A4F;
+  --risk-low-bg: #E3F3E9;
+  --risk-reversible-fg: #8A6116;
+  --risk-reversible-bg: #F7EDD6;
+  --risk-high-fg: #A13C30;
+  --risk-high-bg: #F9E3DF;
+
   --font-display: 'Smiley Sans', 'Noto Sans SC', sans-serif;
   --font-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-utility: 'IBM Plex Mono', Consolas, monospace;
@@ -234,6 +266,105 @@ button, a, input, select { min-height: 44px; }
 .toolbar-spacer {
   flex: 1;
 }
+
+/* ---- 共享页面骨架（此前逐字重复在 Discover / MyAgents / Creator / Household / Reviews） ----
+   写法约定：
+   - 骨架类挂在 `.page` 之下，后代部分整体塞进 :where()，于是每条全局骨架规则都只有
+     (0,1,0) 的权重。scoped 规则编译出来至少是 `.xxx[data-v-hash]`（(0,2,0)）或
+     `h1[data-v-hash]`（(0,1,1)），永远不会被这里的默认值压住 —— 本页差异不依赖样式顺序。
+   - 之所以统一加 `.page` 前缀：运营后台的 `.panel` / `.state` / `.empty` 是另一套度量
+     （见下面的 `.ops-page`），聊天页的 `.meta` 是一排反馈按钮，不能串味。 */
+.page { max-width: 1120px; margin: auto; padding: clamp(28px, 6vw, 72px); }
+.page :where(header h1) { margin: 12px 0; font: 700 clamp(38px, 5vw, 64px)/1 var(--font-display); color: var(--device-ink); }
+/* 排除 eyebrow：它自带品牌紫，不能被页头说明文字的灰度盖掉 */
+.page :where(header > p:not(.eyebrow)) { color: var(--ink-subtle); }
+.eyebrow { font: 600 12px var(--font-utility); letter-spacing: .16em; color: var(--orbit-violet); }
+
+.page :where(.panel) { padding: 24px 28px; border-radius: 22px; background: var(--surface-white); box-shadow: var(--shadow-panel); }
+.page :where(.panel-title) { display: flex; justify-content: space-between; align-items: baseline; }
+.page :where(.panel h2, .modal h2) { margin: 0 0 12px; font-family: var(--font-display); }
+
+.page :where(.dense-list) { margin: 0; padding: 0; list-style: none; }
+.page :where(.dense-list li) { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 14px; min-height: 62px; border-top: 1px solid var(--orbit-mist); }
+.page :where(.dense-list li:first-child) { border-top: 0; }
+.page :where(.dense-list small) { color: var(--ink-quiet); }
+.page :where(.row-main) { display: grid; gap: 3px; }
+.page :where(.row-action) { color: var(--orbit-violet); }
+/* 限定在面板内：MessageItem 的同名 .meta 是一排反馈按钮 */
+.page :where(.panel .meta) { font: 12px var(--font-utility); color: var(--ink-quiet); }
+.page :where(.badge) { display: inline-flex; align-items: center; margin-left: 10px; padding: 2px 10px; border-radius: 999px; font: 600 11px var(--font-utility); }
+.page :where(.empty) { color: var(--ink-faint); }
+
+.page :where(.state) { padding: 2px 10px; border-radius: 999px; font: 600 11px var(--font-utility); }
+
+.page :where(.facts) { display: flex; gap: 26px; margin: 0; }
+.page :where(.facts dt) { font: 600 11px var(--font-utility); letter-spacing: .12em; color: var(--ink-quiet); }
+.page :where(.facts dd) { margin: 4px 0 0; font-weight: 700; }
+
+/* 风险分级：中文标签见 market/types.ts 的 RISK_LABELS；三处 data-risk 标签共用一套色。
+   Creator 用的是 risk-low/risk-reversible/risk-high 类名 + 无底色，不受这里影响。 */
+.page :where(.risk[data-risk]) { padding: 2px 10px; border-radius: 999px; font: 600 11px var(--font-utility); }
+.page :where(.risk[data-risk='low']) { color: var(--risk-low-fg); background: var(--risk-low-bg); }
+.page :where(.risk[data-risk='reversible']) { color: var(--risk-reversible-fg); background: var(--risk-reversible-bg); }
+.page :where(.risk[data-risk='high']) { color: var(--risk-high-fg); background: var(--risk-high-bg); }
+
+.page :where(.modal-backdrop) { position: fixed; z-index: 40; inset: 0; background: var(--scrim); }
+.page :where(.modal) { position: fixed; z-index: 41; top: 50%; left: 50%; width: min(92vw, 640px); max-height: 84vh; overflow: auto; padding: 28px; border-radius: 22px; transform: translate(-50%, -50%); background: var(--surface-white); }
+.page :where(.modal-head) { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.page :where(.modal-head h2) { margin: 0; }
+.page :where(.modal-actions) { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.page :where(.modal-actions button) { min-height: 48px; padding: 0 18px; border: 1px solid var(--hairline-strong); border-radius: 12px; background: transparent; cursor: pointer; }
+.page :where(.close) { min-height: 44px; padding: 0 14px; border: 1px solid var(--hairline-strong); border-radius: 10px; background: transparent; cursor: pointer; }
+.page :where(.perm-list) { margin: 0; padding: 0; list-style: none; }
+.page :where(.perm-list li) { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--orbit-mist); }
+.page :where(.perm-list li > small) { grid-column: 1 / -1; color: var(--ink-quiet); }
+.page :where(.perm-name) { font-weight: 700; }
+
+/* 表格页里通用的「占位/无值」文字：此前五处逐字重复 #c0c4cc。
+   运营后台用的是「变淡」而不是这个灰度，见下面的 `.ops-page .dim`（权重更高）。 */
+.dim { color: var(--ink-disabled); }
+
+/* ---- 运营后台密集表格页（TaskOps / AuditRelease / OpsOverview / ModelsOps 共用） ----
+   这一族的 .panel 是「细边框 + 14px 内距」的证据卡，与面向用户的 22px 圆角卡片不同，
+   所以按页面族单独定义，而不是复用上面的 .page .panel。权重同样是 (0,1,0)。 */
+.ops-page { display: grid; gap: 18px; }
+/* .page-head 的横向排布只有 OpsOverview / ModelsOps 需要（TaskOps、AuditRelease 的页头
+   只有一个子块，本来就是普通块级流），所以留在各页 scoped 里，不放进这一族。 */
+.ops-page :where(h1) { margin: 4px 0 0; font-size: 24px; }
+/* 运营页的小标签原本没有颜色（继承正文墨色），不能吃 .eyebrow 的品牌紫 */
+.ops-page :where(.eyebrow) { margin: 0; font: 10px var(--font-utility); letter-spacing: .2em; opacity: .6; color: inherit; }
+.ops-page :where(.lead) { margin: 0; opacity: .74; font-size: 13px; }
+.ops-page :where(.panel-grid) { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.ops-page :where(.panel) { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--hairline-soft); border-radius: 10px; background: #fff; }
+.ops-page :where(.panel h2) { margin: 0; font-size: 15px; }
+.ops-page :where(.panel-title) { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ops-page :where(table) { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ops-page :where(th) { padding: 4px 6px; text-align: left; border-bottom: 1px solid #eee; opacity: .6; }
+.ops-page :where(td) { padding: 5px 6px; border-bottom: 1px solid var(--hairline-softer); }
+.ops-page :where(.filters) { display: flex; gap: 10px; font-size: 12px; }
+.ops-page :where(.filters label) { display: inline-flex; align-items: center; gap: 6px; }
+.ops-page :where(.pager) { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.ops-page :where(.mono) { font-family: ui-monospace, monospace; }
+.ops-page :where(.chip) { display: inline-block; margin: 1px 0 1px 6px; padding: 1px 7px; border-radius: 8px; background: var(--surface-sunken); font-family: ui-monospace, monospace; font-size: 11px; }
+.ops-page :where(.chip.danger) { background: var(--status-bad-bg); color: var(--status-bad-fg); }
+.ops-page :where(.facts) { display: grid; gap: 6px; margin: 0; }
+.ops-page :where(.facts > div) { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.ops-page :where(.facts dt) { opacity: .66; }
+.ops-page :where(.facts dd) { margin: 0; }
+/* 这一族的空态/弱化文字是「变淡」而不是令牌色，保持原样 */
+.ops-page :where(.empty) { color: inherit; opacity: .5; text-align: center; }
+.ops-page .dim { color: inherit; opacity: .5; }
+/* 任务/发布状态色：三页此前各自写同一组 hex。
+   这几条不能包进 :where()：TaskOps 的 scoped `.state` 会设底色（等宽标签风格），
+   如果这里只有 (0,1,0)，scoped 的 (0,2,0) 会把 succeeded/failed 的颜色压掉。
+   写成 `.ops-page .state[...]` 得到 (0,3,0)，语义上也更准确 —— 状态色属于页面族。 */
+.ops-page :where(.state) { padding: 1px 8px; border-radius: 8px; font-size: 11px; }
+.ops-page .state[data-status='succeeded'],
+.ops-page .state.passed { background: var(--status-ok-bg); color: var(--status-ok-fg); }
+.ops-page .state[data-status='dead'],
+.ops-page .state[data-status='failed'],
+.ops-page .state.failed { background: var(--status-bad-bg); color: var(--status-bad-fg); }
+.ops-page .state[data-status='retry_scheduled'] { background: var(--status-warn-bg); color: var(--status-warn-fg); }
 
 /* ---- 页面级错误态（components/ErrorState.vue） ---- */
 .page-error {

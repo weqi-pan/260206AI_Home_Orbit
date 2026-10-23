@@ -214,17 +214,6 @@ onMounted(load)
   box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
 }
 
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.toolbar-spacer {
-  flex: 1;
-}
-
 .faq-answer {
   padding: 8px 16px;
   color: #606266;

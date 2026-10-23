@@ -48,7 +48,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="audit-page" aria-labelledby="audit-title">
+  <section class="ops-page audit-page" aria-labelledby="audit-title">
     <header class="page-head">
       <div>
         <p class="eyebrow">AUDIT &amp; RELEASE / 审计与发布</p>
@@ -171,27 +171,10 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.audit-page { display: grid; gap: 18px; }
-.page-head .eyebrow { margin: 0; font: 10px var(--font-utility, monospace); letter-spacing: .2em; opacity: .6; }
-h1 { margin: 4px 0 0; font-size: 24px; }
-.lead { margin: 0; opacity: .74; font-size: 13px; }
-.panel { padding: 14px; border: 1px solid #e3e1ee; border-radius: 10px; background: #fff; display: grid; gap: 10px; }
-.panel-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.panel h2 { margin: 0; font-size: 15px; }
-.filters { display: flex; gap: 10px; font-size: 12px; }
-.filters label { display: inline-flex; align-items: center; gap: 6px; }
-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th { text-align: left; padding: 4px 6px; border-bottom: 1px solid #eee; opacity: .6; }
-td { padding: 5px 6px; border-bottom: 1px solid #f3f2f8; vertical-align: top; }
-.mono { font-family: ui-monospace, monospace; }
+/* 这一族的骨架（页面网格、页头、.panel、表格、状态色、.empty/.dim、.chip）
+   见 styles/global.css 的 .ops-page 段；这里只留本页差异。 */
+td { vertical-align: top; }
 .clip { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .block { display: block; opacity: .55; }
-.empty { opacity: .5; text-align: center; }
-.dim { opacity: .5; }
-.chip { display: inline-block; margin: 1px 0 1px 6px; padding: 1px 7px; border-radius: 8px; background: #f4f2fb; font-family: ui-monospace, monospace; font-size: 11px; }
-.state { padding: 1px 8px; border-radius: 8px; font-size: 11px; }
-.state.passed { background: #e7f6ec; color: #1d7a3a; }
-.state.failed { background: #fdeaea; color: #b03030; }
-.pager { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .pointer-grid { display: grid; gap: 12px; }
 </style>

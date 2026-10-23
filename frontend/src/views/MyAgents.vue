@@ -97,7 +97,7 @@ async function confirmUninstall() {
 </script>
 
 <template>
-  <section class="agents-page" aria-labelledby="agents-title">
+  <section class="page agents-page" aria-labelledby="agents-title">
     <header>
       <p class="eyebrow">MY AGENTS / 我的助手</p>
       <h1 id="agents-title">我的助手</h1>
@@ -188,47 +188,23 @@ async function confirmUninstall() {
 </template>
 
 <style scoped>
-.agents-page { max-width: 1120px; margin: auto; padding: clamp(28px, 6vw, 72px); }
-.eyebrow { font: 600 12px var(--font-utility); letter-spacing: .16em; color: var(--orbit-violet); }
-h1 { margin: 12px 0; font: 700 clamp(38px, 5vw, 64px)/1 var(--font-display); color: var(--device-ink); }
-header > p { color: #625f76; }
-.panel { margin-top: 26px; padding: 24px 28px; border-radius: 22px; background: var(--surface-white); box-shadow: 0 20px 60px rgba(33,29,79,.08); }
-.panel-title { display: flex; justify-content: space-between; align-items: baseline; }
-h2 { margin: 0 0 12px; font-family: var(--font-display); }
-.dense-list { margin: 0; padding: 0; list-style: none; }
-.dense-list li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 14px; min-height: 64px; border-top: 1px solid var(--orbit-mist); }
-.dense-list li:first-child { border-top: 0; }
-.row-main { display: grid; gap: 3px; }
-.row-main small, .dense-list small { color: #777388; }
-.meta { font: 12px var(--font-utility); color: #777388; }
-.row-action { color: var(--orbit-violet); }
-.state { display: inline-flex; margin-left: 10px; padding: 2px 10px; border-radius: 999px; font: 600 11px var(--font-utility); }
+/* 骨架见 styles/global.css；这里只留本页差异 */
+.panel { margin-top: 26px; }
+.dense-list li { min-height: 64px; }
+/* 全局 .state 只管胶囊底色与字体，这一页把它嵌在标题里，需要行内排布和左边距 */
+.state { display: inline-flex; margin-left: 10px; }
 .state.update { color: var(--orbit-violet); background: var(--orbit-mist); }
-.state.deprecated { color: #a13c30; background: #f9e3df; }
+.state.deprecated { color: var(--risk-high-fg); background: var(--risk-high-bg); }
 .actions { display: flex; gap: 8px; }
-.actions button, .actions .row-action { min-height: 40px; padding: 0 14px; border: 1px solid #c9c6d9; border-radius: 10px; background: transparent; cursor: pointer; }
-.empty { color: #9996a8; }
-.modal-backdrop { position: fixed; z-index: 40; inset: 0; background: rgba(33,29,79,.4); }
-.modal { position: fixed; z-index: 41; top: 50%; left: 50%; width: min(92vw, 620px); max-height: 84vh; overflow: auto; padding: 28px; border-radius: 22px; transform: translate(-50%, -50%); background: var(--surface-white); }
-.modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.modal-head h2 { margin: 0; }
-.close { min-height: 44px; padding: 0 14px; border: 1px solid #c9c6d9; border-radius: 10px; background: transparent; cursor: pointer; }
-.hint { color: #625f76; }
-.perm-list { margin: 14px 0 0; padding: 0; list-style: none; }
-.perm-list li { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--orbit-mist); }
-.perm-list li > small { grid-column: 1 / -1; color: #777388; }
-.perm-name { font-weight: 700; }
-.risk { padding: 2px 10px; border-radius: 999px; font: 600 11px var(--font-utility); }
-.risk[data-risk='low'] { color: #2d7a4f; background: #e3f3e9; }
-.risk[data-risk='reversible'] { color: #8a6116; background: #f7edd6; }
-.risk[data-risk='high'] { color: #a13c30; background: #f9e3df; }
+.actions button, .actions .row-action { min-height: 40px; padding: 0 14px; border: 1px solid var(--hairline-strong); border-radius: 10px; background: transparent; cursor: pointer; }
+.modal { width: min(92vw, 620px); }
+.hint { color: var(--ink-subtle); }
+.perm-list { margin-top: 14px; }
 .grant-label { display: flex; align-items: center; gap: 10px; }
 .grant-label input { width: 20px; height: 20px; }
 .revoke-label { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
 .revoke-label input { width: 20px; height: 20px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
-.modal-actions button { min-height: 48px; padding: 0 18px; border: 1px solid #c9c6d9; border-radius: 12px; background: transparent; cursor: pointer; }
 .modal-actions .primary { border: 0; font-weight: 700; color: var(--device-ink); background: var(--charge-coral); }
-.modal-actions .danger { color: #a13c30; border-color: #a13c30; }
+.modal-actions .danger { color: var(--risk-high-fg); border-color: var(--risk-high-fg); }
 @media (max-width: 760px) { .agents-page { padding: 28px 18px 110px; }.dense-list li { grid-template-columns: 1fr; } }
 </style>

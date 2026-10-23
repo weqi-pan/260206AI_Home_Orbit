@@ -333,28 +333,11 @@ onMounted(load)
   box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
 }
 
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 16px;
-}
-
-.toolbar-spacer {
-  flex: 1;
-}
+/* 这三个页面比全局 .page-title（18px）小一档 */
+.page-title { font-size: 16px; }
 
 .section {
   margin: 24px 0 16px;
-}
-
-.dim {
-  color: #c0c4cc;
 }
 
 .tip {

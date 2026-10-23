@@ -459,7 +459,7 @@ onMounted(() => {
 }
 
 .sessions-title {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .session-list {
@@ -495,7 +495,7 @@ onMounted(() => {
 }
 
 .session-delete {
-  color: #c0c4cc;
+  color: var(--ink-disabled);
   flex-shrink: 0;
 }
 
@@ -519,7 +519,7 @@ onMounted(() => {
 }
 
 .chat-session-title {
-  font-weight: 600;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -36,7 +36,7 @@ const cards = [
 </script>
 
 <template>
-  <section class="ops-page" aria-labelledby="ops-title">
+  <section class="ops-page overview-page" aria-labelledby="ops-title">
     <header class="page-head">
       <div>
         <p class="eyebrow">OPERATIONS / 运营治理</p>
@@ -126,31 +126,21 @@ const cards = [
 </template>
 
 <style scoped>
-.ops-page { display: grid; gap: 18px; }
+/* 这一族的骨架（页面网格、页头、.panel、表格、.facts、.empty/.dim、.chip）
+   见 styles/global.css 的 .ops-page 段；这里只留本页差异。 */
+/* 正文度量统一收到 400/700 两档，表头用 700 */
+th { font-weight: 700; }
+/* 页头横排只有本页与 ModelsOps 需要，不进 .ops-page 共享段 */
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
-.eyebrow { margin: 0; font: 10px var(--font-utility, monospace); letter-spacing: .2em; opacity: .6; }
-h1 { margin: 4px 0 0; font-size: 24px; }
-.lead { margin: 0; opacity: .74; font-size: 13px; }
+.page-head label { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
 .metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
-.metric-card { padding: 12px 14px; border: 1px solid #e3e1ee; border-radius: 10px; background: #fff; }
+.metric-card { padding: 12px 14px; border: 1px solid var(--hairline-soft); border-radius: 10px; background: #fff; }
 .metric-label { margin: 0; font-size: 12px; opacity: .66; }
 .metric-value { margin: 4px 0 2px; font-size: 26px; font-weight: 700; }
 .metric-sub { margin: 0; font-size: 11px; opacity: .6; }
-.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
-.panel { padding: 14px; border: 1px solid #e3e1ee; border-radius: 10px; background: #fff; display: grid; gap: 10px; align-content: start; }
-.panel h2 { margin: 0; font-size: 15px; }
-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th { text-align: left; padding: 4px 6px; border-bottom: 1px solid #eee; opacity: .6; font-weight: 600; }
-td { padding: 5px 6px; border-bottom: 1px solid #f3f2f8; }
-.mono { font-family: ui-monospace, monospace; }
-.empty { opacity: .5; text-align: center; }
-.bar-track { display: inline-block; width: 72px; height: 8px; margin-right: 6px; border-radius: 4px; background: #f0eff6; vertical-align: middle; overflow: hidden; }
-.bar { display: block; height: 100%; background: var(--device-ink, #35316b); border-radius: 4px; }
-.facts { display: grid; gap: 8px; margin: 0; }
-.facts > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
-.facts dt { opacity: .66; }
-.facts dd { margin: 0; text-align: right; }
-.chip { display: inline-block; margin: 1px 0 1px 6px; padding: 1px 7px; border-radius: 8px; background: #f4f2fb; font-family: ui-monospace, monospace; font-size: 11px; }
-.dim { opacity: .5; }
-label { font-size: 13px; display: inline-flex; gap: 8px; align-items: center; }
+.bar-track { display: inline-block; width: 72px; height: 8px; margin-right: 6px; border-radius: 4px; background: var(--el-fill-color); vertical-align: middle; overflow: hidden; }
+.bar { display: block; height: 100%; background: var(--device-ink); border-radius: 4px; }
+.panel { align-content: start; }
+.facts { gap: 8px; }
+.facts dd { text-align: right; }
 </style>

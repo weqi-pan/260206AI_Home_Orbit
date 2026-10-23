@@ -26,7 +26,7 @@ async function submitInvitation() {
 </script>
 
 <template>
-  <section class="household-page" aria-labelledby="household-title">
+  <section class="page household-page" aria-labelledby="household-title">
     <header>
       <p class="eyebrow">HOUSEHOLD / 家庭边界</p>
       <h1 id="household-title">{{ household?.name ?? '家庭空间' }}</h1>
@@ -62,22 +62,18 @@ async function submitInvitation() {
 </template>
 
 <style scoped>
-.household-page { max-width: 1120px; margin: auto; padding: clamp(28px, 6vw, 72px); }
-.eyebrow { font: 600 12px var(--font-utility); letter-spacing: .16em; color: var(--orbit-violet); }
-h1 { margin: 12px 0; font: 700 clamp(38px, 5vw, 64px)/1 var(--font-display); color: var(--device-ink); }
-header > p:last-child { color: #625f76; }
+/* 骨架见 styles/global.css；这里只留本页差异 */
 .household-grid { display: grid; grid-template-columns: 1.4fr .8fr; gap: 24px; margin-top: 42px; }
-.panel { padding: 28px; border-radius: 22px; background: var(--surface-white); box-shadow: 0 20px 60px rgba(33,29,79,.08); }
-.panel-title { display: flex; justify-content: space-between; align-items: baseline; }
-h2 { margin: 0 0 22px; font-family: var(--font-display); }
+.panel { padding: 28px; }
+.panel h2 { margin-bottom: 22px; }
 .panel ul { margin: 0; padding: 0; list-style: none; }
 .panel li { display: grid; grid-template-columns: 46px 1fr auto; align-items: center; gap: 12px; min-height: 68px; border-top: 1px solid var(--orbit-mist); }
 .avatar { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 50%; color: white; background: var(--orbit-violet); }
-.panel small { display: block; margin-top: 3px; font: 11px var(--font-utility); color: #777388; }
+.panel small { display: block; margin-top: 3px; font: 11px var(--font-utility); color: var(--ink-quiet); }
 .role { font: 12px var(--font-utility); color: var(--orbit-violet); }
 .invite-panel form { display: grid; gap: 10px; }
 .invite-panel label { margin-top: 8px; font-weight: 700; }
-.invite-panel input, .invite-panel select { min-height: 46px; padding: 0 12px; border: 1px solid #c9c6d9; border-radius: 10px; background: white; }
+.invite-panel input, .invite-panel select { min-height: 46px; padding: 0 12px; border: 1px solid var(--hairline-strong); border-radius: 10px; background: white; }
 .invite-panel button { min-height: 48px; margin-top: 14px; border: 0; border-radius: 12px; font-weight: 700; color: var(--device-ink); background: var(--charge-coral); }
 @media (max-width: 760px) { .household-page { padding: 28px 18px 110px; }.household-grid { grid-template-columns: 1fr; } }
 </style>
