@@ -73,7 +73,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="taskops-page" aria-labelledby="taskops-title">
+  <section class="ops-page taskops-page" aria-labelledby="taskops-title">
     <header class="page-head">
       <div>
         <p class="eyebrow">TASK OPERATIONS / 任务运营</p>
@@ -178,36 +178,18 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.taskops-page { display: grid; gap: 18px; }
-.page-head .eyebrow { margin: 0; font: 10px var(--font-utility, monospace); letter-spacing: .2em; opacity: .6; }
-h1 { margin: 4px 0 0; font-size: 24px; }
-.lead { margin: 0; opacity: .74; font-size: 13px; }
-.panel { padding: 14px; border: 1px solid #e3e1ee; border-radius: 10px; background: #fff; display: grid; gap: 10px; }
-.panel-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.panel h2 { margin: 0; font-size: 15px; }
-.filters { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; }
-.filters label { display: inline-flex; align-items: center; gap: 6px; }
-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th { text-align: left; padding: 4px 6px; border-bottom: 1px solid #eee; opacity: .6; }
-td { padding: 5px 6px; border-bottom: 1px solid #f3f2f8; }
-.mono { font-family: ui-monospace, monospace; }
+/* 这一族的骨架（页面网格、页头、.panel、表格、.facts、状态色、.empty/.dim、.chip）
+   见 styles/global.css 的 .ops-page 段；这里只留本页差异。 */
+.filters { flex-wrap: wrap; }
+/* 本页状态胶囊是等宽字体的代码味标签；其余三页不是 */
+.state { background: var(--surface-sunken); font-family: ui-monospace, monospace; }
+/* 全局 .chip 是 inline-block 且带 1px 上下外边距；本页危险标签原本是零外边距的行内元素 */
+.chip.danger { display: inline; margin: 0; }
 .clip { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.empty { opacity: .5; text-align: center; }
-.state { padding: 1px 8px; border-radius: 8px; background: #f4f2fb; font-family: ui-monospace, monospace; font-size: 11px; }
-.state[data-status='succeeded'] { background: #e7f6ec; color: #1d7a3a; }
-.state[data-status='dead'], .state[data-status='failed'] { background: #fdeaea; color: #b03030; }
-.state[data-status='retry_scheduled'] { background: #fdf3e0; color: #9a6b00; }
-.chip.danger { background: #fdeaea; color: #b03030; border-radius: 8px; padding: 1px 7px; font-family: ui-monospace, monospace; font-size: 11px; }
-.dim { opacity: .5; }
-.pager { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .trigger-form { display: grid; gap: 10px; max-width: 560px; font-size: 13px; }
 .trigger-form label { display: grid; gap: 4px; }
 .detail-grid { display: grid; gap: 10px; }
 .detail-grid h3 { margin: 8px 0 0; font-size: 13px; }
-.facts { display: grid; gap: 6px; margin: 0; }
-.facts > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
-.facts dt { opacity: .66; }
-.facts dd { margin: 0; }
 .facts dd.secondary { opacity: .78; font-size: 12px; }
-.json { margin: 0; padding: 10px; border-radius: 8px; background: #f7f6fb; font-size: 11.5px; overflow: auto; max-height: 220px; }
+.json { margin: 0; padding: 10px; border-radius: 8px; background: var(--el-fill-color-light); font-size: 11.5px; overflow: auto; max-height: 220px; }
 </style>

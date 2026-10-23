@@ -254,25 +254,8 @@ onMounted(load)
   box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
 }
 
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 16px;
-}
-
-.toolbar-spacer {
-  flex: 1;
-}
-
-.dim {
-  color: #c0c4cc;
-}
+/* 这三个页面比全局 .page-title（18px）小一档 */
+.page-title { font-size: 16px; }
 
 .password-box {
   margin: 8px 0;
@@ -291,7 +274,7 @@ onMounted(load)
   margin: 0 6px 4px 0;
   padding: 1px 8px;
   border-radius: 8px;
-  background: #f4f2fb;
+  background: var(--surface-sunken);
   font-size: 12px;
 }
 
@@ -313,7 +296,7 @@ onMounted(load)
 
 .quota-facts dd {
   margin: 0;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .quota-form {
@@ -340,6 +323,6 @@ onMounted(load)
 
 .quota-table td {
   padding: 5px 6px;
-  border-bottom: 1px solid #f3f2f8;
+  border-bottom: 1px solid var(--hairline-softer);
 }
 </style>

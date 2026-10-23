@@ -164,7 +164,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="creator-page" aria-labelledby="creator-title">
+  <section class="page creator-page" aria-labelledby="creator-title">
     <header>
       <p class="eyebrow">CREATE / 自然语言创作器</p>
       <h1 id="creator-title">一句话，生成你的家庭助手</h1>
@@ -311,60 +311,61 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.creator-page { max-width: 1280px; margin: auto; padding: clamp(28px, 6vw, 72px); }
-.eyebrow { font: 600 12px var(--font-utility); letter-spacing: .16em; color: var(--orbit-violet); }
-h1 { margin: 12px 0; font: 700 clamp(38px, 5vw, 64px)/1 var(--font-display); color: var(--device-ink); }
-header > p:last-child { color: #625f76; }
+/* 骨架见 styles/global.css；这里只留本页差异 */
+.creator-page { max-width: 1280px; }
 .creator-grid { display: grid; grid-template-columns: 300px 1fr; gap: 24px; margin-top: 42px; }
-.panel { padding: 24px 28px; border-radius: 22px; background: var(--surface-white); box-shadow: 0 20px 60px rgba(33,29,79,.08); margin-bottom: 22px; }
-.panel-title { display: flex; justify-content: space-between; align-items: baseline; }
-h2 { margin: 0 0 18px; font-family: var(--font-display); }
+.panel { margin-bottom: 22px; }
+.panel h2 { margin-bottom: 18px; }
 .drafts-panel { align-self: start; position: sticky; top: 20px; }
 .drafts-panel ul { margin: 12px 0 0; padding: 0; list-style: none; }
 .drafts-panel li button { width: 100%; display: grid; gap: 2px; padding: 12px; border: 0; border-radius: 12px; background: transparent; text-align: left; cursor: pointer; }
 .drafts-panel li button.active { background: var(--orbit-mist); }
 .drafts-panel li small { font: 11px var(--font-utility); color: var(--orbit-violet); }
 .new-draft { display: flex; gap: 8px; }
-.new-draft input { flex: 1; min-height: 42px; padding: 0 10px; border: 1px solid #c9c6d9; border-radius: 10px; }
+.new-draft input { flex: 1; min-height: 42px; padding: 0 10px; border: 1px solid var(--hairline-strong); border-radius: 10px; }
 .new-draft button { padding: 0 14px; border: 0; border-radius: 10px; background: var(--orbit-violet); color: white; }
 .composer { display: flex; gap: 10px; }
-.composer input { flex: 1; min-height: 48px; padding: 0 14px; border: 1px solid #c9c6d9; border-radius: 12px; }
+.composer input { flex: 1; min-height: 48px; padding: 0 14px; border: 1px solid var(--hairline-strong); border-radius: 12px; }
 .composer button, .actions button, .card-form ~ .panel button { min-height: 44px; }
 .composer button { padding: 0 18px; border: 0; border-radius: 12px; font-weight: 700; color: var(--device-ink); background: var(--charge-coral); }
+/* 这一页的空态原本没有自己的样式，保持继承正文色 */
+.empty { color: inherit; }
 .unready { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--orbit-mist); color: var(--device-ink); }
 .card-form { display: grid; gap: 12px; }
 .card-form label { display: grid; gap: 6px; font-weight: 700; }
-.card-form input, .card-form textarea { min-height: 44px; padding: 8px 12px; border: 1px solid #c9c6d9; border-radius: 10px; font-weight: 400; }
+.card-form input, .card-form textarea { min-height: 44px; padding: 8px 12px; border: 1px solid var(--hairline-strong); border-radius: 10px; font-weight: 400; }
 fieldset { border: 1px solid var(--orbit-mist); border-radius: 12px; padding: 12px; }
 legend { font-weight: 700; padding: 0 6px; }
 .tool-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; min-height: 44px; }
 .tool-row label { display: grid; font-weight: 400; cursor: pointer; }
-.tool-row code { font: 11px var(--font-utility); color: #777388; }
+.tool-row code { font: 11px var(--font-utility); color: var(--ink-quiet); }
+/* 这一页的风险标签只是无底色的文字，用类名而不是 data-risk，
+   所以既不要全局的胶囊内距，也不走 data-risk 的配色 */
 .risk { font: 11px var(--font-utility); }
-.risk-low { color: #2c7a4b; }
+.risk-low { color: var(--risk-low-fg); }
 .risk-reversible { color: var(--orbit-violet); }
-.risk-high { color: #c0392b; }
+.risk-high { color: var(--risk-high-fg); }
 .budget-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .budget-row label { display: grid; gap: 4px; font-weight: 700; font-size: 13px; }
-.budget-row input { min-height: 40px; padding: 0 8px; border: 1px solid #c9c6d9; border-radius: 8px; }
+.budget-row input { min-height: 40px; padding: 0 8px; border: 1px solid var(--hairline-strong); border-radius: 8px; }
 .actions { display: flex; gap: 10px; }
 .actions button { flex: 0 0 auto; padding: 0 18px; border: 0; border-radius: 12px; background: var(--orbit-violet); color: white; font-weight: 700; }
-.error-panel { border: 2px solid #f0b429; }
+.error-panel { border: 2px solid var(--signal-amber); }
 .error-panel ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 .error-panel li { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: baseline; }
-.error-panel code { font: 11px var(--font-utility); color: #c0392b; }
+.error-panel code { font: 11px var(--font-utility); color: var(--signal-red); }
 .assets { margin: 0 0 12px; padding: 0; list-style: none; }
 .assets li { display: flex; justify-content: space-between; align-items: center; min-height: 48px; border-top: 1px solid var(--orbit-mist); }
-.assets small { display: block; font: 11px var(--font-utility); color: #777388; }
-.assets button { border: 0; background: transparent; color: #c0392b; cursor: pointer; min-height: 44px; }
+.assets small { display: block; font: 11px var(--font-utility); color: var(--ink-quiet); }
+.assets button { border: 0; background: transparent; color: var(--signal-red); cursor: pointer; min-height: 44px; }
 .trial-results ul { list-style: none; padding: 0; display: grid; gap: 10px; }
 .trial-results li { padding: 12px; border-radius: 12px; background: var(--orbit-mist); }
-.trial-results li.passed { background: #e6f4ea; }
-.trial-results li.failed { background: #fdecea; }
+.trial-results li.passed { background: var(--el-color-success-light-9); }
+.trial-results li.failed { background: var(--el-color-danger-light-9); }
 .trial-results p { margin: 6px 0 0; font-size: 13px; }
 button.primary { padding: 0 22px; min-height: 48px; border: 0; border-radius: 12px; font-weight: 700; color: var(--device-ink); background: var(--charge-coral); }
 button:disabled { opacity: .5; cursor: not-allowed; }
 .toggle { border: 0; background: transparent; color: var(--orbit-violet); font-weight: 700; min-height: 44px; padding: 0; cursor: pointer; }
-textarea { width: 100%; font: 12px var(--font-utility); border: 1px solid #c9c6d9; border-radius: 10px; padding: 10px; }
+textarea { width: 100%; font: 12px var(--font-utility); border: 1px solid var(--hairline-strong); border-radius: 10px; padding: 10px; }
 @media (max-width: 900px) { .creator-grid { grid-template-columns: 1fr; } .drafts-panel { position: static; } .budget-row { grid-template-columns: 1fr 1fr; } }
 </style>

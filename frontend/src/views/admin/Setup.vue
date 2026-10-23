@@ -63,7 +63,7 @@ onMounted(refresh)
 </script>
 
 <template>
-  <section class="setup-page" aria-labelledby="setup-title">
+  <section class="page setup-page" aria-labelledby="setup-title">
     <header class="page-head">
       <div><p class="eyebrow">INITIALIZATION / 初始化设置</p><h1 id="setup-title">模型控制台</h1></div>
       <div class="readiness" role="status"><span :class="['status-dot', { ready: setup?.ai_ready }]" aria-hidden="true"></span><div><strong>{{ setup?.ai_ready ? '核心 AI 已就绪' : '核心 AI 等待配置' }}</strong><p>{{ setup?.master_key_valid ? (setup?.embedding_ready ? '知识增强已启用' : '知识增强为可选能力，当前未启用') : '主密钥缺失或格式无效' }}</p></div></div>
@@ -118,11 +118,13 @@ onMounted(refresh)
 </template>
 
 <style scoped>
-.setup-page { max-width: 1120px; margin: auto; padding: 48px 32px 80px; color: var(--device-ink); }
+/* 页宽与 .eyebrow 的字体/品牌紫来自 styles/global.css；这一页的留白、
+   描边色（#bbb8cd / #d9d7e5 / #cbc8db）是它自己的视觉语言，保持不变。 */
+.setup-page { padding: 48px 32px 80px; color: var(--device-ink); }
 .page-head { display: flex; justify-content: space-between; gap: 32px; align-items: end; border-bottom: 1px solid #cbc8db; padding-bottom: 24px; }
-.eyebrow { margin: 0; font: 600 12px var(--font-utility); letter-spacing: .15em; color: var(--orbit-violet); }
+.eyebrow { margin: 0; letter-spacing: .15em; }
 h1 { margin: 10px 0 0; font: 700 52px/1 var(--font-display); } h2 { margin: 4px 0 0; font: 700 24px var(--font-display); }
-.lead { max-width: 760px; margin: 22px 0 30px; line-height: 1.8; color: #625f76; }
+.lead { max-width: 760px; margin: 22px 0 30px; line-height: 1.8; color: var(--ink-subtle); }
 .readiness { min-width: 250px; display: flex; align-items: center; gap: 13px; padding: 16px 18px; background: white; border: 1px solid #d9d7e5; border-radius: 14px; }.readiness p { margin: 4px 0 0; font: 12px var(--font-utility); }.status-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--charge-coral); }.status-dot.ready { background: #2f8f65; }
 .notice { padding: 12px 16px; border-left: 4px solid var(--charge-coral); background: #fff5f2; }
 .wizard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }.work-card,.evidence-panel,.requirements { background: white; border: 1px solid #d9d7e5; border-radius: 16px; padding: 24px; box-shadow: 0 12px 32px rgba(33,29,79,.05); }.step-head { display: flex; gap: 12px; align-items: baseline; margin-bottom: 20px; }.step-head>span { font: 600 11px var(--font-utility); text-transform: uppercase; color: var(--charge-coral); }
