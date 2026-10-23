@@ -29,10 +29,10 @@ hljs.registerLanguage('typescript', typescript)
 hljs.registerLanguage('xml', xml)
 hljs.registerLanguage('yaml', yaml)
 
+const BASE_OPTIONS = { html: false, linkify: true, breaks: true } as const
+
 const md = new MarkdownIt({
-  html: false,
-  linkify: true,
-  breaks: true,
+  ...BASE_OPTIONS,
   highlight(code: string, lang: string): string {
     const language = lang && hljs.getLanguage(lang) ? lang : ''
     if (language) {
@@ -45,6 +45,21 @@ const md = new MarkdownIt({
   },
 })
 
-export function renderMarkdown(text: string): string {
-  return text ? md.render(text) : ''
+// 流式期间用的实例：不做语法高亮。高亮是这里最贵的一步，
+// 而每来一个 token 都要重渲染一次整段内容，流式期间高亮的输出随即作废。
+const mdPlain = new MarkdownIt({
+  ...BASE_OPTIONS,
+  highlight(code: string): string {
+    return `<pre class="hljs"><code>${mdPlain.utils.escapeHtml(code)}</code></pre>`
+  },
+})
+
+export interface RenderMarkdownOptions {
+  /** 流式输出中传 false：跳过语法高亮，完成后再用完整渲染替换 */
+  highlight?: boolean
+}
+
+export function renderMarkdown(text: string, options: RenderMarkdownOptions = {}): string {
+  if (!text) return ''
+  return options.highlight === false ? mdPlain.render(text) : md.render(text)
 }

@@ -9,6 +9,12 @@ const props = defineProps<{ message: ChatUiMessage }>()
 const emit = defineEmits<{ feedback: [value: 'like' | 'dislike'] }>()
 
 const sentiment = computed(() => sentimentTag(props.message.sentiment))
+
+// 只在内容真正变化时重算一次：放在模板里直接调用会在每次父组件重渲染时重解析整段 markdown。
+// 流式期间关掉语法高亮——每个 token 都会重算一次，高亮结果随即被下一个 token 作废。
+const rendered = computed(() =>
+  renderMarkdown(props.message.content, { highlight: !props.message.streaming }),
+)
 </script>
 
 <template>
@@ -22,7 +28,7 @@ const sentiment = computed(() => sentimentTag(props.message.sentiment))
         <template v-if="message.role === 'assistant'">
           <div v-if="message.streaming && !message.content" class="thinking">正在思考…</div>
           <template v-else>
-            <div class="md-body" v-html="renderMarkdown(message.content)"></div>
+            <div class="md-body" v-html="rendered"></div>
             <span v-if="message.streaming" class="stream-cursor"></span>
           </template>
         </template>

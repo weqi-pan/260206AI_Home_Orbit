@@ -54,12 +54,26 @@ const { show: openSessionDrawer, hide: closeSessionDrawer, onKeydown: onSessionD
 )
 let abortController: AbortController | null = null
 watch(sessionDrawerOpen, (open) => { shellModalOpen.value = open }, { immediate: true })
-onUnmounted(() => { shellModalOpen.value = false })
+onUnmounted(() => {
+  // 先丢缓冲再中断：卸载时不该再往即将销毁的响应式对象里写
+  cancelTokenFrame()
+  abortStreaming()
+  if (scrollFrame) { cancelAnimationFrame(scrollFrame); scrollFrame = 0 }
+  shellModalOpen.value = false
+})
+
+// 列表 key 用的稳定标识：SSE 结束时只回填真实 id，uid 不变，避免整个列表重挂载
+let nextUid = 0
+function takeUid(): number {
+  nextUid += 1
+  return nextUid
+}
 
 const activeSession = computed(() => sessions.value.find((item) => item.id === activeId.value) ?? null)
 
 function toUiMessage(item: ChatMessageInfo): ChatUiMessage {
   return {
+    uid: takeUid(),
     id: item.id,
     role: item.role,
     content: item.content,
@@ -76,13 +90,63 @@ function toolStatusLabel(status: string): string {
   return status
 }
 
-async function scrollBottom() {
-  await nextTick()
+// 用户向上翻阅历史时不把视口拽回底部；距底部 80px 内才继续跟随新内容
+const FOLLOW_THRESHOLD = 80
+let followOutput = true
+let scrollFrame = 0
+
+function onMessageListScroll() {
   const el = scrollRef.value
-  if (el) el.scrollTop = el.scrollHeight
+  if (el) followOutput = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD
+}
+
+function scheduleScroll(force = false) {
+  if (force) followOutput = true
+  if (!followOutput || scrollFrame) return
+  scrollFrame = requestAnimationFrame(() => {
+    scrollFrame = 0
+    const el = scrollRef.value
+    if (el && followOutput) el.scrollTop = el.scrollHeight
+  })
+}
+
+async function scrollBottom(force = false) {
+  await nextTick()
+  scheduleScroll(force)
+}
+
+// SSE 逐 token 到达时先攒进缓冲，每帧只写一次 assistantMessage.content：
+// 逐 token 赋值会让每个 token 触发一次整段 markdown 重解析。
+let pendingTokens = ''
+let tokenFrame = 0
+let streamingMessage: ChatUiMessage | null = null
+
+function flushTokens() {
+  if (tokenFrame) {
+    cancelAnimationFrame(tokenFrame)
+    tokenFrame = 0
+  }
+  if (!pendingTokens) return
+  if (streamingMessage) streamingMessage.content += pendingTokens
+  pendingTokens = ''
+}
+
+function scheduleTokenFlush() {
+  if (!tokenFrame) tokenFrame = requestAnimationFrame(flushTokens)
+}
+
+function cancelTokenFrame() {
+  if (tokenFrame) {
+    cancelAnimationFrame(tokenFrame)
+    tokenFrame = 0
+  }
+  pendingTokens = ''
+  streamingMessage = null
 }
 
 function abortStreaming() {
+  flushTokens()
+  streamingMessage = null
   if (abortController) {
     abortController.abort()
     abortController = null
@@ -101,7 +165,8 @@ async function selectSession(id: string) {
     followups.value = []
     toolEvents.value = []
     messages.value = (await listMessages(id)).map(toUiMessage)
-    await scrollBottom()
+    // 切会话是从历史列表进入，直接定位到底部，不受上一会话的滚动位置影响
+    await scrollBottom(true)
   }
   if (sessionDrawerOpen.value) closeSessionDrawer()
 }
@@ -175,6 +240,7 @@ async function sendMessage(preset?: string) {
   followups.value = []
   toolEvents.value = []
   const userMessage = reactive<ChatUiMessage>({
+    uid: takeUid(),
     id: null,
     role: 'user',
     content,
@@ -183,6 +249,7 @@ async function sendMessage(preset?: string) {
     feedback: null,
   })
   const assistantMessage = reactive<ChatUiMessage>({
+    uid: takeUid(),
     id: null,
     role: 'assistant',
     content: '',
@@ -192,19 +259,23 @@ async function sendMessage(preset?: string) {
     streaming: true,
   })
   messages.value.push(userMessage, assistantMessage)
+  streamingMessage = assistantMessage
   streamAnnouncement.value = ''
   pendingParagraph = ''
-  await scrollBottom()
+  await scrollBottom(true)
   try {
     await streamChat(
       activeId.value,
       content,
       {
         onToken: (token) => {
-          assistantMessage.content += token
+          // 只入缓冲，由 rAF 合并成一次赋值（见 flushTokens）
+          pendingTokens += token
           pendingParagraph += token
           announceCompletedParagraph()
-          void scrollBottom()
+          scheduleTokenFlush()
+          // 直接排帧即可：rAF 回调一定在 Vue 的 nextTick 微任务之后，DOM 已更新
+          scheduleScroll()
         },
         onTool: (data) => {
           toolEvents.value.push(data)
@@ -217,6 +288,7 @@ async function sendMessage(preset?: string) {
           followups.value = questions.slice(0, 3)
         },
         onDone: (data) => {
+          flushTokens()
           assistantMessage.id = data.message_id
           const remainder = pendingParagraph.trim()
           streamAnnouncement.value = remainder ? `${remainder}\n回复完成` : '回复完成'
@@ -224,6 +296,7 @@ async function sendMessage(preset?: string) {
           refreshSessions().catch(() => undefined)
         },
         onError: (message) => {
+          flushTokens()
           assistantMessage.failed = true
           streamAnnouncement.value = '回复失败'
           ElMessage.error(message)
@@ -232,11 +305,14 @@ async function sendMessage(preset?: string) {
       signal,
     )
   } catch (error) {
+    flushTokens()
     if ((error as Error).name !== 'AbortError') {
       assistantMessage.failed = true
       ElMessage.error(error instanceof Error ? error.message : '发送失败')
     }
   } finally {
+    flushTokens()
+    streamingMessage = null
     assistantMessage.streaming = false
     abortController = null
     sending.value = false
@@ -308,11 +384,11 @@ onMounted(() => {
         <span class="chat-session-title" :title="activeSession?.title">{{ activeSession?.title ?? '新对话' }}</span>
         <el-button size="small" :icon="Tickets" @click="goCreateTicket()">提交工单</el-button>
       </header>
-      <div ref="scrollRef" class="message-list">
+      <div ref="scrollRef" class="message-list" @scroll.passive="onMessageListScroll">
         <div class="sr-only" role="status" aria-live="polite" data-testid="stream-live">{{ streamAnnouncement }}</div>
         <MessageItem
-          v-for="(message, index) in messages"
-          :key="index"
+          v-for="message in messages"
+          :key="message.uid"
           :message="message"
           @feedback="(value) => handleFeedback(message, value)"
         />
