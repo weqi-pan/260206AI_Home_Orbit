@@ -41,9 +41,10 @@ async function handleSubmit() {
   loading.value = true
   try {
     await changePassword(form.currentPassword, form.newPassword)
-    auth.setPasswordChanged()
-    ElMessage.success('密码修改成功')
-    await router.push('/chat')
+    // 改密会让服务端作废旧令牌：继续用当前会话只会白烧一次刷新再被拒，直接回登录页
+    auth.logout()
+    ElMessage.success('密码已修改，请重新登录')
+    await router.push('/login')
   } catch {
   } finally {
     loading.value = false

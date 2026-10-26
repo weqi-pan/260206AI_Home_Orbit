@@ -28,6 +28,10 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    refresh_token: str
+
+
 class PasswordRequest(BaseModel):
     current_password: str
     new_password: BcryptPassword = Field(min_length=8, max_length=128)

@@ -57,11 +57,12 @@ export const useAuthStore = defineStore('auth', {
       this.accessToken = token
       this.persist()
     },
-    setPasswordChanged() {
-      if (this.account) {
-        this.account = { ...this.account, must_change_password: false }
-        this.persist()
-      }
+    // 刷新令牌是轮换的：只写回 access 会让下一次静默刷新重放已用令牌，
+    // 后端会按「重放」整族吊销并要求重新登录。必须成对更新。
+    setTokens(accessToken: string, refreshToken: string) {
+      this.accessToken = accessToken
+      this.refreshToken = refreshToken
+      this.persist()
     },
     logout() {
       this.accessToken = ''
