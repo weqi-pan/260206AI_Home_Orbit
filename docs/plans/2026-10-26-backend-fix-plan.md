@@ -116,12 +116,25 @@
    - [AppLayout.vue:19](frontend/src/components/AppLayout.vue#L19)、[AdminLayout.vue:32](frontend/src/components/admin/AdminLayout.vue#L32)：先 best-effort `await logout(auth.refreshToken)`（失败忽略）再本地清除。
    - [ChangePassword.vue:37-53](frontend/src/views/ChangePassword.vue#L37-L53)：改密成功后改为 `auth.logout()` + 跳 `/login` + 提示「密码已修改，请重新登录」（旧令牌已失效，原逻辑会白烧一次 refresh 再被拒）。
 
+**实现偏差**（已按实际实现回填）
+
+1. **`create_token` 无条件签发 `jti`（uuid 兜底），不只是 refresh。** 原计划只让 refresh 带 `jti`，但 `iat`/`exp` 是**秒级精度**：同一秒内签发的两个 access 令牌逐字节相同，`test_refresh_rotates_and_returns_a_new_refresh_token` 就是因此挂掉的（轮换后的 access 与旧的完全相等）。顺带把「每个令牌都有稳定 id」变成后续做访问令牌吊销的抓手。
+2. **`auth_sessions` 的函数名与计划不同**：计划写 `issue_session` / `rotate_refresh` / `revoke_refresh`，实际是 `record_session` / `consume_refresh` / `revoke_token`。`consume_refresh` 返回 `"ok" | "reused" | "revoked" | "unknown"` 四态串而不是布尔 —— `"unknown"`（库里没有记录）与 `"revoked"`（族已吊销）要分别处理：前者拒绝但**不**断族（升级前签发的老令牌会落到这里），后者直接拒绝。
+3. **限流器拆成 `count` / `record` / `clear` 三个显式方法，没有合并的 `hit()`。** 合并会把「读计数」与「写计数」绑在一起，检查点就必须写在自增之后 —— 阈值会整体偏移一格，第 1 次请求就可能被拦。现在是先 `count` 判断、再 `record`。
+4. **登录成功只清用户名维度，不清 IP 维度。** 清 IP 的话，攻击者用自己账号成功登录一次就能把自己那档 IP 计数重置掉，IP 限流等于可绕过。
+5. **注册按「每一次请求」计数，不只失败。** 要挡的是批量注册，成功本身就是要挡的对象（原计划写的「只对失败计数」对 register 不适用）。`.env.example` 的注释已同步说明。
+6. **`token_version` 只在 `active → disabled` 这个跃迁上 +1**，不是每次写 disabled 都加。管理员重复提交同一条禁用操作不该产生一串审计噪声。
+7. **配置名是 `auth_rate_limit_window_seconds`**（计划里的 `login_rate_limit_window_seconds` 改了名）：窗口对 login/register 共用，叫 `login_` 会误导。
+8. **`access_token_minutes` 由 120 降到 60**，配合 `token_version` 让吊销延迟上限从 2 小时压到 1 小时。
+9. **前端 `setPasswordChanged` 一并删掉**：改密成功后直接登出跳 `/login`，那个标记位不再有消费者，留着只会让人误以为还存在「改密后无感续用」的路径。
+
 **验收**
 
 - `test_auth.py` 14 项全绿（`test_duplicate_registration_is_rejected` 只断言 409，`test_login_rejects_wrong_password` 只断言 401，`test_refresh_and_me` 只读 `access_token`，均不受影响）
-- 新增 5 项：`test_logout_revokes_refresh` / `test_logout_all_bumps_token_version` / `test_refresh_rotation_reuse_revokes_family` / `test_login_rate_limited_returns_429_with_retry_after` / `test_admin_reset_password_invalidates_sessions`
-- 新增 `test_auth_migration.py`（upgrade → 断言新表新列 → downgrade 到 `0016` → 再 upgrade，仿 `test_notification_read_migration.py`）
-- `npm test -- --run`（25 个文件）全绿
+- 新增 [test_auth_sessions.py](backend/tests/test_auth_sessions.py) 13 项：`test_logout_revokes_refresh` / `test_logout_all_bumps_token_version` / `test_refresh_replay_revokes_the_whole_family` / `test_login_rate_limited_returns_429_with_retry_after` / `test_admin_reset_password_invalidates_sessions` / `test_rate_limiter_stores_no_plaintext_identifier` / `test_tokens_issued_before_token_version_still_work` / `test_duplicate_registration_message_does_not_confirm_the_username` 等
+- 新增 [test_auth_migration.py](backend/tests/test_auth_migration.py) 3 项：`test_auth_hardening_revision_roundtrips`（upgrade → 断言新表新列 → downgrade 到 `0016` → 再 upgrade）、`test_required_revision_matches_auth_hardening_head`、`test_create_all_matches_migration_shape`
+- `pytest -q` 全绿：**544 项**（PR 2 后的基线 528 + 认证会话 13 + 迁移 3）
+- `npm test -- --run`（26 个文件 105 项）全绿，含 [http.test.ts](frontend/src/api/http.test.ts) 新增的「`refreshAccessToken` 的令牌轮换」两条
 - 手工：登录 → 等 access 过期 → 静默刷新 → 继续操作，确认无强制登出
 
 ---
