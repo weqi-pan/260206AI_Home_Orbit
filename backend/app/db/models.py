@@ -30,6 +30,8 @@ class Account(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # 改密/重置/禁用时 +1，让该账号所有在途访问令牌立即失效（令牌里带 ver）
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     user_id: Mapped[str | None] = mapped_column(ForeignKey("users.user_id"), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -221,6 +223,7 @@ class AdminActionAudit(Base):
 
 # Staged V2 compatibility exports. New domains live in focused modules while
 # existing V1 imports continue to use backend.app.db.models.
+from backend.app.db.auth_models import LoginAttempt, RefreshSession  # noqa: E402,F401
 from backend.app.db.household_models import Household, HouseholdMember, HouseholdPreference, Invitation  # noqa: E402,F401
 from backend.app.db.household_daily_models import (HouseholdMemo, HouseholdPreferenceProposal,  # noqa: E402,F401
                                                     ShoppingListItem)

@@ -12,6 +12,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import install_exception_handlers
 from backend.app.core.logging import configure_logging
 from backend.app.core.middleware import RequestContextMiddleware
+from backend.app.core.rate_limit import build_rate_limiter
 from backend.app.db.seed import seed_database
 from backend.app.db.session import create_database, require_database_revision
 from backend.app.ops import api as ops_api
@@ -69,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             sync_builtin_catalog(catalog_db)
         app.state.database = database
         app.state.settings = app_settings
+        app.state.rate_limiter = build_rate_limiter(app_settings)
         app.state.vector_store_service = configured_vector_store(database.session_factory, app_settings.chroma_path)
         from backend.agent.platform.runner import DeploymentAgentRunner
         app.state.deployment_agent_runner = DeploymentAgentRunner(database.session_factory)

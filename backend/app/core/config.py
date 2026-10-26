@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     app_mode: Literal["production", "preview", "test"] = "production"
     database_url: str = "mysql+pymysql://root:password@localhost:3306/customer_service"
     jwt_secret: str = "development-only-change-this-secret"
-    access_token_minutes: int = 120
+    access_token_minutes: int = 60
     refresh_token_days: int = 7
     bcrypt_rounds: int = 12
     admin_initial_password: str = "Admin@123"
@@ -37,6 +37,16 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     celery_retry_backoff_seconds: int = 30
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+
+    # 认证限流：只对**失败**计数，正常登录/注册不受影响
+    auth_rate_limit_enabled: bool = True
+    auth_rate_limit_backend: Literal["database", "memory"] = "database"
+    auth_rate_limit_window_seconds: int = 300
+    login_rate_limit_username_attempts: int = 10
+    login_rate_limit_ip_attempts: int = 30
+    register_rate_limit_ip_attempts: int = 10
+    # 只有确实部署在可信反代后面才打开：X-Forwarded-For 由客户端伪造
+    auth_rate_limit_trust_forwarded_for: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",
