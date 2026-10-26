@@ -36,16 +36,17 @@
 161 处 `HTTPException` 里 121 处用 `detail={"code": ...}`，**40 处用纯中文字符串**（`knowledge.py` 8、`households.py` 6、`auth.py` 6、`admin/accounts.py` 4、`devices.py` 3、`admin/operations.py` 3、`admin/devices.py` 3、`core/security.py` 2、`tickets.py` 2、`chat/messages.py` 2、`chat/base.py` 1）；Pydantic 校验失败的 422 是 FastAPI 默认数组形态，直接绕过 code 契约。
 
 1. 新建 `backend/app/core/errors.py`：
-   - `AppError(HTTPException)`：`__init__(status_code, code, message="", fields=None)` → `detail={"code": code}`，有 message/fields 时附加。
-   - `install_exception_handlers(app)`：注册 `RequestValidationError` handler → **保留 422**，body 为 `{"detail": {"code": "VALIDATION_FAILED", "fields": [{"path": ".".join(map(str, e["loc"])), "message": e["msg"]}]}}`；再注册 `Exception` 兜底 → `logger.exception` + `500 {"detail": {"code": "INTERNAL_ERROR"}}`（不泄露 traceback）。
-2. `create_app` 里紧跟 `add_middleware(CORSMiddleware, ...)` 调用它。
+   - `install_exception_handlers(app)`：注册 `RequestValidationError` handler → **保留 422**，body 为 `{"detail": {"code": "VALIDATION_FAILED", "message": "请求参数校验失败", "fields": [{"path": ".".join(map(str, e["loc"])), "message": e["msg"]}]}}`（只搬 `loc`/`msg`，不搬 `ctx` —— Pydantic v2 会在里面塞原始异常对象，序列化会炸）；注册 `Exception` 兜底 → `logger.exception` + `500 {"detail": {"code": "INTERNAL_ERROR"}}`（不泄露 traceback）。
+   - 再注册 `StarletteHTTPException` handler 兜底**纯字符串 detail**：转成 `{"code": 由状态码推导, "message": 原文}`。这层是保险丝 —— Starlette 自己的 404/405 也是字符串 detail，不包的话形状仍会破。领域语义仍由各端点自己给 `detail={"code": ...}`。
+   - **不引入 `AppError` 类**：40 处只需换 detail 字面量，多一个没人实例化的异常子类只会增加一层间接。若后续端点需要复用同一错误，再抽。
+2. `create_app` 里紧跟 `FastAPI(...)` 构造调用它。
 3. 40 处字符串 detail 逐个换成稳定 code，**中文文案不能丢**：写成 `detail={"code": "...", "message": "原来的中文"}`。命名对齐已有风格（`HOUSEHOLD_NOT_FOUND` / `AUTH_INVALID_CREDENTIALS` / `KNOWLEDGE_FILE_NOT_FOUND` / `DEVICE_NOT_FOUND` / `TICKET_NOT_FOUND` / `ADMIN_REQUIRED` …）。`auth.py` 的 6 处与 PR 3 重叠，**本 PR 只加 code、不动语义**。
-4. 前端一处小改：[http.ts:13-29](frontend/src/api/http.ts#L13-L29) 的 `extractErrorMessage` 现在优先返回 `detail.code`；改成 `detail` 是对象时**先取 `message`、再退回 `code`**，否则用户会看到 `HOUSEHOLD_NOT_FOUND` 而不是中文。该函数只有两个调用点（[useRequest.ts:21](frontend/src/composables/useRequest.ts#L21)、[chat.ts:173](frontend/src/api/chat.ts#L173)），无测试直接依赖。
+4. 前端一处小改：[http.ts:13-29](frontend/src/api/http.ts#L13-L29) 的 `extractErrorMessage` 现在优先返回 `detail.code`；改成 `detail` 是对象时**先取 `fields` 里的逐字段原因、再取 `message`、最后退回 `code`**，否则用户会看到 `HOUSEHOLD_NOT_FOUND` 或笼统的「请求参数校验失败」而不是具体中文。该函数有 3 个调用点（[useRequest.ts:21](frontend/src/composables/useRequest.ts#L21)、[chat.ts:173](frontend/src/api/chat.ts#L173)、[http.ts:81](frontend/src/api/http.ts#L81)）。
 
 **验收**
 
-- `grep -rEn 'detail="' --include=*.py backend/app | grep -c HTTPException` → `0`
-- 17 处 `status_code == 422` 断言全绿（已确认无一断言 detail 形状）
+- `grep -rEn 'detail="' --include=*.py backend/app | grep -c HTTPException` → `0`（仅剩 `home/orbit.py` 的节点描述与 `tasks/executor.py` 的记录字段，都不是异常 detail）
+- 17 处既有 `status_code == 422` 断言全绿（已确认无一断言 detail 形状）；新增 `test_error_contract.py` 6 项断言契约形状
 - `test_auth.py`（14 项）、`test_acceptance_matrix.py` 全绿
 - `npm run lint && npm run format:check && npm test -- --run` 绿
 
