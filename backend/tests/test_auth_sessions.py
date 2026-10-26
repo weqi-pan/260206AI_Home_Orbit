@@ -1,6 +1,6 @@
 """认证与会话加固的回归闸门：限流、轮换、重放断族、登出、令牌版本号。"""
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -166,8 +166,7 @@ def test_tokens_issued_before_token_version_still_work(client, app, settings):
     with app.state.database.session_factory() as session:
         account = session.scalar(select(Account).where(Account.username == "demo"))
         legacy = jwt.encode(
-            {"sub": account.id, "role": account.role, "type": "access",
-             "exp": __import__("datetime").datetime.now(__import__("datetime").timezone.utc) + timedelta(minutes=5)},
+            {"sub": account.id, "role": account.role, "type": "access", "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
             settings.jwt_secret, algorithm="HS256",
         )
 
