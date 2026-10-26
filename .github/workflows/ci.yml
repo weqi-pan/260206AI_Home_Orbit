@@ -41,10 +41,9 @@ jobs:
       - name: Lint frontend
         working-directory: frontend
         run: npm run lint
-      # 暂不把 `format:check` 设为必过项：首次对全仓库跑 Prettier 会产生 60+ 个文件的
-      # 纯格式 diff，覆盖整个 src/。而且 Prettier 会把 Vue 模板里的
-      # `@change="a; b()"` 拆成多行，Vue 编译器解析多行内联表达式会报错（已在
-      # TaskOps.vue / AuditRelease.vue 上复现）。等这两点处理完再单独开 PR 接入。
+      - name: Check formatting
+        working-directory: frontend
+        run: npm run format:check
       - name: Run frontend tests
         working-directory: frontend
         run: npm test -- --run
