@@ -7,7 +7,10 @@ vi.mock('../../stores/auth', () => ({ useAuthStore: () => ({ account: { username
 
 describe('desktop admin layout', () => {
   it('places the sidebar and main shell in the same grid row', () => {
-    const wrapper = mount(AdminLayout, { attachTo: document.body, global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' }, RouterView: true } } })
+    const wrapper = mount(AdminLayout, {
+      attachTo: document.body,
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' }, RouterView: true } },
+    })
     const aside = wrapper.find('.admin-aside')
     const shell = wrapper.find('.admin-shell-background')
 
@@ -23,7 +26,10 @@ describe('desktop admin layout', () => {
 
 describe('mobile admin drawer', () => {
   it('contains navigation, return and logout actions with focus restoration', async () => {
-    const wrapper = mount(AdminLayout, { attachTo: document.body, global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' }, RouterView: true } } })
+    const wrapper = mount(AdminLayout, {
+      attachTo: document.body,
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' }, RouterView: true } },
+    })
     const trigger = wrapper.find<HTMLButtonElement>('[aria-label="打开管理员导航"]')
     expect(trigger.exists()).toBe(true)
     await trigger.trigger('click')
@@ -38,7 +44,10 @@ describe('mobile admin drawer', () => {
   })
 
   it('traps focus, closes on Escape, and makes main content inert while open', async () => {
-    const wrapper = mount(AdminLayout, { attachTo: document.body, global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' }, RouterView: true } } })
+    const wrapper = mount(AdminLayout, {
+      attachTo: document.body,
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' }, RouterView: true } },
+    })
     const trigger = wrapper.find<HTMLButtonElement>('[aria-label="打开管理员导航"]')
     await trigger.trigger('click')
     const background = wrapper.find('.admin-shell-background')
@@ -60,7 +69,10 @@ describe('mobile admin drawer', () => {
   })
 
   it('isolates every non-modal shell control and restores the shell after close', async () => {
-    const wrapper = mount(AdminLayout, { attachTo: document.body, global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' }, RouterView: true } } })
+    const wrapper = mount(AdminLayout, {
+      attachTo: document.body,
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' }, RouterView: true } },
+    })
     const trigger = wrapper.find<HTMLButtonElement>('[aria-label="打开管理员导航"]')
     await trigger.trigger('click')
     const background = wrapper.find('.admin-shell-background')

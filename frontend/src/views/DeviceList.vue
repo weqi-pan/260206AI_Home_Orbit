@@ -12,10 +12,12 @@ const keyword = ref('')
 const selected = ref<DeviceInfo[]>([])
 
 // 原来这里是一个空 catch：搜索失败时表格静默留空，用户会误以为「没有匹配设备」。
-const { data: devices, loading, error, run: loadDevices } = useRequest(
-  () => searchDevices(keyword.value.trim()),
-  { initial: [] as DeviceInfo[], immediate: true },
-)
+const {
+  data: devices,
+  loading,
+  error,
+  run: loadDevices,
+} = useRequest(() => searchDevices(keyword.value.trim()), { initial: [] as DeviceInfo[], immediate: true })
 
 function handleSelectionChange(rows: DeviceInfo[]) {
   selected.value = rows
@@ -106,5 +108,4 @@ function goCompare() {
 .search-input {
   width: 300px;
 }
-
 </style>

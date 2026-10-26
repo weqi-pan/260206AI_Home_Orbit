@@ -169,8 +169,7 @@ export async function streamChat(
     let body: unknown
     try {
       body = JSON.parse(text)
-    } catch {
-    }
+    } catch {}
     throw new Error(extractErrorMessage(body, `请求失败（${response.status}）`))
   }
   await readStream(response, callbacks)

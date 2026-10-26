@@ -12,9 +12,7 @@ const sentiment = computed(() => sentimentTag(props.message.sentiment))
 
 // 只在内容真正变化时重算一次：放在模板里直接调用会在每次父组件重渲染时重解析整段 markdown。
 // 流式期间关掉语法高亮——每个 token 都会重算一次，高亮结果随即被下一个 token 作废。
-const rendered = computed(() =>
-  renderMarkdown(props.message.content, { highlight: !props.message.streaming }),
-)
+const rendered = computed(() => renderMarkdown(props.message.content, { highlight: !props.message.streaming }))
 </script>
 
 <template>
@@ -114,13 +112,13 @@ const rendered = computed(() =>
 }
 
 .message.user .bubble {
-  background: #E4E1EF;
+  background: #e4e1ef;
   color: var(--device-ink);
 }
 
 .bubble.failed {
-  border: 1px solid #FAE2E3;
-  background: #FDF1F1;
+  border: 1px solid #fae2e3;
+  background: #fdf1f1;
   color: var(--signal-red);
 }
 

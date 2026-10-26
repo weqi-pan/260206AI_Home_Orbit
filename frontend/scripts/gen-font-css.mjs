@@ -12,7 +12,12 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const TARGETS = [
   { pkg: '@fontsource/noto-sans-sc', weights: [400, 700], out: 'src/styles/noto-sans-sc.css', family: 'Noto Sans SC' },
-  { pkg: '@fontsource/ibm-plex-mono', weights: [400, 500, 600], out: 'src/styles/ibm-plex-mono.css', family: 'IBM Plex Mono' },
+  {
+    pkg: '@fontsource/ibm-plex-mono',
+    weights: [400, 500, 600],
+    out: 'src/styles/ibm-plex-mono.css',
+    family: 'IBM Plex Mono',
+  },
 ]
 
 for (const target of TARGETS) {
@@ -24,15 +29,14 @@ for (const target of TARGETS) {
     const faces = css.match(/@font-face\s*\{[^}]*\}/g) ?? []
     for (const face of faces) {
       // 只保留 woff2 的 src，丢弃 woff 回退；url 改写为相对生成文件的 node_modules 路径
-      const stripped = face
-        .replace(/src:\s*([^;]*);/, (_match, src) => {
-          const woff2 = String(src)
-            .split(',')
-            .map((part) => part.trim())
-            .find((part) => part.includes('format(\'woff2\')'))
-          if (!woff2) throw new Error(`${target.pkg} ${weight}: @font-face 中没有 woff2`)
-          return `src: ${woff2.replace(/url\(\.\/files\//g, `url('../../${pkgDir}/files/`).replace(/\.woff2\)/, ".woff2')")};`
-        })
+      const stripped = face.replace(/src:\s*([^;]*);/, (_match, src) => {
+        const woff2 = String(src)
+          .split(',')
+          .map((part) => part.trim())
+          .find((part) => part.includes("format('woff2')"))
+        if (!woff2) throw new Error(`${target.pkg} ${weight}: @font-face 中没有 woff2`)
+        return `src: ${woff2.replace(/url\(\.\/files\//g, `url('../../${pkgDir}/files/`).replace(/\.woff2\)/, ".woff2')")};`
+      })
       blocks.push(stripped)
     }
   }

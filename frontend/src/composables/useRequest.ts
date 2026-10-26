@@ -34,14 +34,8 @@ export function useRequest<T>(
   request: () => Promise<T>,
   options: UseRequestOptions<T> & { initial: T },
 ): UseRequestResult<T> & { data: ShallowRef<T> }
-export function useRequest<T>(
-  request: () => Promise<T>,
-  options?: UseRequestOptions<T>,
-): UseRequestResult<T>
-export function useRequest<T>(
-  request: () => Promise<T>,
-  options: UseRequestOptions<T> = {},
-): UseRequestResult<T> {
+export function useRequest<T>(request: () => Promise<T>, options?: UseRequestOptions<T>): UseRequestResult<T>
+export function useRequest<T>(request: () => Promise<T>, options: UseRequestOptions<T> = {}): UseRequestResult<T> {
   const data = shallowRef<T | undefined>(options.initial)
   const loading = ref(false)
   const error = ref('')

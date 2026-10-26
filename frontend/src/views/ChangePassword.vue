@@ -33,7 +33,10 @@ const rules: FormRules = {
 }
 
 async function handleSubmit() {
-  const valid = await formRef.value?.validate().then(() => true).catch(() => false)
+  const valid = await formRef.value
+    ?.validate()
+    .then(() => true)
+    .catch(() => false)
   if (!valid) return
   loading.value = true
   try {
@@ -54,18 +57,35 @@ async function handleSubmit() {
     <p class="auth-hint">首次登录或管理员重置密码后，需要修改密码才能继续使用</p>
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @keyup.enter="handleSubmit()">
       <el-form-item label="当前密码" prop="currentPassword">
-        <el-input v-model="form.currentPassword" type="password" show-password :prefix-icon="Key" placeholder="请输入当前密码" />
+        <el-input
+          v-model="form.currentPassword"
+          type="password"
+          show-password
+          :prefix-icon="Key"
+          placeholder="请输入当前密码"
+        />
       </el-form-item>
       <el-form-item label="新密码" prop="newPassword">
-        <el-input v-model="form.newPassword" type="password" show-password :prefix-icon="Lock" placeholder="至少 8 位" />
+        <el-input
+          v-model="form.newPassword"
+          type="password"
+          show-password
+          :prefix-icon="Lock"
+          placeholder="至少 8 位"
+        />
       </el-form-item>
       <el-form-item label="确认新密码" prop="confirm">
-        <el-input v-model="form.confirm" type="password" show-password :prefix-icon="Lock" placeholder="再次输入新密码" />
+        <el-input
+          v-model="form.confirm"
+          type="password"
+          show-password
+          :prefix-icon="Lock"
+          placeholder="再次输入新密码"
+        />
       </el-form-item>
       <el-button class="auth-submit" type="primary" :loading="loading" @click="handleSubmit()">保存并继续</el-button>
     </el-form>
   </AuthShell>
 </template>
 
-<style scoped>
-</style>
+<style scoped></style>

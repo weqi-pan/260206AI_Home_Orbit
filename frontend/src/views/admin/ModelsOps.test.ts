@@ -5,7 +5,9 @@ import ModelsOps from './ModelsOps.vue'
 import Users from './Users.vue'
 
 const releaseMock = vi.fn().mockResolvedValue({ released: 2 })
-const adjustMock = vi.fn().mockResolvedValue({ household_id: 'h-1', monthly_limit: 60, requests_per_minute: 6, agent_token_budget: 8 })
+const adjustMock = vi
+  .fn()
+  .mockResolvedValue({ household_id: 'h-1', monthly_limit: 60, requests_per_minute: 6, agent_token_budget: 8 })
 
 vi.mock('../../api/audit', () => ({
   fetchUsageAccounting: vi.fn().mockResolvedValue({
@@ -16,8 +18,11 @@ vi.mock('../../api/audit', () => ({
     by_purpose: [{ purpose: 'primary_chat', requests: 12, tokens: 96 }],
     by_day: [{ day: '2026-08-28', requests: 12, tokens: 96 }],
     unreconciled: {
-      count: 1, window_minutes: 15,
-      items: [{ id: 'u-1', household_id: 'h-1', model_id: 'm-1', reserved_tokens: 8, created_at: '2026-08-28T06:00:00' }],
+      count: 1,
+      window_minutes: 15,
+      items: [
+        { id: 'u-1', household_id: 'h-1', model_id: 'm-1', reserved_tokens: 8, created_at: '2026-08-28T06:00:00' },
+      ],
     },
   }),
 }))
@@ -29,7 +34,15 @@ vi.mock('../../api/ops', () => ({
     quota: { monthly_limit: 100, requests_per_minute: 10, agent_token_budget: 8 },
     usage: { month: '2026-08', requests: 5, tokens: 40 },
     trend: [{ day: '2026-08-28', requests: 5, tokens: 40 }],
-    incidents: [{ id: 'i-1', model_id: 'm-1', model_name: 'chat', code: 'HOUSEHOLD_MONTHLY_QUOTA_EXCEEDED', created_at: '2026-08-28T05:00:00' }],
+    incidents: [
+      {
+        id: 'i-1',
+        model_id: 'm-1',
+        model_name: 'chat',
+        code: 'HOUSEHOLD_MONTHLY_QUOTA_EXCEEDED',
+        created_at: '2026-08-28T05:00:00',
+      },
+    ],
   }),
   adjustHouseholdQuota: (...args: unknown[]) => adjustMock(...(args as [string, Record<string, unknown>])),
 }))
@@ -37,7 +50,12 @@ vi.mock('../../api/ops', () => ({
 vi.mock('../../api/admin', () => ({
   fetchAccounts: vi.fn().mockResolvedValue([]),
   fetchAdminHouseholds: vi.fn().mockResolvedValue([
-    { id: 'h-1', name: '演示家庭', created_at: '2026-08-01T00:00:00', members: [{ account_id: 'acc-1', username: 'demo', role: 'owner' }] },
+    {
+      id: 'h-1',
+      name: '演示家庭',
+      created_at: '2026-08-01T00:00:00',
+      members: [{ account_id: 'acc-1', username: 'demo', role: 'owner' }],
+    },
   ]),
 }))
 

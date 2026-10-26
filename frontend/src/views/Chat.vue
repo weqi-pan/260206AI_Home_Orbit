@@ -47,18 +47,27 @@ const sessionDrawerOpen = ref(false)
 const sessionDrawerTrigger = ref<HTMLButtonElement>()
 const sessionDrawer = ref<HTMLElement>()
 const shellModalOpen = inject(shellModalOpenKey, ref(false))
-const { show: openSessionDrawer, hide: closeSessionDrawer, onKeydown: onSessionDrawerKeydown } = useModalFocus(
-  sessionDrawerOpen,
-  sessionDrawer,
-  sessionDrawerTrigger,
-)
+const {
+  show: openSessionDrawer,
+  hide: closeSessionDrawer,
+  onKeydown: onSessionDrawerKeydown,
+} = useModalFocus(sessionDrawerOpen, sessionDrawer, sessionDrawerTrigger)
 let abortController: AbortController | null = null
-watch(sessionDrawerOpen, (open) => { shellModalOpen.value = open }, { immediate: true })
+watch(
+  sessionDrawerOpen,
+  (open) => {
+    shellModalOpen.value = open
+  },
+  { immediate: true },
+)
 onUnmounted(() => {
   // 先丢缓冲再中断：卸载时不该再往即将销毁的响应式对象里写
   cancelTokenFrame()
   abortStreaming()
-  if (scrollFrame) { cancelAnimationFrame(scrollFrame); scrollFrame = 0 }
+  if (scrollFrame) {
+    cancelAnimationFrame(scrollFrame)
+    scrollFrame = 0
+  }
   shellModalOpen.value = false
 })
 
@@ -177,8 +186,7 @@ async function handleNewSession() {
     const created = await createSession()
     sessions.value.unshift(created)
     await selectSession(created.id)
-  } catch {
-  }
+  } catch {}
 }
 
 async function handleDeleteSession(id: string) {
@@ -200,8 +208,7 @@ async function handleDeleteSession(id: string) {
       if (sessions.value.length) await selectSession(sessions.value[0].id)
       else await handleNewSession()
     }
-  } catch {
-  }
+  } catch {}
 }
 
 async function loadSessions() {
@@ -343,7 +350,15 @@ onMounted(() => {
 
 <template>
   <div class="chat-page">
-    <button ref="sessionDrawerTrigger" class="session-drawer-trigger" type="button" aria-label="打开会话列表" @click="openSessionDrawer">会话</button>
+    <button
+      ref="sessionDrawerTrigger"
+      class="session-drawer-trigger"
+      type="button"
+      aria-label="打开会话列表"
+      @click="openSessionDrawer"
+    >
+      会话
+    </button>
     <Teleport to="body" :disabled="!sessionDrawerOpen">
       <aside
         ref="sessionDrawer"
@@ -356,7 +371,17 @@ onMounted(() => {
       >
         <div class="sessions-head">
           <span class="sessions-title">会话列表</span>
-          <div><button v-if="sessionDrawerOpen" class="drawer-close" type="button" aria-label="关闭会话列表" @click="closeSessionDrawer">关闭</button><el-button type="primary" size="small" :icon="Plus" @click="handleNewSession()">新建</el-button></div>
+          <div>
+            <button
+              v-if="sessionDrawerOpen"
+              class="drawer-close"
+              type="button"
+              aria-label="关闭会话列表"
+              @click="closeSessionDrawer"
+            >
+              关闭</button
+            ><el-button type="primary" size="small" :icon="Plus" @click="handleNewSession()">新建</el-button>
+          </div>
         </div>
         <div class="session-list">
           <div
@@ -372,13 +397,17 @@ onMounted(() => {
             @keydown.space.prevent="selectSession(item.id)"
           >
             <span class="session-name" :title="item.title">{{ item.title }}</span>
-            <el-icon class="session-delete" title="删除会话" @click.stop="handleDeleteSession(item.id)"><Delete /></el-icon>
+            <el-icon class="session-delete" title="删除会话" @click.stop="handleDeleteSession(item.id)"
+              ><Delete
+            /></el-icon>
           </div>
           <el-empty v-if="!sessions.length && !listLoading" description="暂无会话" :image-size="60" />
         </div>
       </aside>
     </Teleport>
-    <Teleport to="body"><div v-if="sessionDrawerOpen" class="drawer-backdrop" @click="closeSessionDrawer"></div></Teleport>
+    <Teleport to="body"
+      ><div v-if="sessionDrawerOpen" class="drawer-backdrop" @click="closeSessionDrawer"></div
+    ></Teleport>
     <section class="chat-main">
       <header class="chat-header">
         <span class="chat-session-title" :title="activeSession?.title">{{ activeSession?.title ?? '新对话' }}</span>
@@ -438,9 +467,19 @@ onMounted(() => {
   overflow: hidden;
   box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
 }
-.session-drawer-trigger { display: none; }
-.drawer-close { min-height: 32px; margin-right: 6px; border: 0; color: var(--orbit-violet); background: transparent; }
-.drawer-backdrop { display: none; }
+.session-drawer-trigger {
+  display: none;
+}
+.drawer-close {
+  min-height: 32px;
+  margin-right: 6px;
+  border: 0;
+  color: var(--orbit-violet);
+  background: transparent;
+}
+.drawer-backdrop {
+  display: none;
+}
 
 .sessions-panel {
   display: flex;
@@ -483,7 +522,7 @@ onMounted(() => {
 }
 
 .session-item.active {
-  background: #E4E1EF;
+  background: #e4e1ef;
 }
 
 .session-name {
@@ -566,10 +605,42 @@ onMounted(() => {
   height: 54px;
 }
 @media (max-width: 760px) {
-  .session-drawer-trigger { position: absolute; z-index: 3; top: 8px; left: 10px; display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; border: 1px solid #cbc8dc; border-radius: 10px; background: var(--surface-white); }
-  .sessions-panel { position: fixed; z-index: 50; top: 0; bottom: 0; left: 0; width: min(86vw, 320px); background: white; transform: translateX(-105%); transition: transform .18s ease; }
-  .sessions-panel.drawer-open { transform: translateX(0); }
-  .drawer-backdrop { position: fixed; z-index: 49; inset: 0; display: block; background: rgba(33, 29, 79, .42); }
-  .chat-header { padding-left: 76px; }
+  .session-drawer-trigger {
+    position: absolute;
+    z-index: 3;
+    top: 8px;
+    left: 10px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid #cbc8dc;
+    border-radius: 10px;
+    background: var(--surface-white);
+  }
+  .sessions-panel {
+    position: fixed;
+    z-index: 50;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(86vw, 320px);
+    background: white;
+    transform: translateX(-105%);
+    transition: transform 0.18s ease;
+  }
+  .sessions-panel.drawer-open {
+    transform: translateX(0);
+  }
+  .drawer-backdrop {
+    position: fixed;
+    z-index: 49;
+    inset: 0;
+    display: block;
+    background: rgba(33, 29, 79, 0.42);
+  }
+  .chat-header {
+    padding-left: 76px;
+  }
 }
 </style>

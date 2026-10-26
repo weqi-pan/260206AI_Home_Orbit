@@ -1,0 +1,4 @@
+# Prettier 首次全量格式化：纯机械重排 + 13 处多语句内联事件抽成具名函数。
+# git blame 时跳过这个提交，避免格式化噪音污染真实修改者。
+# 见 https://github.com/weqi-pan/260206AI_Home_Orbit/pull/8
+b4dce9dd1938435be4ae5eeb4fd856b87b8f2d25

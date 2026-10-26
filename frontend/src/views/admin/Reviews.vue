@@ -2,10 +2,20 @@
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import {
-  decideReviewSubmission, fetchReviewQueue, fetchReviewReports, fetchReviewSubmission, handleReviewReport,
+  decideReviewSubmission,
+  fetchReviewQueue,
+  fetchReviewReports,
+  fetchReviewSubmission,
+  handleReviewReport,
   takedownEntry,
 } from '../../review/api'
-import { REVIEW_STATUS_LABELS, type ReviewAction, type ReviewQueueItem, type ReviewReportItem, type ReviewSubmissionDetail } from '../../review/types'
+import {
+  REVIEW_STATUS_LABELS,
+  type ReviewAction,
+  type ReviewQueueItem,
+  type ReviewReportItem,
+  type ReviewSubmissionDetail,
+} from '../../review/types'
 import { RISK_LABELS } from '../../market/types'
 import { useRequest } from '../../composables/useRequest'
 import ErrorState from '../../components/ErrorState.vue'
@@ -32,7 +42,9 @@ const {
 } = useRequest(
   async () => {
     const [queueResult, reportsResult] = await Promise.all([
-      fetchReviewQueue(statusFilter.value), fetchReviewReports(reportStatusFilter.value)])
+      fetchReviewQueue(statusFilter.value),
+      fetchReviewReports(reportStatusFilter.value),
+    ])
     return { queue: queueResult.items, reports: reportsResult.items }
   },
   { initial: { queue: [] as ReviewQueueItem[], reports: [] as ReviewReportItem[] }, immediate: true },
@@ -59,7 +71,9 @@ async function submitDecision() {
   deciding.value = true
   try {
     const result = await decideReviewSubmission(detail.value.submission.id, decisionAction.value, decisionReason.value)
-    ElMessage.success(`已记录决定：${REVIEW_STATUS_LABELS[result.status as ReviewQueueItem['status']] ?? result.status}`)
+    ElMessage.success(
+      `已记录决定：${REVIEW_STATUS_LABELS[result.status as ReviewQueueItem['status']] ?? result.status}`,
+    )
     await closeDetail()
     await load()
   } finally {
@@ -100,7 +114,8 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
     <section class="panel" aria-labelledby="queue-title">
       <div class="panel-title">
         <h2 id="queue-title">审核队列</h2>
-        <label>状态
+        <label
+          >状态
           <select v-model="statusFilter" data-testid="queue-status" @change="load">
             <option v-for="option in STATUS_OPTIONS" :key="option" :value="option">{{ option || '全部' }}</option>
           </select>
@@ -108,20 +123,36 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
       </div>
       <table>
         <thead>
-          <tr><th>名称</th><th>状态</th><th>分类</th><th>版本</th><th>预检</th><th>风险摘要</th><th>提交时间</th><th></th></tr>
+          <tr>
+            <th>名称</th>
+            <th>状态</th>
+            <th>分类</th>
+            <th>版本</th>
+            <th>预检</th>
+            <th>风险摘要</th>
+            <th>提交时间</th>
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           <tr v-for="item in queue" :key="item.submission_id">
             <td>{{ item.name }}</td>
-            <td><span class="state" :data-status="item.status">{{ REVIEW_STATUS_LABELS[item.status] }}</span></td>
+            <td>
+              <span class="state" :data-status="item.status">{{ REVIEW_STATUS_LABELS[item.status] }}</span>
+            </td>
             <td>{{ item.category }}</td>
-            <td>v{{ item.version }}<small v-if="item.prior_public_version">（公共 v{{ item.prior_public_version }}）</small></td>
+            <td>
+              v{{ item.version
+              }}<small v-if="item.prior_public_version">（公共 v{{ item.prior_public_version }}）</small>
+            </td>
             <td :data-precheck="item.precheck_status">{{ item.precheck_status }}</td>
             <td :data-risk-summary="item.risk_summary_status">{{ item.risk_summary_status }}</td>
             <td class="mono">{{ item.submitted_at?.slice(0, 19).replace('T', ' ') }}</td>
             <td><button type="button" data-testid="open-submission" @click="openDetail(item)">证据详情</button></td>
           </tr>
-          <tr v-if="!queue.length && !error"><td colspan="8" class="empty">队列为空</td></tr>
+          <tr v-if="!queue.length && !error">
+            <td colspan="8" class="empty">队列为空</td>
+          </tr>
         </tbody>
       </table>
     </section>
@@ -129,7 +160,8 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
     <section class="panel" aria-labelledby="reports-title">
       <div class="panel-title">
         <h2 id="reports-title">举报处理</h2>
-        <label>状态
+        <label
+          >状态
           <select v-model="reportStatusFilter" @change="load">
             <option value="open">open</option>
             <option value="resolved">resolved</option>
@@ -140,7 +172,13 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
       </div>
       <table>
         <thead>
-          <tr><th>条目</th><th>原因</th><th>状态</th><th>处理备注</th><th></th></tr>
+          <tr>
+            <th>条目</th>
+            <th>原因</th>
+            <th>状态</th>
+            <th>处理备注</th>
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           <tr v-for="item in reports" :key="item.id">
@@ -148,8 +186,12 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
             <td>{{ item.reason }}</td>
             <td>{{ item.status }}</td>
             <td>
-              <input v-if="item.status === 'open'" v-model="reportNotes[item.id]" data-testid="report-note"
-                     placeholder="处理备注（审计）" />
+              <input
+                v-if="item.status === 'open'"
+                v-model="reportNotes[item.id]"
+                data-testid="report-note"
+                placeholder="处理备注（审计）"
+              />
               <span v-else>{{ item.resolution_note }}</span>
             </td>
             <td v-if="item.status === 'open'" class="actions">
@@ -158,14 +200,22 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
             </td>
             <td v-else></td>
           </tr>
-          <tr v-if="!reports.length && !error"><td colspan="5" class="empty">暂无举报</td></tr>
+          <tr v-if="!reports.length && !error">
+            <td colspan="5" class="empty">暂无举报</td>
+          </tr>
         </tbody>
       </table>
     </section>
 
     <div v-if="detailOpen" class="modal-backdrop" @click="closeDetail"></div>
-    <div v-if="detailOpen" class="modal" role="dialog" aria-modal="true"
-         :aria-label="`审核证据 ${detail?.listing_preview.name ?? ''}`" @keydown.esc="closeDetail">
+    <div
+      v-if="detailOpen"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="`审核证据 ${detail?.listing_preview.name ?? ''}`"
+      @keydown.esc="closeDetail"
+    >
       <template v-if="detail">
         <header class="modal-head">
           <div>
@@ -178,9 +228,18 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
         <section aria-labelledby="preview-title">
           <h3 id="preview-title">商店展示预览</h3>
           <dl class="facts">
-            <div><dt>名称</dt><dd>{{ detail.listing_preview.name }}</dd></div>
-            <div><dt>分类</dt><dd>{{ detail.listing_preview.category }}</dd></div>
-            <div><dt>状态</dt><dd>{{ REVIEW_STATUS_LABELS[detail.submission.status] }}</dd></div>
+            <div>
+              <dt>名称</dt>
+              <dd>{{ detail.listing_preview.name }}</dd>
+            </div>
+            <div>
+              <dt>分类</dt>
+              <dd>{{ detail.listing_preview.category }}</dd>
+            </div>
+            <div>
+              <dt>状态</dt>
+              <dd>{{ REVIEW_STATUS_LABELS[detail.submission.status] }}</dd>
+            </div>
           </dl>
           <p class="detail-desc">{{ detail.listing_preview.description }}</p>
         </section>
@@ -188,11 +247,21 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
         <section aria-labelledby="diff-title">
           <h3 id="diff-title">版本差异（对比上一公共版本 v{{ detail.prior_public_version?.version ?? '—' }}）</h3>
           <ul class="evidence-list" v-if="detail.diff">
-            <li :data-changed="detail.diff.prompt_changed">提示词{{ detail.diff.prompt_changed ? '已变更' : '未变' }}</li>
-            <li :data-changed="detail.diff.workflow_changed">受限流程{{ detail.diff.workflow_changed ? '已变更' : '未变' }}</li>
-            <li v-if="detail.diff.tools_added.length" data-changed="true">新增权限：{{ detail.diff.tools_added.join('、') }}</li>
-            <li v-if="detail.diff.tools_removed.length" data-changed="true">移除权限：{{ detail.diff.tools_removed.join('、') }}</li>
-            <li v-if="detail.diff.budgets_changed.length" data-changed="true">预算变更：{{ detail.diff.budgets_changed.join('、') }}</li>
+            <li :data-changed="detail.diff.prompt_changed">
+              提示词{{ detail.diff.prompt_changed ? '已变更' : '未变' }}
+            </li>
+            <li :data-changed="detail.diff.workflow_changed">
+              受限流程{{ detail.diff.workflow_changed ? '已变更' : '未变' }}
+            </li>
+            <li v-if="detail.diff.tools_added.length" data-changed="true">
+              新增权限：{{ detail.diff.tools_added.join('、') }}
+            </li>
+            <li v-if="detail.diff.tools_removed.length" data-changed="true">
+              移除权限：{{ detail.diff.tools_removed.join('、') }}
+            </li>
+            <li v-if="detail.diff.budgets_changed.length" data-changed="true">
+              预算变更：{{ detail.diff.budgets_changed.join('、') }}
+            </li>
           </ul>
           <p v-else class="empty">首发版本，无上一公共版本。</p>
         </section>
@@ -212,9 +281,14 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
         <section aria-labelledby="sandbox-title">
           <h3 id="sandbox-title">沙盒试运行轨迹</h3>
           <ul class="evidence-list" v-if="detail.sandbox">
-            <li>状态：{{ detail.sandbox.status }}{{ detail.sandbox.error_code ? `（${detail.sandbox.error_code}）` : '' }}</li>
-            <li v-for="caseItem in detail.sandbox.cases" :key="caseItem.name"
-                :data-passed="caseItem.status === 'passed'">
+            <li>
+              状态：{{ detail.sandbox.status }}{{ detail.sandbox.error_code ? `（${detail.sandbox.error_code}）` : '' }}
+            </li>
+            <li
+              v-for="caseItem in detail.sandbox.cases"
+              :key="caseItem.name"
+              :data-passed="caseItem.status === 'passed'"
+            >
               {{ caseItem.name }}：{{ caseItem.status }}<small>{{ caseItem.output }}</small>
             </li>
           </ul>
@@ -234,8 +308,7 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
         <section aria-labelledby="knowledge-title">
           <h3 id="knowledge-title">知识来源与扫描</h3>
           <ul class="evidence-list">
-            <li v-for="asset in detail.knowledge" :key="asset.asset_id"
-                :data-passed="asset.scan_status === 'passed'">
+            <li v-for="asset in detail.knowledge" :key="asset.asset_id" :data-passed="asset.scan_status === 'passed'">
               {{ asset.filename }} · 扫描{{ asset.scan_status }}
             </li>
             <li v-if="!detail.knowledge.length" class="empty">无知识附件</li>
@@ -257,7 +330,8 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
 
         <section aria-labelledby="decision-title" class="decision-block">
           <h3 id="decision-title">人工决定（审计）</h3>
-          <label>动作
+          <label
+            >动作
             <select v-model="decisionAction" data-testid="decision-action">
               <option value="approve">通过（发布公共版本）</option>
               <option value="reject">拒绝</option>
@@ -265,7 +339,8 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
               <option value="re-review">复审（重跑预检与摘要）</option>
             </select>
           </label>
-          <label>理由（通过/拒绝必填）
+          <label
+            >理由（通过/拒绝必填）
             <input v-model="decisionReason" data-testid="decision-reason" />
           </label>
           <button type="button" data-testid="submit-decision" :disabled="deciding" @click="submitDecision">
@@ -275,7 +350,8 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
 
         <section aria-labelledby="takedown-title" class="decision-block danger-block">
           <h3 id="takedown-title">下架（既有安装继续运行）</h3>
-          <label>下架理由
+          <label
+            >下架理由
             <input v-model="takedownReason" data-testid="takedown-reason" />
           </label>
           <button type="button" data-testid="submit-takedown" @click="submitTakedown">下架公共条目</button>
@@ -289,38 +365,157 @@ async function handleReport(item: ReviewReportItem, action: 'resolve' | 'dismiss
 /* 骨架（页宽、页头说明、.panel、.panel-title、.empty、.facts、.risk、.modal*、.close）
    见 styles/global.css；这里只留本页差异。 */
 /* 审核页的 h1 比用户端小一档 */
-h1 { font: 700 clamp(34px, 4vw, 52px)/1 var(--font-display); }
-.panel { margin-top: 26px; }
-.panel h2 { margin-bottom: 14px; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { padding: 8px 10px; text-align: left; font: 600 11px var(--font-utility); letter-spacing: .1em; color: var(--ink-quiet); border-bottom: 2px solid var(--orbit-mist); }
-td { padding: 10px; border-bottom: 1px solid var(--orbit-mist); vertical-align: top; }
-td small { display: block; color: var(--ink-quiet); }
-.mono { font: 12px var(--font-utility); }
-.state { background: var(--orbit-mist); color: var(--orbit-violet); }
-.state[data-status='approved'] { color: var(--risk-low-fg); background: var(--risk-low-bg); }
-.state[data-status='rejected'], .state[data-status='precheck_failed'] { color: var(--risk-high-fg); background: var(--risk-high-bg); }
-td[data-precheck='failed'], td[data-risk-summary='unavailable'] { color: var(--risk-high-fg); }
-td[data-precheck='passed'], td[data-risk-summary='done'] { color: var(--risk-low-fg); }
+h1 {
+  font: 700 clamp(34px, 4vw, 52px)/1 var(--font-display);
+}
+.panel {
+  margin-top: 26px;
+}
+.panel h2 {
+  margin-bottom: 14px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+th {
+  padding: 8px 10px;
+  text-align: left;
+  font: 600 11px var(--font-utility);
+  letter-spacing: 0.1em;
+  color: var(--ink-quiet);
+  border-bottom: 2px solid var(--orbit-mist);
+}
+td {
+  padding: 10px;
+  border-bottom: 1px solid var(--orbit-mist);
+  vertical-align: top;
+}
+td small {
+  display: block;
+  color: var(--ink-quiet);
+}
+.mono {
+  font: 12px var(--font-utility);
+}
+.state {
+  background: var(--orbit-mist);
+  color: var(--orbit-violet);
+}
+.state[data-status='approved'] {
+  color: var(--risk-low-fg);
+  background: var(--risk-low-bg);
+}
+.state[data-status='rejected'],
+.state[data-status='precheck_failed'] {
+  color: var(--risk-high-fg);
+  background: var(--risk-high-bg);
+}
+td[data-precheck='failed'],
+td[data-risk-summary='unavailable'] {
+  color: var(--risk-high-fg);
+}
+td[data-precheck='passed'],
+td[data-risk-summary='done'] {
+  color: var(--risk-low-fg);
+}
 /* 弹窗关闭按钮的 44px 触控高度由全局 .close 提供，别被本页 42px 的按钮度量压掉 */
-button:not(.close) { min-height: 42px; padding: 0 14px; border: 1px solid var(--hairline-strong); border-radius: 10px; background: transparent; cursor: pointer; }
-.actions { display: flex; gap: 8px; }
-.modal { inset: 6vh 50% auto 50%; width: min(92vw, 720px); transform: translateX(-50%); }
-h3 { margin: 20px 0 8px; font-family: var(--font-display); }
-.detail-desc { color: var(--ink-body); }
+button:not(.close) {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+}
+.modal {
+  inset: 6vh 50% auto 50%;
+  width: min(92vw, 720px);
+  transform: translateX(-50%);
+}
+h3 {
+  margin: 20px 0 8px;
+  font-family: var(--font-display);
+}
+.detail-desc {
+  color: var(--ink-body);
+}
 /* 证据弹窗的权限行比用户端更紧凑 */
-.perm-list li { padding: 8px 0; }
-.evidence-list { margin: 0; padding-left: 18px; }
-.evidence-list li[data-passed='false'], .evidence-list li[data-changed='false'] { color: var(--ink-quiet); }
-.evidence-list li[data-passed='true'] { color: var(--risk-low-fg); }
-.evidence-list li[data-changed='true'] { color: var(--risk-high-fg); font-weight: 700; }
-.evidence-list small { display: block; color: var(--ink-quiet); }
-.risk-summary { padding: 12px 14px; border-left: 4px solid var(--orbit-violet); background: var(--orbit-mist); }
-.risk-summary small { display: block; margin-top: 6px; color: var(--ink-quiet); }
-.advisory { display: inline-flex; margin-right: 8px; padding: 2px 10px; border-radius: 999px; font: 600 11px var(--font-utility); color: var(--orbit-violet); background: var(--surface-white); }
-.decision-block { display: grid; gap: 10px; margin-top: 18px; padding: 16px; border: 1px solid var(--hairline-strong); border-radius: 14px; }
-.decision-block label { display: grid; gap: 4px; font-weight: 700; }
-.decision-block select, .decision-block input { min-height: 44px; padding: 0 12px; border: 1px solid var(--hairline-strong); border-radius: 10px; }
-.decision-block button { justify-self: start; border: 0; font-weight: 700; color: var(--device-ink); background: var(--charge-coral); }
-.danger-block button { color: var(--risk-high-fg); background: var(--risk-high-bg); }
+.perm-list li {
+  padding: 8px 0;
+}
+.evidence-list {
+  margin: 0;
+  padding-left: 18px;
+}
+.evidence-list li[data-passed='false'],
+.evidence-list li[data-changed='false'] {
+  color: var(--ink-quiet);
+}
+.evidence-list li[data-passed='true'] {
+  color: var(--risk-low-fg);
+}
+.evidence-list li[data-changed='true'] {
+  color: var(--risk-high-fg);
+  font-weight: 700;
+}
+.evidence-list small {
+  display: block;
+  color: var(--ink-quiet);
+}
+.risk-summary {
+  padding: 12px 14px;
+  border-left: 4px solid var(--orbit-violet);
+  background: var(--orbit-mist);
+}
+.risk-summary small {
+  display: block;
+  margin-top: 6px;
+  color: var(--ink-quiet);
+}
+.advisory {
+  display: inline-flex;
+  margin-right: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font: 600 11px var(--font-utility);
+  color: var(--orbit-violet);
+  background: var(--surface-white);
+}
+.decision-block {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 14px;
+}
+.decision-block label {
+  display: grid;
+  gap: 4px;
+  font-weight: 700;
+}
+.decision-block select,
+.decision-block input {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+}
+.decision-block button {
+  justify-self: start;
+  border: 0;
+  font-weight: 700;
+  color: var(--device-ink);
+  background: var(--charge-coral);
+}
+.danger-block button {
+  color: var(--risk-high-fg);
+  background: var(--risk-high-bg);
+}
 </style>

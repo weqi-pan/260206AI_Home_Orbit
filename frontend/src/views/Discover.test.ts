@@ -4,7 +4,10 @@ import Discover from './Discover.vue'
 import discoverSource from './Discover.vue?raw'
 
 const installMock = vi.fn().mockResolvedValue({
-  installation_id: 'i-1', deployment_id: 'd-1', agent_version_id: 'v-2', pinned_version: 2,
+  installation_id: 'i-1',
+  deployment_id: 'd-1',
+  agent_version_id: 'v-2',
+  pinned_version: 2,
   granted_tool_keys: ['household.recipe.scale'],
 })
 const favoriteMock = vi.fn().mockResolvedValue({ entry_id: 'entry-1', favorited: true })
@@ -13,26 +16,59 @@ const reportMock = vi.fn().mockResolvedValue({ id: 'r-1', status: 'open' })
 vi.mock('../market/api', () => ({
   MARKET_CATEGORIES: ['生活', '烹饪', '家务', '设备', '知识', '效率', '其他'],
   fetchListings: vi.fn().mockResolvedValue({
-    official: [{ deployment_id: 'od-1', name: '家庭厨师', description: '官方厨艺助手', official: true, installed: true }],
+    official: [
+      { deployment_id: 'od-1', name: '家庭厨师', description: '官方厨艺助手', official: true, installed: true },
+    ],
     entries: [
       {
-        id: 'entry-1', name: '市场采购助手', description: '把采购项写入家庭购物清单', category: '生活',
-        official: false, install_count: 12, current_version: 2, my_installation: null,
+        id: 'entry-1',
+        name: '市场采购助手',
+        description: '把采购项写入家庭购物清单',
+        category: '生活',
+        official: false,
+        install_count: 12,
+        current_version: 2,
+        my_installation: null,
       },
       {
-        id: 'entry-2', name: '粤菜大厨', description: '提供几道广东菜做法', category: '烹饪',
-        official: false, install_count: 3, current_version: 1, my_installation: null,
+        id: 'entry-2',
+        name: '粤菜大厨',
+        description: '提供几道广东菜做法',
+        category: '烹饪',
+        official: false,
+        install_count: 3,
+        current_version: 1,
+        my_installation: null,
       },
     ],
   }),
   fetchEntry: vi.fn().mockResolvedValue({
-    id: 'entry-1', name: '市场采购助手', description: '把采购项写入家庭购物清单', category: '生活',
-    official: false, status: 'published', install_count: 12,
+    id: 'entry-1',
+    name: '市场采购助手',
+    description: '把采购项写入家庭购物清单',
+    category: '生活',
+    official: false,
+    status: 'published',
+    install_count: 12,
     current_version: { number: 2, agent_version_id: 'v-2' },
     versions: [{ number: 2, submission_id: 's-2', published_at: '2026-08-28T00:00:00' }],
     permissions: [
-      { tool_id: 't-1', key: 'household.recipe.scale', display_name: '菜谱用量换算', description: '按人数换算', risk_level: 'low', version: '1' },
-      { tool_id: 't-2', key: 'household.shopping.write', display_name: '购物清单写入', description: '新增清单条目', risk_level: 'reversible', version: '1' },
+      {
+        tool_id: 't-1',
+        key: 'household.recipe.scale',
+        display_name: '菜谱用量换算',
+        description: '按人数换算',
+        risk_level: 'low',
+        version: '1',
+      },
+      {
+        tool_id: 't-2',
+        key: 'household.shopping.write',
+        display_name: '购物清单写入',
+        description: '新增清单条目',
+        risk_level: 'reversible',
+        version: '1',
+      },
     ],
     favorited: false,
     my_installation: null,
@@ -63,9 +99,15 @@ describe('Discover 市场发现页', () => {
     expect(row.exists()).toBe(true)
     expect(badge.element.nextElementSibling).toBe(main.element)
     expect(badge.classes()).toContain('official')
-    expect(discoverSource).toMatch(/\.dense-list\s+\.official-row\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/)
-    expect(discoverSource).toMatch(/\.official-row\s+\.badge\.official\s*\{[^}]*align-self:\s*(?:center|start)[^}]*justify-self:\s*start/)
-    expect(discoverSource).toMatch(/@media\s*\(max-width:\s*760px\)[\s\S]*?\.dense-list\s+\.official-row\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)/)
+    expect(discoverSource).toMatch(
+      /\.dense-list\s+\.official-row\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)\s+auto/,
+    )
+    expect(discoverSource).toMatch(
+      /\.official-row\s+\.badge\.official\s*\{[^}]*align-self:\s*(?:center|start)[^}]*justify-self:\s*start/,
+    )
+    expect(discoverSource).toMatch(
+      /@media\s*\(max-width:\s*760px\)[\s\S]*?\.dense-list\s+\.official-row\s*\{[^}]*grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)/,
+    )
   })
 
   it('filters by search query through the API contract', async () => {
@@ -119,7 +161,19 @@ describe('Discover 市场发现页', () => {
     expect(wrapper.text()).not.toContain('没有匹配的助手')
 
     mocked.mockResolvedValueOnce({
-      official: [], entries: [{ id: 'e-9', name: '重试后的助手', description: '', category: '生活', official: false, install_count: 1, current_version: 1, my_installation: null }],
+      official: [],
+      entries: [
+        {
+          id: 'e-9',
+          name: '重试后的助手',
+          description: '',
+          category: '生活',
+          official: false,
+          install_count: 1,
+          current_version: 1,
+          my_installation: null,
+        },
+      ],
     })
     await banner.find('button').trigger('click')
     await flushPromises()

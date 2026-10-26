@@ -36,7 +36,10 @@ function openDetail(row: TicketInfo) {
 }
 
 async function handleCreate() {
-  const valid = await formRef.value?.validate().then(() => true).catch(() => false)
+  const valid = await formRef.value
+    ?.validate()
+    .then(() => true)
+    .catch(() => false)
   if (!valid) return
   creating.value = true
   try {
@@ -116,7 +119,9 @@ onMounted(() => {
           <el-tag :type="ticketStatusTag(current.status).type">{{ ticketStatusTag(current.status).label }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="优先级">
-          <el-tag :type="ticketPriorityTag(current.priority).type">{{ ticketPriorityTag(current.priority).label }}</el-tag>
+          <el-tag :type="ticketPriorityTag(current.priority).type">{{
+            ticketPriorityTag(current.priority).label
+          }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="情绪">{{ current.emotion || '-' }}</el-descriptions-item>
         <el-descriptions-item label="标题" :span="2">{{ current.title }}</el-descriptions-item>
@@ -164,5 +169,4 @@ onMounted(() => {
   padding: 16px;
   box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
 }
-
 </style>

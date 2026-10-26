@@ -17,7 +17,8 @@ const stubs = {
   ElTag: { template: '<span class="tag"><slot /></span>' },
   ElTable: {
     props: ['data'],
-    template: '<table><tbody><tr v-for="row in data" :key="row.model_id" class="row"><td>{{ row.model_id }}</td><td>{{ row.model_name }}</td><td><slot name="default" :row="row" /></td></tr></tbody></table>',
+    template:
+      '<table><tbody><tr v-for="row in data" :key="row.model_id" class="row"><td>{{ row.model_id }}</td><td>{{ row.model_name }}</td><td><slot name="default" :row="row" /></td></tr></tbody></table>',
   },
   ElTableColumn: { template: '<div />' },
   ElEmpty: { props: ['description'], template: '<p class="empty">{{ description }}</p>' },
@@ -49,7 +50,9 @@ describe('DeviceList 设备列表', () => {
     expect(banner.text()).toContain('UPSTREAM_UNAVAILABLE')
     expect(wrapper.find('.empty').exists()).toBe(false)
 
-    searchDevices.mockResolvedValueOnce([{ model_id: 'm-2', model_name: '空气净化器', category: '清洁', total_stock: 0 }])
+    searchDevices.mockResolvedValueOnce([
+      { model_id: 'm-2', model_name: '空气净化器', category: '清洁', total_stock: 0 },
+    ])
     await banner.find('button').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="page-error"]').exists()).toBe(false)

@@ -35,11 +35,17 @@ async function submitInvitation() {
     <ErrorState v-if="error" :message="error" :retrying="loading" @retry="load" />
     <div v-else class="household-grid">
       <section class="panel" aria-labelledby="members-title">
-        <div class="panel-title"><h2 id="members-title">家庭成员</h2><span>{{ household?.members.length ?? 0 }}</span></div>
+        <div class="panel-title">
+          <h2 id="members-title">家庭成员</h2>
+          <span>{{ household?.members.length ?? 0 }}</span>
+        </div>
         <ul>
           <li v-for="member in household?.members" :key="member.account_id">
             <span class="avatar">{{ member.username.slice(0, 1).toUpperCase() }}</span>
-            <span><strong>{{ member.username }}</strong><small>{{ member.account_id }}</small></span>
+            <span
+              ><strong>{{ member.username }}</strong
+              ><small>{{ member.account_id }}</small></span
+            >
             <span class="role">{{ member.role }}</span>
           </li>
         </ul>
@@ -52,7 +58,9 @@ async function submitInvitation() {
           <input id="invite-username" v-model="username" required minlength="3" />
           <label for="invite-role">家庭角色</label>
           <select id="invite-role" v-model="role">
-            <option value="admin">admin</option><option value="member">member</option><option value="viewer">viewer</option>
+            <option value="admin">admin</option>
+            <option value="member">member</option>
+            <option value="viewer">viewer</option>
           </select>
           <button type="submit" :disabled="inviting">{{ inviting ? '创建中...' : '创建邀请' }}</button>
         </form>
@@ -63,17 +71,81 @@ async function submitInvitation() {
 
 <style scoped>
 /* 骨架见 styles/global.css；这里只留本页差异 */
-.household-grid { display: grid; grid-template-columns: 1.4fr .8fr; gap: 24px; margin-top: 42px; }
-.panel { padding: 28px; }
-.panel h2 { margin-bottom: 22px; }
-.panel ul { margin: 0; padding: 0; list-style: none; }
-.panel li { display: grid; grid-template-columns: 46px 1fr auto; align-items: center; gap: 12px; min-height: 68px; border-top: 1px solid var(--orbit-mist); }
-.avatar { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 50%; color: white; background: var(--orbit-violet); }
-.panel small { display: block; margin-top: 3px; font: 11px var(--font-utility); color: var(--ink-quiet); }
-.role { font: 12px var(--font-utility); color: var(--orbit-violet); }
-.invite-panel form { display: grid; gap: 10px; }
-.invite-panel label { margin-top: 8px; font-weight: 700; }
-.invite-panel input, .invite-panel select { min-height: 46px; padding: 0 12px; border: 1px solid var(--hairline-strong); border-radius: 10px; background: white; }
-.invite-panel button { min-height: 48px; margin-top: 14px; border: 0; border-radius: 12px; font-weight: 700; color: var(--device-ink); background: var(--charge-coral); }
-@media (max-width: 760px) { .household-page { padding: 28px 18px 110px; }.household-grid { grid-template-columns: 1fr; } }
+.household-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr;
+  gap: 24px;
+  margin-top: 42px;
+}
+.panel {
+  padding: 28px;
+}
+.panel h2 {
+  margin-bottom: 22px;
+}
+.panel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.panel li {
+  display: grid;
+  grid-template-columns: 46px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  border-top: 1px solid var(--orbit-mist);
+}
+.avatar {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--orbit-violet);
+}
+.panel small {
+  display: block;
+  margin-top: 3px;
+  font: 11px var(--font-utility);
+  color: var(--ink-quiet);
+}
+.role {
+  font: 12px var(--font-utility);
+  color: var(--orbit-violet);
+}
+.invite-panel form {
+  display: grid;
+  gap: 10px;
+}
+.invite-panel label {
+  margin-top: 8px;
+  font-weight: 700;
+}
+.invite-panel input,
+.invite-panel select {
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  background: white;
+}
+.invite-panel button {
+  min-height: 48px;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 12px;
+  font-weight: 700;
+  color: var(--device-ink);
+  background: var(--charge-coral);
+}
+@media (max-width: 760px) {
+  .household-page {
+    padding: 28px 18px 110px;
+  }
+  .household-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

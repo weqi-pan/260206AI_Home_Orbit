@@ -6,7 +6,10 @@ import { useRequest } from './useRequest'
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason: unknown) => void
-  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
   return { promise, resolve, reject }
 }
 
@@ -42,8 +45,8 @@ describe('useRequest', () => {
 
   it('重试成功后清掉上一次的错误', async () => {
     let attempt = 0
-    const { data, error, run } = useRequest(
-      () => (++attempt === 1 ? Promise.reject(apiError('UPSTREAM_UNAVAILABLE')) : Promise.resolve('ok')),
+    const { data, error, run } = useRequest(() =>
+      ++attempt === 1 ? Promise.reject(apiError('UPSTREAM_UNAVAILABLE')) : Promise.resolve('ok'),
     )
     await run()
     expect(error.value).toBe('UPSTREAM_UNAVAILABLE')
@@ -72,17 +75,19 @@ describe('useRequest', () => {
 
   it('immediate 在挂载时自动请求一次', async () => {
     const fetcher = vi.fn().mockResolvedValue('mounted')
-    const wrapper = mount(defineComponent({
-      setup() {
-        const state = useRequest(fetcher, { immediate: true })
-        return () => state.data.value ?? ''
-      },
-    }))
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          const state = useRequest(fetcher, { immediate: true })
+          return () => state.data.value ?? ''
+        },
+      }),
+    )
     // mount 会同步跑完 mounted 钩子，所以此刻请求已经发出
     expect(fetcher).toHaveBeenCalledTimes(1)
     await vi.waitFor(() => expect(wrapper.text()).toBe('mounted'))
     await nextTick()
-    expect(fetcher).toHaveBeenCalledTimes(1)  // 只发一次，没有重复请求
+    expect(fetcher).toHaveBeenCalledTimes(1) // 只发一次，没有重复请求
     wrapper.unmount()
   })
 })

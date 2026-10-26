@@ -30,7 +30,8 @@ const {
 } = useRequest(
   async () => {
     const result = await fetchCeleryTasks({
-      page: page.value, page_size: pageSize,
+      page: page.value,
+      page_size: pageSize,
       status: statusFilter.value || undefined,
       task_type: typeFilter.value || undefined,
       error_code: errorFilter.value || undefined,
@@ -42,6 +43,18 @@ const {
 )
 
 const items = computed(() => taskPage.value)
+
+// 筛选变更与翻页共用；不用「page = 1; load()」这类多语句内联表达式，
+// Prettier 会把模板里的内联语句拆成多行，Vue 编译器无法解析（会直接编译报错）
+function resetAndLoad() {
+  page.value = 1
+  load()
+}
+
+function shiftPage(delta: number) {
+  page.value += delta
+  load()
+}
 
 async function openDetail(item: CeleryTaskItem) {
   detail.value = await fetchCeleryTaskDetail(item.id)
@@ -88,57 +101,100 @@ onMounted(async () => {
       <div class="panel-title">
         <h2 id="task-list-title">任务列表</h2>
         <div class="filters">
-          <label>状态
-            <select v-model="statusFilter" data-testid="task-status" @change="page = 1; load()">
+          <label
+            >状态
+            <select v-model="statusFilter" data-testid="task-status" @change="resetAndLoad">
               <option value="">全部</option>
-              <option v-for="option in ['pending', 'running', 'succeeded', 'failed', 'retry_scheduled', 'dead']" :key="option" :value="option">{{ option }}</option>
+              <option
+                v-for="option in ['pending', 'running', 'succeeded', 'failed', 'retry_scheduled', 'dead']"
+                :key="option"
+                :value="option"
+              >
+                {{ option }}
+              </option>
             </select>
           </label>
-          <label>类型
-            <select v-model="typeFilter" data-testid="task-type" @change="page = 1; load()">
+          <label
+            >类型
+            <select v-model="typeFilter" data-testid="task-type" @change="resetAndLoad">
               <option value="">全部</option>
-              <option v-for="option in types" :key="option.task_type" :value="option.task_type">{{ option.task_type }}</option>
+              <option v-for="option in types" :key="option.task_type" :value="option.task_type">
+                {{ option.task_type }}
+              </option>
             </select>
           </label>
-          <label>错误码<input v-model="errorFilter" data-testid="task-error" placeholder="UPSTREAM_UNAVAILABLE" @change="page = 1; load()" /></label>
+          <label
+            >错误码<input
+              v-model="errorFilter"
+              data-testid="task-error"
+              placeholder="UPSTREAM_UNAVAILABLE"
+              @change="resetAndLoad"
+          /></label>
         </div>
       </div>
       <table>
         <thead>
-          <tr><th>类型</th><th>状态</th><th>尝试</th><th>幂等键</th><th>家庭</th><th>错误码</th><th>下次重试</th><th>更新时间</th><th></th></tr>
+          <tr>
+            <th>类型</th>
+            <th>状态</th>
+            <th>尝试</th>
+            <th>幂等键</th>
+            <th>家庭</th>
+            <th>错误码</th>
+            <th>下次重试</th>
+            <th>更新时间</th>
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           <tr v-for="item in items" :key="item.id">
             <td class="mono">{{ item.task_type }}</td>
-            <td><span class="state" :data-status="item.status">{{ item.status }}</span></td>
+            <td>
+              <span class="state" :data-status="item.status">{{ item.status }}</span>
+            </td>
             <td>{{ item.attempt }}/{{ item.max_attempts }}</td>
             <td class="mono clip">{{ item.idempotency_key }}</td>
             <td class="mono clip" :title="item.household_id ?? ''">{{ item.household_id ?? '平台' }}</td>
-            <td><span v-if="item.error_code" class="chip danger">{{ item.error_code }}</span><span v-else class="dim">—</span></td>
+            <td>
+              <span v-if="item.error_code" class="chip danger">{{ item.error_code }}</span
+              ><span v-else class="dim">—</span>
+            </td>
             <td class="mono">{{ item.next_retry_at ? formatDateTime(item.next_retry_at) : '—' }}</td>
             <td class="mono">{{ formatDateTime(item.updated_at) }}</td>
             <td><button type="button" data-testid="open-task" @click="openDetail(item)">详情</button></td>
           </tr>
-          <tr v-if="!items.length && !error"><td colspan="9" class="empty">没有匹配的任务</td></tr>
+          <tr v-if="!items.length && !error">
+            <td colspan="9" class="empty">没有匹配的任务</td>
+          </tr>
         </tbody>
       </table>
       <div class="pager">
-        <button type="button" :disabled="page <= 1" @click="page -= 1; load()">上一页</button>
+        <button type="button" :disabled="page <= 1" @click="shiftPage(-1)">上一页</button>
         <span>第 {{ page }} 页 / 共 {{ Math.max(1, Math.ceil(total / pageSize)) }} 页（{{ total }} 条）</span>
-        <button type="button" :disabled="page >= Math.ceil(total / pageSize)" @click="page += 1; load()">下一页</button>
+        <button type="button" :disabled="page >= Math.ceil(total / pageSize)" @click="shiftPage(1)">下一页</button>
       </div>
     </section>
 
     <section class="panel" aria-labelledby="trigger-title">
       <h2 id="trigger-title">手动触发（审计边界）</h2>
       <form class="trigger-form" @submit.prevent="submitTrigger">
-        <label>任务类型
+        <label
+          >任务类型
           <select v-model="trigger.taskType" data-testid="trigger-type">
-            <option v-for="option in types" :key="option.task_type" :value="option.task_type">{{ option.task_type }}</option>
+            <option v-for="option in types" :key="option.task_type" :value="option.task_type">
+              {{ option.task_type }}
+            </option>
           </select>
         </label>
-        <label>家庭 ID（可空）<input v-model="trigger.householdId" data-testid="trigger-household" placeholder="全局任务留空" /></label>
-        <label>负载 JSON<textarea v-model="trigger.payloadJson" data-testid="trigger-payload" rows="3"></textarea></label>
+        <label
+          >家庭 ID（可空）<input
+            v-model="trigger.householdId"
+            data-testid="trigger-household"
+            placeholder="全局任务留空"
+        /></label>
+        <label
+          >负载 JSON<textarea v-model="trigger.payloadJson" data-testid="trigger-payload" rows="3"></textarea>
+        </label>
         <button type="submit" data-testid="trigger-submit" :disabled="triggering">触发并运行一次</button>
       </form>
     </section>
@@ -146,15 +202,33 @@ onMounted(async () => {
     <el-dialog v-model="detailOpen" title="任务详情" width="720px">
       <div v-if="detail" class="detail-grid">
         <dl class="facts">
-          <div><dt>任务类型</dt><dd class="mono">{{ detail.task_type }}</dd></div>
-          <div><dt>幂等键</dt><dd class="mono">{{ detail.idempotency_key }}</dd></div>
-          <div><dt>状态</dt><dd><span class="state" :data-status="detail.status">{{ detail.status }}</span>（{{ detail.attempt }}/{{ detail.max_attempts }}）</dd></div>
-          <div><dt>错误码</dt><dd class="mono" data-testid="task-error-code">{{ detail.error_code ?? '—' }}</dd></div>
+          <div>
+            <dt>任务类型</dt>
+            <dd class="mono">{{ detail.task_type }}</dd>
+          </div>
+          <div>
+            <dt>幂等键</dt>
+            <dd class="mono">{{ detail.idempotency_key }}</dd>
+          </div>
+          <div>
+            <dt>状态</dt>
+            <dd>
+              <span class="state" :data-status="detail.status">{{ detail.status }}</span
+              >（{{ detail.attempt }}/{{ detail.max_attempts }}）
+            </dd>
+          </div>
+          <div>
+            <dt>错误码</dt>
+            <dd class="mono" data-testid="task-error-code">{{ detail.error_code ?? '—' }}</dd>
+          </div>
           <div v-if="detail.error_detail">
             <dt>诊断（已消毒）</dt>
             <dd class="mono secondary" data-testid="sanitized-error-detail">{{ detail.error_detail }}</dd>
           </div>
-          <div><dt>下次重试</dt><dd class="mono">{{ detail.next_retry_at ? formatDateTime(detail.next_retry_at) : '—' }}</dd></div>
+          <div>
+            <dt>下次重试</dt>
+            <dd class="mono">{{ detail.next_retry_at ? formatDateTime(detail.next_retry_at) : '—' }}</dd>
+          </div>
         </dl>
         <h3>负载（脱敏）</h3>
         <pre class="json">{{ JSON.stringify(detail.payload, null, 2) }}</pre>
@@ -164,10 +238,18 @@ onMounted(async () => {
         <pre class="json">{{ JSON.stringify(detail.audit, null, 2) }}</pre>
         <h3>失败通知</h3>
         <table v-if="detail.notifications.length">
-          <thead><tr><th>标题</th><th>类型</th><th>时间</th></tr></thead>
+          <thead>
+            <tr>
+              <th>标题</th>
+              <th>类型</th>
+              <th>时间</th>
+            </tr>
+          </thead>
           <tbody>
             <tr v-for="notice in detail.notifications" :key="notice.id">
-              <td>{{ notice.title }}</td><td class="mono">{{ notice.kind }}</td><td class="mono">{{ formatDateTime(notice.created_at) }}</td>
+              <td>{{ notice.title }}</td>
+              <td class="mono">{{ notice.kind }}</td>
+              <td class="mono">{{ formatDateTime(notice.created_at) }}</td>
             </tr>
           </tbody>
         </table>
@@ -180,16 +262,54 @@ onMounted(async () => {
 <style scoped>
 /* 这一族的骨架（页面网格、页头、.panel、表格、.facts、状态色、.empty/.dim、.chip）
    见 styles/global.css 的 .ops-page 段；这里只留本页差异。 */
-.filters { flex-wrap: wrap; }
+.filters {
+  flex-wrap: wrap;
+}
 /* 本页状态胶囊是等宽字体的代码味标签；其余三页不是 */
-.state { background: var(--surface-sunken); font-family: ui-monospace, monospace; }
+.state {
+  background: var(--surface-sunken);
+  font-family: ui-monospace, monospace;
+}
 /* 全局 .chip 是 inline-block 且带 1px 上下外边距；本页危险标签原本是零外边距的行内元素 */
-.chip.danger { display: inline; margin: 0; }
-.clip { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.trigger-form { display: grid; gap: 10px; max-width: 560px; font-size: 13px; }
-.trigger-form label { display: grid; gap: 4px; }
-.detail-grid { display: grid; gap: 10px; }
-.detail-grid h3 { margin: 8px 0 0; font-size: 13px; }
-.facts dd.secondary { opacity: .78; font-size: 12px; }
-.json { margin: 0; padding: 10px; border-radius: 8px; background: var(--el-fill-color-light); font-size: 11.5px; overflow: auto; max-height: 220px; }
+.chip.danger {
+  display: inline;
+  margin: 0;
+}
+.clip {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trigger-form {
+  display: grid;
+  gap: 10px;
+  max-width: 560px;
+  font-size: 13px;
+}
+.trigger-form label {
+  display: grid;
+  gap: 4px;
+}
+.detail-grid {
+  display: grid;
+  gap: 10px;
+}
+.detail-grid h3 {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.facts dd.secondary {
+  opacity: 0.78;
+  font-size: 12px;
+}
+.json {
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+  font-size: 11.5px;
+  overflow: auto;
+  max-height: 220px;
+}
 </style>

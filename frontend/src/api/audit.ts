@@ -157,15 +157,25 @@ export interface AuditListParams {
   to?: string
 }
 
-export function fetchAgentRuns(params: AuditListParams & {
-  status?: string; model_id?: string; deployment_id?: string; household_id?: string
-}) {
+export function fetchAgentRuns(
+  params: AuditListParams & {
+    status?: string
+    model_id?: string
+    deployment_id?: string
+    household_id?: string
+  },
+) {
   return http.get<Page<AgentRunItem>>('/audit/agent-runs', { params }).then((r) => r.data)
 }
 
-export function fetchToolExecutions(params: AuditListParams & {
-  run_id?: string; tool_id?: string; status?: string; household_id?: string
-}) {
+export function fetchToolExecutions(
+  params: AuditListParams & {
+    run_id?: string
+    tool_id?: string
+    status?: string
+    household_id?: string
+  },
+) {
   return http.get<Page<ToolExecutionItem>>('/audit/tool-executions', { params }).then((r) => r.data)
 }
 
@@ -173,9 +183,14 @@ export function fetchToolExecutionDetail(id: string) {
   return http.get<ToolExecutionDetail>(`/audit/tool-executions/${encodeURIComponent(id)}`).then((r) => r.data)
 }
 
-export function fetchModelUsage(params: AuditListParams & {
-  household_id?: string; model_id?: string; purpose?: string; status?: string
-}) {
+export function fetchModelUsage(
+  params: AuditListParams & {
+    household_id?: string
+    model_id?: string
+    purpose?: string
+    status?: string
+  },
+) {
   return http.get<Page<ModelUsageItem>>('/audit/model-usage', { params }).then((r) => r.data)
 }
 
@@ -183,9 +198,14 @@ export function fetchUsageAccounting(days = 7) {
   return http.get<UsageAccounting>('/audit/model-usage/accounting', { params: { days } }).then((r) => r.data)
 }
 
-export function fetchCeleryTasks(params: AuditListParams & {
-  task_type?: string; status?: string; household_id?: string; error_code?: string
-}) {
+export function fetchCeleryTasks(
+  params: AuditListParams & {
+    task_type?: string
+    status?: string
+    household_id?: string
+    error_code?: string
+  },
+) {
   return http.get<Page<CeleryTaskItem>>('/audit/celery-tasks', { params }).then((r) => r.data)
 }
 
@@ -193,9 +213,14 @@ export function fetchCeleryTaskDetail(id: string) {
   return http.get<CeleryTaskDetail>(`/audit/celery-tasks/${encodeURIComponent(id)}`).then((r) => r.data)
 }
 
-export function fetchAdminActions(params: AuditListParams & {
-  actor_id?: string; action?: string; resource_type?: string; household_id?: string
-}) {
+export function fetchAdminActions(
+  params: AuditListParams & {
+    actor_id?: string
+    action?: string
+    resource_type?: string
+    household_id?: string
+  },
+) {
   return http.get<Page<AdminActionItem>>('/audit/admin-actions', { params }).then((r) => r.data)
 }
 

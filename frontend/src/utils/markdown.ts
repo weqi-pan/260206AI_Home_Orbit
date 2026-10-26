@@ -38,8 +38,7 @@ const md = new MarkdownIt({
     if (language) {
       try {
         return `<pre class="hljs"><code>${hljs.highlight(code, { language }).value}</code></pre>`
-      } catch {
-      }
+      } catch {}
     }
     return `<pre class="hljs"><code>${md.utils.escapeHtml(code)}</code></pre>`
   },
