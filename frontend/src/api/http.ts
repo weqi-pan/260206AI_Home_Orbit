@@ -14,8 +14,19 @@ export function extractErrorMessage(body: unknown, fallback: string): string {
   if (body && typeof body === 'object' && 'detail' in body) {
     const detail = (body as ApiErrorBody).detail
     if (typeof detail === 'string' && detail) return detail
-    if (detail && typeof detail === 'object' && !Array.isArray(detail) && 'code' in detail) {
-      const code = (detail as { code?: unknown }).code
+    if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+      const { message, code, fields } = detail as { message?: unknown; code?: unknown; fields?: unknown }
+      // 校验失败的通用文案（"请求参数校验失败"）没告诉用户哪个字段错了，
+      // 所以 fields 优先：它能落到具体字段的原始提示。
+      if (Array.isArray(fields)) {
+        const reasons = fields
+          .map((field) => (field && typeof field === 'object' ? (field as { message?: unknown }).message : field))
+          .filter((item): item is string => typeof item === 'string' && Boolean(item))
+        if (reasons.length) return reasons.join('; ')
+      }
+      // 后端错误契约：detail 是 { code, message? }。优先给用户看中文 message，
+      // code 只是给程序的分支依据 —— 直接显示 HOUSEHOLD_NOT_FOUND 对用户没有意义。
+      if (typeof message === 'string' && message) return message
       if (typeof code === 'string' && code) return code
     }
     if (Array.isArray(detail)) {
