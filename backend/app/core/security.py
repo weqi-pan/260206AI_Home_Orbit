@@ -39,7 +39,8 @@ def get_current_account(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     session: Session = Depends(get_db),
 ) -> Account:
-    unauthorized = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效或已过期的访问令牌")
+    unauthorized = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                 detail={"code": "ACCESS_TOKEN_INVALID", "message": "无效或已过期的访问令牌"})
     if not credentials:
         raise unauthorized
     try:
@@ -56,5 +57,6 @@ def get_current_account(
 
 def require_admin(account: Account = Depends(get_current_account)) -> Account:
     if account.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail={"code": "ADMIN_REQUIRED", "message": "需要管理员权限"})
     return account

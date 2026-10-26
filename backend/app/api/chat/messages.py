@@ -14,9 +14,9 @@ def feedback(message_id: int, payload: FeedbackRequest, account: Account = Depen
         ConversationHistory.id == message_id, ChatSession.account_id == account.id
     ))
     if not item:
-        raise HTTPException(status_code=404, detail="消息不存在")
+        raise HTTPException(status_code=404, detail={"code": "MESSAGE_NOT_FOUND", "message": "消息不存在"})
     if item.role != "assistant":
-        raise HTTPException(status_code=400, detail="仅支持评价助手消息")
+        raise HTTPException(status_code=400, detail={"code": "FEEDBACK_ASSISTANT_ONLY", "message": "仅支持评价助手消息"})
     item.feedback = payload.feedback
     db.commit()
     return {"id": item.id, "feedback": item.feedback}

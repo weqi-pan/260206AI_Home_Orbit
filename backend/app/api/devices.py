@@ -44,7 +44,7 @@ def compare(payload: CompareRequest, request: Request, db: Session = Depends(get
     repository = repositories(request)
     found = {item.model_id: item for item in repository.devices(home, payload.model_ids)}
     if len(found) != len(set(payload.model_ids)):
-        raise HTTPException(status_code=404, detail="设备不存在")
+        raise HTTPException(status_code=404, detail={"code": "DEVICE_NOT_FOUND", "message": "设备不存在"})
     stocks = repository.total_stock(home, payload.model_ids)
     return [device_dict(found[item_id], stocks.get(item_id, 0)) for item_id in payload.model_ids]
 
@@ -54,7 +54,7 @@ def restock(model_id: str, request: Request, db: Session = Depends(get_db), acco
     home = household_id(db, account)
     repository = repositories(request)
     if not repository.device(home, model_id):
-        raise HTTPException(status_code=404, detail="设备不存在")
+        raise HTTPException(status_code=404, detail={"code": "DEVICE_NOT_FOUND", "message": "设备不存在"})
     created = repository.restock_notification(home, account.id, model_id) is None
     item = repository.register_restock(home, account.id, model_id)
     return JSONResponse(
@@ -69,6 +69,6 @@ def detail(model_id: str, request: Request, db: Session = Depends(get_db), accou
     repository = repositories(request)
     item = repository.device(home, model_id)
     if not item:
-        raise HTTPException(status_code=404, detail="设备不存在")
+        raise HTTPException(status_code=404, detail={"code": "DEVICE_NOT_FOUND", "message": "设备不存在"})
     stock = repository.total_stock(home, [model_id]).get(model_id, 0)
     return device_dict(item, stock)

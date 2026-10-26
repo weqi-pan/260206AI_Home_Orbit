@@ -18,7 +18,7 @@ def list_inventory(household_id: str | None = None, model_id: str | None = None,
 def inventory(payload: InventoryPayload, household_id: str,
              admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     device = db.scalar(select(Device).where(Device.household_id == household_id, Device.model_id == payload.model_id))
-    if not device: raise HTTPException(status_code=404, detail="设备不存在")
+    if not device: raise HTTPException(status_code=404, detail={"code": "DEVICE_NOT_FOUND", "message": "设备不存在"})
     item = db.scalar(select(Inventory).where(Inventory.household_id == household_id,
         Inventory.model_id == payload.model_id, Inventory.warehouse == payload.warehouse))
     if not item: item = Inventory(household_id=household_id, device_id=device.id,
@@ -41,7 +41,7 @@ def update_notification(notification_id: int, payload: NotificationUpdate, house
                         admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     item = db.scalar(select(RestockNotification).where(RestockNotification.id == notification_id,
                                                         RestockNotification.household_id == household_id))
-    if not item: raise HTTPException(status_code=404, detail="通知不存在")
+    if not item: raise HTTPException(status_code=404, detail={"code": "RESTOCK_NOTIFICATION_NOT_FOUND", "message": "通知不存在"})
     item.status = payload.status; db.commit()
     _audit(db, admin, "admin.restock_notification.update", "restock_notification", item.id,
            {"status": payload.status}, household_id=household_id)
@@ -59,7 +59,7 @@ def tickets(household_id: str | None = None, _admin: Account = Depends(require_a
 def update_ticket(household_id: str, ticket_id: int, payload: TicketUpdate,
                   admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     item = db.scalar(select(Ticket).where(Ticket.id == ticket_id, Ticket.household_id == household_id))
-    if not item: raise HTTPException(status_code=404, detail="工单不存在")
+    if not item: raise HTTPException(status_code=404, detail={"code": "TICKET_NOT_FOUND", "message": "工单不存在"})
     if payload.status is not None:
         item.status = payload.status
         item.resolved_at = utcnow() if payload.status in {"resolved", "closed"} else None
