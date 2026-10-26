@@ -166,12 +166,27 @@
    - 沿用 [styles/global.css](frontend/src/styles/global.css) 的骨架类；`acceptance.test.ts` 断言 admin 与 `Discover/MyAgents/Creator/Household` 源码不含 `orbit-outer` / `orbit-stage`，Chat 目前不在名单里，但不要引入这两个类。
 6. [AppLayout.vue](frontend/src/components/AppLayout.vue) 加「待审批」角标（`listPendingApprovals()` 轮询 30s）。可选；没有入口的话用户只能在聊天过程中撞见审批。
 
+**实现偏差**（已按实际实现回填）
+
+1. **第 6 项（AppLayout 待审批角标）没有做，留到后续。** 角标本身没有去处：点开只能跳回聊天页，而审批卡本来就出现在产生它的那一轮回复下面，那才是唯一能判断「该不该批」的上下文。真要做成入口，得先有一个「审批中心」页面，否则只是多一个会闪红点却没有动作的图标。
+2. **新增 `onRun` 回调，是这次必需的一条。** 审批后 `POST /approvals/{id}/resume` 的流**以 `run` 帧收尾，没有 `done`**（[runner.py:143-148](backend/agent/platform/runner.py#L143-L148)）—— 只监听 `onDone` 的话，最后一个未完结段落的播报和「回复完成」永远不会触发，读屏用户听到的是「已批准，继续执行」之后就没下文了。同理，首轮聊天在等待审批时也是 `run{status:"waiting_approval"}` 收尾，`onRun` 对两条路径都适用：`status === "completed"` 才播报完成，`waiting_approval` 不播报（否则会抢在审批卡出现之前喊「回复完成」）。
+3. **`resumeApproval` 复用新抽出的 `streamRequest`**，不是照着 `streamChat` 再写一遍。两者只差 URL 与 body（resume 不发 `message`），401 静默刷新、非 2xx 的 `extractErrorMessage`、`readStream` 全都要一模一样；复制一份等于把刷新逻辑维护两份。
+4. **审批卡做成独立组件 + `MessageItem` 的 `approvals` 插槽**，而不是把模板直接铺在 `Chat.vue` 里。`Chat.vue` 已经 500+ 行，卡片还带自己的倒计时定时器（要 `onUnmounted` 清）；挂在气泡的具名插槽里既保证它跟着这条消息走，也避免和 `tool-events` 那块并排区块抢版面。
+5. **新增 `parseServerTime`（[utils/format.ts](frontend/src/utils/format.ts)）**，这是计划里没预见到的一个坑：后端 `utcnow()` 是 `datetime.now(timezone.utc).replace(tzinfo=None)`，序列化出来是 `2026-10-26T10:35:00` **不带 Z**；按 ECMAScript 规范，`Date.parse` 对「date-time 无偏移」按**本地时间**解释，在 UTC+8 的机器上倒计时会凭空多出 8 小时（10 分钟的窗口显示成 8 小时 10 分）。倒计时一律走这个函数，`formatDateTime` 展示历史时间不受影响，保持原样。
+6. **`ChatApproval` 带 `state` 状态机**（`pending | busy | approved | rejected | failed`）而不是一个布尔。`busy` 要同时压住按钮和显示「处理中」；`failed` 要能原地重试（不重新拉卡片）；`approved` 之后按钮组整体换成「收起」——用布尔拼不出这四态。
+7. **`GET /api/approvals` 的 `arguments` 解析容忍坏数据**：`arguments_json` 为空串、非 JSON 或不是对象时退回 `{}`（[approvals.py](backend/app/api/approvals.py) `_redacted_arguments`）。历史行是可能存在的，一条脏数据不该让整个待审批列表 500。
+8. **`resolveApproval` 在列表里查不到时退回占位卡片**（工具名/参数缺失、`risk_level` 记为 `high`），而不是不显示。approve/reject 端点只需要 `approval_id`，让用户点得到比让界面看起来「没反应」要好。
+
 **验收**
 
-- 后端新增 `test_approval_window_is_capped_server_side`（传 `now + 3650 days` → 返回 `expires_at` 被夹到 `now + approval_max_minutes`）
-- `test_agent_platform_fix_round2/3/4` 的 resume 用例全绿
-- 前端新增 `Chat.test.ts` 用例：喂一帧 `approval_required` → 审批卡出现 → 点批准 → 调用 `resumeApproval` → 后续 token 追加到同一气泡
-- 手工：给某个 Agent 绑上 `platform.test_high_risk` 并触发，确认聊天页出现审批卡、批准后回复继续、`expires_at` 不超过 10 分钟
+- 后端新增 [test_approval_window.py](backend/tests/test_approval_window.py) 6 项：`test_approval_window_is_capped_server_side`（传 `now + 3650 days` → 返回 `expires_at` 被夹到 `now + approval_max_minutes`）、`test_approval_window_can_be_shortened_by_the_client`（用户要求更短时服务端**不反向拉长**）、`test_approval_without_expires_at_uses_the_server_default`、`test_approval_in_the_past_is_still_rejected`（422 `APPROVAL_EXPIRED`）、`test_pending_approvals_carry_what_the_ui_needs`、`test_pending_approvals_tolerate_unparsable_arguments`
+- `test_agent_platform_fix_round2/3/4` 的 resume 用例全绿（3 处原有 `expires_at` 传值**零改动**：客户端值都落在 `now + 5~10min`，早于服务端上限，`min` 取客户端值）
+- 前端 [Chat.test.ts](frontend/src/views/Chat.test.ts) 新增 3 项：`approval_required` → 卡片出现（工具名/风险/脱敏参数）→ 点批准 → 调 `resumeApproval` → 后续 token 落在**同一个气泡**、`run{completed}` 播报完成；倒计时用 approve 响应里的 `expires_at`；拒绝不触发 resume
+- [chat.test.ts](frontend/src/api/chat.test.ts) 新增 3 项：`approval_required` 不再落到 default 被丢弃、没有 `approval_id` 的帧不上抛、`approval_resumed` 上报
+- 新增 [format.test.ts](frontend/src/utils/format.test.ts) 3 项：无时区时间戳按 UTC 解析、带 `Z`/`+08:00` 的不再补、空值与非法值返回 `null`
+- `pytest -q` 全绿：**550 项**（PR 3 后 544 + 审批窗口 6）
+- `npm test -- --run` 全绿：**27 个文件 114 项**（PR 3 后 26/105 + chat 3 + Chat 3 + format 3）
+- 手工：给某个 Agent 绑上 `platform.test_high_risk` 并触发，确认聊天页出现审批卡、批准后回复继续、返回的 `expires_at` 不超过 10 分钟
 
 ---
 

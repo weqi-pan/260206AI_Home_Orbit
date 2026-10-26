@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # 只有确实部署在可信反代后面才打开：X-Forwarded-For 由客户端伪造
     auth_rate_limit_trust_forwarded_for: bool = False
 
+    # 高风险审批的有效窗口：客户端可以传更短的值，但服务端会夹到 max 以内，
+    # 否则一句「批准十年」就能把「高风险需逐次确认」整个绕开
+    approval_max_minutes: int = 10
+    approval_default_minutes: int = 5
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

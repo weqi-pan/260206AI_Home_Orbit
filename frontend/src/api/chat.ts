@@ -29,6 +29,30 @@ export interface SentimentEventData {
   score: number
 }
 
+/** 审批事件只带 id 和 code，工具名/风险/参数要另外从 /approvals 取。 */
+export interface ApprovalEventData {
+  approval_id: string
+  code?: string
+  kind?: string
+  message?: string
+}
+
+/** GET /api/approvals 的条目：足以直接渲染一张审批卡。 */
+export interface ApprovalInfo {
+  id: string
+  run_id: string
+  tool_id: string
+  status: string
+  expires_at: string | null
+  created_at: string | null
+  tool_key: string | null
+  tool_display_name: string | null
+  risk_level: string | null
+  arguments: Record<string, unknown>
+  session_id: string | null
+  deployment_id: string | null
+}
+
 export interface ChatStreamCallbacks {
   onToken?: (content: string) => void
   onTool?: (data: ToolEventData) => void
@@ -36,6 +60,10 @@ export interface ChatStreamCallbacks {
   onFollowup?: (questions: string[]) => void
   onDone?: (data: { message_id: number }) => void
   onError?: (message: string) => void
+  onApprovalRequired?: (data: ApprovalEventData) => void
+  onApprovalResumed?: (data: ApprovalEventData) => void
+  /** 审批后继续的输出以 run 帧收尾，不是 done —— 这一帧没有 message_id。 */
+  onRun?: (data: { run_id?: string; status?: string; error_code?: string }) => void
 }
 
 export function listSessions() {
@@ -86,6 +114,29 @@ function dispatchFrame(event: string, payload: unknown, callbacks: ChatStreamCal
       break
     case 'done':
       callbacks.onDone?.({ message_id: Number(data.message_id ?? 0) })
+      break
+    case 'approval_required':
+      // 之前这里落到 default 分支被静默丢弃，高风险审批在界面上根本走不到
+      if (typeof data.approval_id === 'string' && data.approval_id) {
+        callbacks.onApprovalRequired?.({
+          approval_id: data.approval_id,
+          code: typeof data.code === 'string' ? data.code : undefined,
+          kind: typeof data.kind === 'string' ? data.kind : undefined,
+          message: typeof data.message === 'string' ? data.message : undefined,
+        })
+      }
+      break
+    case 'approval_resumed':
+      if (typeof data.approval_id === 'string' && data.approval_id) {
+        callbacks.onApprovalResumed?.({ approval_id: data.approval_id })
+      }
+      break
+    case 'run':
+      callbacks.onRun?.({
+        run_id: typeof data.run_id === 'string' ? data.run_id : undefined,
+        status: typeof data.status === 'string' ? data.status : undefined,
+        error_code: typeof data.error_code === 'string' ? data.error_code : undefined,
+      })
       break
     case 'error':
       callbacks.onError?.(typeof data.message === 'string' && data.message ? data.message : '聊天服务异常')
@@ -148,11 +199,35 @@ export async function streamChat(
   signal?: AbortSignal,
 ): Promise<void> {
   const url = `/api/chat/sessions/${sessionId}/chat`
+  await streamRequest(url, { message }, callbacks, signal)
+}
+
+/**
+ * 恢复一个已批准的审批，后续输出继续流式回来。
+ *
+ * 这个端点返回的是 `EventSourceResponse`，不是 JSON —— 所以必须走 fetch，
+ * 走 axios 会拿不到增量帧，只能等整段结束。
+ */
+export async function resumeApproval(
+  approvalId: string,
+  callbacks: ChatStreamCallbacks,
+  signal?: AbortSignal,
+): Promise<void> {
+  const url = `/api/approvals/${approvalId}/resume`
+  await streamRequest(url, {}, callbacks, signal)
+}
+
+async function streamRequest(
+  url: string,
+  body: Record<string, unknown>,
+  callbacks: ChatStreamCallbacks,
+  signal?: AbortSignal,
+): Promise<void> {
   const doFetch = () => {
     const auth = useAuthStore()
     const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' }
     if (auth.accessToken) headers.Authorization = `Bearer ${auth.accessToken}`
-    return fetch(url, { method: 'POST', headers, body: JSON.stringify({ message }), signal })
+    return fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal })
   }
   let response = await doFetch()
   if (response.status === 401) {
@@ -166,11 +241,27 @@ export async function streamChat(
   }
   if (!response.ok) {
     const text = await response.text().catch(() => '')
-    let body: unknown
+    let parsed: unknown
     try {
-      body = JSON.parse(text)
+      parsed = JSON.parse(text)
     } catch {}
-    throw new Error(extractErrorMessage(body, `请求失败（${response.status}）`))
+    throw new Error(extractErrorMessage(parsed, `请求失败（${response.status}）`))
   }
   await readStream(response, callbacks)
+}
+
+export function listPendingApprovals() {
+  return http.get<ApprovalInfo[]>('/approvals').then((r) => r.data)
+}
+
+export function approveApproval(approvalId: string, expiresAt?: string) {
+  // 传不传都行：不传服务端用默认窗口，传了也会被夹到 approval_max_minutes 以内
+  const payload = expiresAt ? { expires_at: expiresAt } : {}
+  return http
+    .post<{ id: string; status: string; expires_at: string }>(`/approvals/${approvalId}/approve`, payload)
+    .then((r) => r.data)
+}
+
+export function rejectApproval(approvalId: string) {
+  return http.post<{ id: string; status: string }>(`/approvals/${approvalId}/reject`).then((r) => r.data)
 }

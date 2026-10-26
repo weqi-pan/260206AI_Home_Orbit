@@ -20,7 +20,9 @@ class ToolGrantRequest(BaseModel):
 
 
 class ApprovalDecisionRequest(BaseModel):
-    expires_at: datetime
+    # 可选：不传就用 approval_default_minutes。传了也只是「希望窗口多长」，
+    # 服务端会夹到 approval_max_minutes 以内（见 api/approvals.py）
+    expires_at: datetime | None = None
 
 
 class InstallationRequest(BaseModel):
