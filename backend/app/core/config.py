@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     followup_timeout_seconds: float = 4.0
     redis_url: str = "redis://localhost:6379/0"
     celery_retry_backoff_seconds: int = 30
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     model_config = SettingsConfigDict(
         env_file=".env",
