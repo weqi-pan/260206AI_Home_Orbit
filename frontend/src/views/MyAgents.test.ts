@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 import MyAgents from './MyAgents.vue'
 
 const upgradeMock = vi.fn().mockResolvedValue({
-  installation_id: 'i-2', pinned_version: 2, granted_tool_keys: ['household.shopping.write'],
+  installation_id: 'i-2',
+  pinned_version: 2,
+  granted_tool_keys: ['household.shopping.write'],
   newly_granted_tool_keys: ['household.memo.write'],
 })
 const uninstallMock = vi.fn().mockResolvedValue(undefined)
@@ -11,8 +13,12 @@ const uninstallMock = vi.fn().mockResolvedValue(undefined)
 vi.mock('../api/creator', () => ({
   fetchMyAgents: vi.fn().mockResolvedValue([
     {
-      draft_id: 'd-1', agent_id: 'a-1', name: '广东菜大厨', description: '提供几道广东菜做法',
-      deployment_id: 'dep-1', published_at: '2026-08-27T10:00:00',
+      draft_id: 'd-1',
+      agent_id: 'a-1',
+      name: '广东菜大厨',
+      description: '提供几道广东菜做法',
+      deployment_id: 'dep-1',
+      published_at: '2026-08-27T10:00:00',
       versions: [{ id: 'v-1', version: 1, published_at: '2026-08-27T10:00:00' }],
     },
   ]),
@@ -22,13 +28,25 @@ vi.mock('../market/api', () => ({
     {
       installation_id: 'i-1',
       entry: { id: 'entry-1', name: '市场采购助手', description: '采购清单写入', category: '生活' },
-      deployment_id: 'dep-9', agent_version_id: 'lv-1',
-      pinned_version: 1, latest_version: 2, update_available: true, deprecated: false,
+      deployment_id: 'dep-9',
+      agent_version_id: 'lv-1',
+      pinned_version: 1,
+      latest_version: 2,
+      update_available: true,
+      deprecated: false,
       granted_tool_keys: ['household.shopping.write'],
       update: {
-        from_version: 1, to_version: 2,
+        from_version: 1,
+        to_version: 2,
         new_permissions: [
-          { tool_id: 't-3', key: 'household.memo.write', display_name: '家庭备忘写入', description: '写入家庭备忘', risk_level: 'reversible', version: '1' },
+          {
+            tool_id: 't-3',
+            key: 'household.memo.write',
+            display_name: '家庭备忘写入',
+            description: '写入家庭备忘',
+            risk_level: 'reversible',
+            version: '1',
+          },
         ],
       },
     },

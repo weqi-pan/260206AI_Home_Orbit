@@ -3,21 +3,59 @@ import { describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 import TaskOps from './TaskOps.vue'
 
-const runMock = vi.fn().mockResolvedValue({ idempotency_key: 'admin:demo:x', status: 'succeeded', attempt: 1, error_code: null })
+const runMock = vi
+  .fn()
+  .mockResolvedValue({ idempotency_key: 'admin:demo:x', status: 'succeeded', attempt: 1, error_code: null })
 
 vi.mock('../../api/audit', () => ({
   fetchCeleryTasks: vi.fn().mockResolvedValue({
-    total: 2, page: 1, page_size: 20,
+    total: 2,
+    page: 1,
+    page_size: 20,
     items: [
-      { id: 'task-1', idempotency_key: 'beat:reminders:h1', task_type: 'household.reminders.dispatch', household_id: 'h-1', status: 'succeeded', attempt: 1, max_attempts: 3, error_code: null, next_retry_at: null, created_at: '2026-08-28T08:00:00', updated_at: '2026-08-28T08:00:05' },
-      { id: 'task-2', idempotency_key: 'demo.broken:1', task_type: 'demo.broken', household_id: 'h-1', status: 'dead', attempt: 3, max_attempts: 3, error_code: 'UPSTREAM_UNAVAILABLE', next_retry_at: null, created_at: '2026-08-27T08:00:00', updated_at: '2026-08-27T08:02:00' },
+      {
+        id: 'task-1',
+        idempotency_key: 'beat:reminders:h1',
+        task_type: 'household.reminders.dispatch',
+        household_id: 'h-1',
+        status: 'succeeded',
+        attempt: 1,
+        max_attempts: 3,
+        error_code: null,
+        next_retry_at: null,
+        created_at: '2026-08-28T08:00:00',
+        updated_at: '2026-08-28T08:00:05',
+      },
+      {
+        id: 'task-2',
+        idempotency_key: 'demo.broken:1',
+        task_type: 'demo.broken',
+        household_id: 'h-1',
+        status: 'dead',
+        attempt: 3,
+        max_attempts: 3,
+        error_code: 'UPSTREAM_UNAVAILABLE',
+        next_retry_at: null,
+        created_at: '2026-08-27T08:00:00',
+        updated_at: '2026-08-27T08:02:00',
+      },
     ],
   }),
   fetchCeleryTaskDetail: vi.fn().mockResolvedValue({
-    id: 'task-1', idempotency_key: 'beat:reminders:h1', task_type: 'household.reminders.dispatch', household_id: 'h-1',
-    status: 'failed', attempt: 2, max_attempts: 3, error_code: 'MODEL_PROVIDER_UNAVAILABLE', next_retry_at: null,
-    created_at: '2026-08-28T08:00:00', updated_at: '2026-08-28T08:00:05',
-    error_detail: 'max retries exceeded', payload: { household_id: 'h-1' }, result: { occurrences: 2 },
+    id: 'task-1',
+    idempotency_key: 'beat:reminders:h1',
+    task_type: 'household.reminders.dispatch',
+    household_id: 'h-1',
+    status: 'failed',
+    attempt: 2,
+    max_attempts: 3,
+    error_code: 'MODEL_PROVIDER_UNAVAILABLE',
+    next_retry_at: null,
+    created_at: '2026-08-28T08:00:00',
+    updated_at: '2026-08-28T08:00:05',
+    error_detail: 'max retries exceeded',
+    payload: { household_id: 'h-1' },
+    result: { occurrences: 2 },
     audit: { submitted_at: '2026-08-28T08:00:00', finished_at: '2026-08-28T08:00:05' },
     notifications: [{ id: 'n-1', title: '后台任务失败', kind: 'task_failed', created_at: '2026-08-27T08:02:00' }],
   }),

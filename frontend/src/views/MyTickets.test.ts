@@ -15,19 +15,36 @@ vi.mock('../api/tickets', () => ({
 }))
 
 const TICKET = {
-  id: 1, session_id: null, title: '冰箱不制冷', summary: null, emotion: null,
-  priority: 'normal' as const, status: 'open' as const, admin_reply: null,
-  created_at: '2026-10-20T08:00:00', resolved_at: null,
+  id: 1,
+  session_id: null,
+  title: '冰箱不制冷',
+  summary: null,
+  emotion: null,
+  priority: 'normal' as const,
+  status: 'open' as const,
+  admin_reply: null,
+  created_at: '2026-10-20T08:00:00',
+  resolved_at: null,
 }
 
 const stubs = {
   ElButton: { template: '<button @click="$emit(\'click\')"><slot /></button>' },
-  ElTable: { props: ['data'], template: '<table><tbody><tr v-for="row in data" :key="row.id" class="row"><td>{{ row.title }}</td><td><slot /></td></tr></tbody></table>' },
+  ElTable: {
+    props: ['data'],
+    template:
+      '<table><tbody><tr v-for="row in data" :key="row.id" class="row"><td>{{ row.title }}</td><td><slot /></td></tr></tbody></table>',
+  },
   ElTableColumn: { template: '<div />' },
   ElTag: { template: '<span class="tag"><slot /></span>' },
   ElEmpty: { props: ['description'], template: '<p class="empty">{{ description }}</p>' },
   ElDialog: { template: '<div><slot /></div>' },
-  ElDescriptions: true, ElDescriptionsItem: true, ElForm: true, ElFormItem: true, ElInput: true, ElSelect: true, ElOption: true,
+  ElDescriptions: true,
+  ElDescriptionsItem: true,
+  ElForm: true,
+  ElFormItem: true,
+  ElInput: true,
+  ElSelect: true,
+  ElOption: true,
 }
 
 function mountPage() {

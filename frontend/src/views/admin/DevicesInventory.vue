@@ -103,7 +103,10 @@ function openEdit(row: AdminDevice) {
 }
 
 async function saveDevice() {
-  const valid = await deviceFormRef.value?.validate().then(() => true).catch(() => false)
+  const valid = await deviceFormRef.value
+    ?.validate()
+    .then(() => true)
+    .catch(() => false)
   if (!valid) return
   saving.value = true
   try {
@@ -124,7 +127,9 @@ async function saveDevice() {
 
 async function removeDevice(row: AdminDevice) {
   try {
-    await ElMessageBox.confirm(`删除设备「${row.model_name}」将同时删除其库存与补货通知，确认删除？`, '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(`删除设备「${row.model_name}」将同时删除其库存与补货通知，确认删除？`, '删除确认', {
+      type: 'warning',
+    })
   } catch {
     return
   }
@@ -132,14 +137,20 @@ async function removeDevice(row: AdminDevice) {
     await deleteDevice(row.household_id, row.model_id)
     ElMessage.success('设备已删除')
     await load()
-  } catch {
-  }
+  } catch {}
 }
 
 const inventoryDialogVisible = ref(false)
 const inventorySaving = ref(false)
 const inventoryFormRef = ref<FormInstance>()
-const inventoryForm = reactive({ household_id: '', model_id: '', model_name: '', warehouse: '', stock: 0, min_stock: 0 })
+const inventoryForm = reactive({
+  household_id: '',
+  model_id: '',
+  model_name: '',
+  warehouse: '',
+  stock: 0,
+  min_stock: 0,
+})
 
 const inventoryRules: FormRules = {
   model_id: [{ required: true, message: '请选择型号', trigger: 'change' }],
@@ -176,7 +187,10 @@ function openInventoryRow(row: InventoryRow) {
 }
 
 async function saveInventory() {
-  const valid = await inventoryFormRef.value?.validate().then(() => true).catch(() => false)
+  const valid = await inventoryFormRef.value
+    ?.validate()
+    .then(() => true)
+    .catch(() => false)
   if (!valid) return
   inventorySaving.value = true
   try {
@@ -334,7 +348,9 @@ onMounted(load)
 }
 
 /* 这三个页面比全局 .page-title（18px）小一档 */
-.page-title { font-size: 16px; }
+.page-title {
+  font-size: 16px;
+}
 
 .section {
   margin: 24px 0 16px;

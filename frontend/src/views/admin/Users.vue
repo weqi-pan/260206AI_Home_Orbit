@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
-import { fetchAccounts, fetchAdminHouseholds, resetAccountPassword, updateAccount, type AdminAccount, type AdminHousehold } from '../../api/admin'
+import {
+  fetchAccounts,
+  fetchAdminHouseholds,
+  resetAccountPassword,
+  updateAccount,
+  type AdminAccount,
+  type AdminHousehold,
+} from '../../api/admin'
 import { adjustHouseholdQuota, fetchHouseholdQuota, type HouseholdQuotaView } from '../../api/ops'
 import { useAuthStore } from '../../stores/auth'
 import { formatDateTime } from '../../utils/format'
@@ -76,8 +83,7 @@ async function toggleStatus(row: AdminAccount) {
     const updated = await updateAccount(row.id, { status: next })
     Object.assign(row, updated)
     ElMessage.success(next === 'disabled' ? '账号已禁用' : '账号已启用')
-  } catch {
-  }
+  } catch {}
 }
 
 async function toggleRole(row: AdminAccount) {
@@ -86,8 +92,7 @@ async function toggleRole(row: AdminAccount) {
     const updated = await updateAccount(row.id, { role: next })
     Object.assign(row, updated)
     ElMessage.success(next === 'admin' ? '已设为管理员' : '已设为普通用户')
-  } catch {
-  }
+  } catch {}
 }
 
 async function handleReset(row: AdminAccount) {
@@ -97,8 +102,7 @@ async function handleReset(row: AdminAccount) {
     passwordResult.value = password
     passwordVisible.value = true
     row.must_change_password = true
-  } catch {
-  }
+  } catch {}
 }
 
 async function copyPassword() {
@@ -148,15 +152,28 @@ onMounted(load)
       </el-table-column>
       <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" :type="(row as AdminAccount).status === 'active' ? 'danger' : 'success'" :disabled="isSelf(row as AdminAccount)"
-            @click="toggleStatus(row as AdminAccount)">
+          <el-button
+            size="small"
+            :type="(row as AdminAccount).status === 'active' ? 'danger' : 'success'"
+            :disabled="isSelf(row as AdminAccount)"
+            @click="toggleStatus(row as AdminAccount)"
+          >
             {{ (row as AdminAccount).status === 'active' ? '禁用' : '启用' }}
           </el-button>
-          <el-button size="small" :type="(row as AdminAccount).role === 'admin' ? 'info' : 'warning'" :disabled="isSelf(row as AdminAccount)"
-            @click="toggleRole(row as AdminAccount)">
+          <el-button
+            size="small"
+            :type="(row as AdminAccount).role === 'admin' ? 'info' : 'warning'"
+            :disabled="isSelf(row as AdminAccount)"
+            @click="toggleRole(row as AdminAccount)"
+          >
             {{ (row as AdminAccount).role === 'admin' ? '降为用户' : '升为管理员' }}
           </el-button>
-          <el-button size="small" type="primary" :disabled="isSelf(row as AdminAccount)" @click="handleReset(row as AdminAccount)">
+          <el-button
+            size="small"
+            type="primary"
+            :disabled="isSelf(row as AdminAccount)"
+            @click="handleReset(row as AdminAccount)"
+          >
             重置密码
           </el-button>
         </template>
@@ -193,7 +210,9 @@ onMounted(load)
       </el-table-column>
       <el-table-column label="操作" width="130" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" type="primary" data-testid="open-quota" @click="openQuota(row as AdminHousehold)">配额</el-button>
+          <el-button size="small" type="primary" data-testid="open-quota" @click="openQuota(row as AdminHousehold)"
+            >配额</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -202,10 +221,14 @@ onMounted(load)
     <el-dialog v-model="quotaVisible" title="家庭配额与用量" width="640px">
       <div v-if="quotaView">
         <dl class="quota-facts">
-          <div><dt>当月用量（{{ quotaView.usage.month }}）</dt>
-            <dd>{{ quotaView.usage.tokens }} 令牌 / {{ quotaView.usage.requests }} 次请求</dd></div>
-          <div><dt>家庭预算（agent budget）</dt>
-            <dd>{{ quotaView.quota?.agent_token_budget ?? '未设置' }}</dd></div>
+          <div>
+            <dt>当月用量（{{ quotaView.usage.month }}）</dt>
+            <dd>{{ quotaView.usage.tokens }} 令牌 / {{ quotaView.usage.requests }} 次请求</dd>
+          </div>
+          <div>
+            <dt>家庭预算（agent budget）</dt>
+            <dd>{{ quotaView.quota?.agent_token_budget ?? '未设置' }}</dd>
+          </div>
         </dl>
         <el-form label-width="140px" class="quota-form">
           <el-form-item label="月度令牌上限">
@@ -218,27 +241,49 @@ onMounted(load)
             <el-input-number v-model="quotaForm.agent_token_budget" :min="0" data-testid="quota-budget" />
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" data-testid="save-quota" :loading="quotaSaving" @click="saveQuota">保存调整（审计）</el-button>
+            <el-button type="primary" data-testid="save-quota" :loading="quotaSaving" @click="saveQuota"
+              >保存调整（审计）</el-button
+            >
           </el-form-item>
         </el-form>
         <h4 class="quota-section">近 14 天趋势</h4>
         <table class="quota-table">
-          <thead><tr><th>日期</th><th>请求</th><th>令牌</th></tr></thead>
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>请求</th>
+              <th>令牌</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr v-for="day in quotaView.trend" :key="day.day"><td>{{ day.day }}</td><td>{{ day.requests }}</td><td>{{ day.tokens }}</td></tr>
-            <tr v-if="!quotaView.trend.length"><td colspan="3" class="dim">暂无用量</td></tr>
+            <tr v-for="day in quotaView.trend" :key="day.day">
+              <td>{{ day.day }}</td>
+              <td>{{ day.requests }}</td>
+              <td>{{ day.tokens }}</td>
+            </tr>
+            <tr v-if="!quotaView.trend.length">
+              <td colspan="3" class="dim">暂无用量</td>
+            </tr>
           </tbody>
         </table>
         <h4 class="quota-section">超限事故史（稳定码）</h4>
         <table class="quota-table">
-          <thead><tr><th>时间</th><th>码</th><th>档案</th></tr></thead>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>码</th>
+              <th>档案</th>
+            </tr>
+          </thead>
           <tbody>
             <tr v-for="incident in quotaView.incidents" :key="incident.id">
               <td>{{ formatDateTime(incident.created_at) }}</td>
               <td>{{ incident.code }}</td>
               <td>{{ incident.model_name }}</td>
             </tr>
-            <tr v-if="!quotaView.incidents.length"><td colspan="3" class="dim">无事故</td></tr>
+            <tr v-if="!quotaView.incidents.length">
+              <td colspan="3" class="dim">无事故</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -255,7 +300,9 @@ onMounted(load)
 }
 
 /* 这三个页面比全局 .page-title（18px）小一档 */
-.page-title { font-size: 16px; }
+.page-title {
+  font-size: 16px;
+}
 
 .password-box {
   margin: 8px 0;
@@ -291,7 +338,7 @@ onMounted(load)
 }
 
 .quota-facts dt {
-  opacity: .66;
+  opacity: 0.66;
 }
 
 .quota-facts dd {
@@ -318,7 +365,7 @@ onMounted(load)
   text-align: left;
   padding: 4px 6px;
   border-bottom: 1px solid #eee;
-  opacity: .6;
+  opacity: 0.6;
 }
 
 .quota-table td {

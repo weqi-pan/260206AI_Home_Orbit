@@ -107,34 +107,56 @@ async function confirmUninstall() {
     <ErrorState v-if="error" :message="error" :retrying="loading" @retry="load" />
 
     <section class="panel" aria-labelledby="selfbuilt-title">
-      <div class="panel-title"><h2 id="selfbuilt-title">自建</h2><span>{{ selfBuilt.length }}</span></div>
+      <div class="panel-title">
+        <h2 id="selfbuilt-title">自建</h2>
+        <span>{{ selfBuilt.length }}</span>
+      </div>
       <ul class="dense-list">
         <li v-for="agent in selfBuilt" :key="agent.draft_id">
-          <span class="row-main"><strong>{{ agent.name }}</strong><small>{{ agent.description }}</small></span>
+          <span class="row-main"
+            ><strong>{{ agent.name }}</strong
+            ><small>{{ agent.description }}</small></span
+          >
           <span class="meta">v{{ agent.versions[agent.versions.length - 1]?.version ?? 1 }}</span>
-          <router-link v-if="agent.deployment_id" :to="`/chat?deployment=${agent.deployment_id}`" class="row-action">对话</router-link>
+          <router-link v-if="agent.deployment_id" :to="`/chat?deployment=${agent.deployment_id}`" class="row-action"
+            >对话</router-link
+          >
         </li>
         <li v-if="!error && !selfBuilt.length" class="empty">还没有自建助手，去「创建」开始一句话创作。</li>
       </ul>
     </section>
 
     <section class="panel" aria-labelledby="installed-title">
-      <div class="panel-title"><h2 id="installed-title">市场安装</h2><span>{{ installed.length }}</span></div>
+      <div class="panel-title">
+        <h2 id="installed-title">市场安装</h2>
+        <span>{{ installed.length }}</span>
+      </div>
       <ul class="dense-list">
         <li v-for="item in installed" :key="item.installation_id" class="install-row">
           <span class="row-main">
-            <strong>{{ item.entry.name }}
+            <strong
+              >{{ item.entry.name }}
               <span v-if="item.deprecated" class="state deprecated">已下架 · 旧版本继续可用</span>
               <span v-else-if="item.update_available" data-testid="update-badge" class="state update">可更新</span>
             </strong>
             <small>{{ item.entry.description }}</small>
           </span>
-          <span class="meta" data-testid="pinned-version">固定 v{{ item.pinned_version }} · 最新 v{{ item.latest_version }}</span>
+          <span class="meta" data-testid="pinned-version"
+            >固定 v{{ item.pinned_version }} · 最新 v{{ item.latest_version }}</span
+          >
           <span class="actions">
             <router-link :to="`/chat?deployment=${item.deployment_id}`" class="row-action">对话</router-link>
-            <button v-if="item.update_available && item.update" type="button" data-testid="start-upgrade"
-                    @click="openUpgrade(item, $event.currentTarget)">升级</button>
-            <button type="button" data-testid="start-uninstall" @click="openUninstall(item, $event.currentTarget)">卸载</button>
+            <button
+              v-if="item.update_available && item.update"
+              type="button"
+              data-testid="start-upgrade"
+              @click="openUpgrade(item, $event.currentTarget)"
+            >
+              升级
+            </button>
+            <button type="button" data-testid="start-uninstall" @click="openUninstall(item, $event.currentTarget)">
+              卸载
+            </button>
           </span>
         </li>
         <li v-if="!error && !installed.length" class="empty">还没有安装市场助手，去「发现」看看。</li>
@@ -142,12 +164,27 @@ async function confirmUninstall() {
     </section>
 
     <div v-if="upgradeOpen" class="modal-backdrop" @click="closeUpgrade"></div>
-    <div v-if="upgradeOpen" ref="upgradeDialog" class="modal" role="dialog" aria-modal="true"
-         aria-label="确认升级" @keydown="upgradeFocus.onKeydown">
+    <div
+      v-if="upgradeOpen"
+      ref="upgradeDialog"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="确认升级"
+      @keydown="upgradeFocus.onKeydown"
+    >
       <header class="modal-head">
-        <div><p class="eyebrow">UPGRADE / 确认升级</p>
-          <h2>{{ upgradeTarget?.entry.name }}：v{{ upgradeTarget?.update?.from_version }} → v{{ upgradeTarget?.update?.to_version }}</h2></div>
-        <button ref="upgradeTrigger" type="button" class="close" aria-label="关闭升级" @click="closeUpgrade">关闭</button>
+        <div>
+          <p class="eyebrow">UPGRADE / 确认升级</p>
+          <h2>
+            {{ upgradeTarget?.entry.name }}：v{{ upgradeTarget?.update?.from_version }} → v{{
+              upgradeTarget?.update?.to_version
+            }}
+          </h2>
+        </div>
+        <button ref="upgradeTrigger" type="button" class="close" aria-label="关闭升级" @click="closeUpgrade">
+          关闭
+        </button>
       </header>
       <p class="hint">已授权权限会延续；新增权限必须重新授权，默认不勾选。不升级则继续使用当前固定版本。</p>
       <ul class="perm-list">
@@ -163,17 +200,36 @@ async function confirmUninstall() {
       </ul>
       <footer class="modal-actions">
         <button type="button" @click="closeUpgrade">暂不升级</button>
-        <button type="button" data-testid="confirm-upgrade" class="primary" :disabled="upgrading"
-                @click="confirmUpgrade">{{ upgrading ? '升级中...' : '确认升级' }}</button>
+        <button
+          type="button"
+          data-testid="confirm-upgrade"
+          class="primary"
+          :disabled="upgrading"
+          @click="confirmUpgrade"
+        >
+          {{ upgrading ? '升级中...' : '确认升级' }}
+        </button>
       </footer>
     </div>
 
     <div v-if="uninstallOpen" class="modal-backdrop" @click="closeUninstall"></div>
-    <div v-if="uninstallOpen" ref="uninstallDialog" class="modal" role="dialog" aria-modal="true"
-         aria-label="卸载确认" @keydown="uninstallFocus.onKeydown">
+    <div
+      v-if="uninstallOpen"
+      ref="uninstallDialog"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="卸载确认"
+      @keydown="uninstallFocus.onKeydown"
+    >
       <header class="modal-head">
-        <div><p class="eyebrow">UNINSTALL / 卸载</p><h2>卸载 {{ uninstallTarget?.entry.name }}</h2></div>
-        <button ref="uninstallTrigger" type="button" class="close" aria-label="关闭卸载" @click="closeUninstall">关闭</button>
+        <div>
+          <p class="eyebrow">UNINSTALL / 卸载</p>
+          <h2>卸载 {{ uninstallTarget?.entry.name }}</h2>
+        </div>
+        <button ref="uninstallTrigger" type="button" class="close" aria-label="关闭卸载" @click="closeUninstall">
+          关闭
+        </button>
       </header>
       <label class="revoke-label">
         <input v-model="revokePermissions" data-testid="revoke-permissions" type="checkbox" />
@@ -189,22 +245,82 @@ async function confirmUninstall() {
 
 <style scoped>
 /* 骨架见 styles/global.css；这里只留本页差异 */
-.panel { margin-top: 26px; }
-.dense-list li { min-height: 64px; }
+.panel {
+  margin-top: 26px;
+}
+.dense-list li {
+  min-height: 64px;
+}
 /* 全局 .state 只管胶囊底色与字体，这一页把它嵌在标题里，需要行内排布和左边距 */
-.state { display: inline-flex; margin-left: 10px; }
-.state.update { color: var(--orbit-violet); background: var(--orbit-mist); }
-.state.deprecated { color: var(--risk-high-fg); background: var(--risk-high-bg); }
-.actions { display: flex; gap: 8px; }
-.actions button, .actions .row-action { min-height: 40px; padding: 0 14px; border: 1px solid var(--hairline-strong); border-radius: 10px; background: transparent; cursor: pointer; }
-.modal { width: min(92vw, 620px); }
-.hint { color: var(--ink-subtle); }
-.perm-list { margin-top: 14px; }
-.grant-label { display: flex; align-items: center; gap: 10px; }
-.grant-label input { width: 20px; height: 20px; }
-.revoke-label { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
-.revoke-label input { width: 20px; height: 20px; }
-.modal-actions .primary { border: 0; font-weight: 700; color: var(--device-ink); background: var(--charge-coral); }
-.modal-actions .danger { color: var(--risk-high-fg); border-color: var(--risk-high-fg); }
-@media (max-width: 760px) { .agents-page { padding: 28px 18px 110px; }.dense-list li { grid-template-columns: 1fr; } }
+.state {
+  display: inline-flex;
+  margin-left: 10px;
+}
+.state.update {
+  color: var(--orbit-violet);
+  background: var(--orbit-mist);
+}
+.state.deprecated {
+  color: var(--risk-high-fg);
+  background: var(--risk-high-bg);
+}
+.actions {
+  display: flex;
+  gap: 8px;
+}
+.actions button,
+.actions .row-action {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+.modal {
+  width: min(92vw, 620px);
+}
+.hint {
+  color: var(--ink-subtle);
+}
+.perm-list {
+  margin-top: 14px;
+}
+.grant-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.grant-label input {
+  width: 20px;
+  height: 20px;
+}
+.revoke-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.revoke-label input {
+  width: 20px;
+  height: 20px;
+}
+.modal-actions .primary {
+  border: 0;
+  font-weight: 700;
+  color: var(--device-ink);
+  background: var(--charge-coral);
+}
+.modal-actions .danger {
+  color: var(--risk-high-fg);
+  border-color: var(--risk-high-fg);
+}
+@media (max-width: 760px) {
+  .agents-page {
+    padding: 28px 18px 110px;
+  }
+  .dense-list li {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

@@ -1,7 +1,14 @@
 import http from './http'
 
-export interface DayCount { day: string; count: number }
-export interface DayUsage { day: string; requests: number; tokens: number }
+export interface DayCount {
+  day: string
+  count: number
+}
+export interface DayUsage {
+  day: string
+  requests: number
+  tokens: number
+}
 
 export interface OpsHouseholdsMetrics {
   total: number
@@ -41,8 +48,17 @@ export interface OpsReviewMetrics {
   decided_by_action: Record<string, number>
 }
 
-export interface UsageByModel { model_id: string; model_name: string; requests: number; tokens: number }
-export interface UsageByPurpose { purpose: string; requests: number; tokens: number }
+export interface UsageByModel {
+  model_id: string
+  model_name: string
+  requests: number
+  tokens: number
+}
+export interface UsageByPurpose {
+  purpose: string
+  requests: number
+  tokens: number
+}
 
 export interface OpsModelUsageMetrics {
   requests: number
@@ -128,14 +144,21 @@ export function fetchHouseholdQuota(householdId: string) {
 
 export function adjustHouseholdQuota(householdId: string, payload: QuotaAdjustPayload) {
   return http
-    .put<{ household_id: string; monthly_limit: number; requests_per_minute: number; agent_token_budget: number | null }>(
-      `/models/households/${encodeURIComponent(householdId)}/quota`,
-      payload,
-    )
+    .put<{
+      household_id: string
+      monthly_limit: number
+      requests_per_minute: number
+      agent_token_budget: number | null
+    }>(`/models/households/${encodeURIComponent(householdId)}/quota`, payload)
     .then((r) => r.data)
 }
 
-export function fetchQuotaIncidents(params: { household_id?: string; code?: string; page?: number; page_size?: number }) {
+export function fetchQuotaIncidents(params: {
+  household_id?: string
+  code?: string
+  page?: number
+  page_size?: number
+}) {
   return http.get<Page<QuotaIncidentItem>>('/ops/quota/incidents', { params }).then((r) => r.data)
 }
 

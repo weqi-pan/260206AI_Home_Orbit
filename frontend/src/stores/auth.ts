@@ -30,8 +30,7 @@ function readStorage(): AuthState {
         }
       }
     }
-  } catch {
-  }
+  } catch {}
   return { accessToken: '', refreshToken: '', account: null }
 }
 

@@ -69,7 +69,11 @@ describe('Element Plus 按需注册', () => {
   it('不再从 element-plus 根入口导入组件（否则整个组件库无法 tree-shake）', () => {
     const offenders = collectVueFiles(srcRoot)
       .filter((file) => !file.endsWith('.test.ts'))
-      .filter((file) => /import\s*\{[^}]*(ElButton|ElTable|ElInput|ElForm)[^}]*\}\s*from\s*'element-plus'/.test(readFileSync(file, 'utf-8')))
+      .filter((file) =>
+        /import\s*\{[^}]*(ElButton|ElTable|ElInput|ElForm)[^}]*\}\s*from\s*'element-plus'/.test(
+          readFileSync(file, 'utf-8'),
+        ),
+      )
     expect(offenders).toEqual([])
   })
 })

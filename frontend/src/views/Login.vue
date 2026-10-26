@@ -20,7 +20,10 @@ const rules: FormRules = {
 }
 
 async function handleSubmit() {
-  const valid = await formRef.value?.validate().then(() => true).catch(() => false)
+  const valid = await formRef.value
+    ?.validate()
+    .then(() => true)
+    .catch(() => false)
   if (!valid) return
   loading.value = true
   try {
@@ -54,5 +57,4 @@ async function handleSubmit() {
   </AuthShell>
 </template>
 
-<style scoped>
-</style>
+<style scoped></style>

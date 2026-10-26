@@ -2,7 +2,8 @@ import http from './http'
 
 export type ModelProtocol = 'openai_compatible' | 'anthropic'
 export type ModelType = 'chat' | 'embedding'
-export type ModelPurpose = 'household_orchestrator' | 'primary_chat' | 'auxiliary_generation' | 'review_model' | 'embedding'
+export type ModelPurpose =
+  'household_orchestrator' | 'primary_chat' | 'auxiliary_generation' | 'review_model' | 'embedding'
 
 export interface EndpointPayload {
   protocol: ModelProtocol
@@ -38,11 +39,20 @@ export interface ModelProfile {
 }
 
 export type ModelPayload = Omit<ModelProfile, 'id' | 'capability_flags'>
-export interface CapabilityResult { passed: boolean; capabilities: Record<string, string>; error_code: string | null; dimensions: number | null }
+export interface CapabilityResult {
+  passed: boolean
+  capabilities: Record<string, string>
+  error_code: string | null
+  dimensions: number | null
+}
 
 export const fetchEndpoints = () => http.get<ModelEndpoint[]>('/models/endpoints').then((response) => response.data)
-export const createEndpoint = (payload: EndpointPayload) => http.post<ModelEndpoint>('/models/endpoints', payload).then((response) => response.data)
+export const createEndpoint = (payload: EndpointPayload) =>
+  http.post<ModelEndpoint>('/models/endpoints', payload).then((response) => response.data)
 export const fetchModels = () => http.get<ModelProfile[]>('/models/profiles').then((response) => response.data)
-export const createModel = (payload: ModelPayload) => http.post<ModelProfile>('/models/profiles', payload).then((response) => response.data)
-export const runCapabilityTest = (modelId: string) => http.post<CapabilityResult>(`/models/profiles/${modelId}/capability-tests`).then((response) => response.data)
-export const bindPurpose = (purpose: ModelPurpose, modelId: string) => http.put(`/models/bindings/${purpose}`, { purpose, model_id: modelId }).then((response) => response.data)
+export const createModel = (payload: ModelPayload) =>
+  http.post<ModelProfile>('/models/profiles', payload).then((response) => response.data)
+export const runCapabilityTest = (modelId: string) =>
+  http.post<CapabilityResult>(`/models/profiles/${modelId}/capability-tests`).then((response) => response.data)
+export const bindPurpose = (purpose: ModelPurpose, modelId: string) =>
+  http.put(`/models/bindings/${purpose}`, { purpose, model_id: modelId }).then((response) => response.data)

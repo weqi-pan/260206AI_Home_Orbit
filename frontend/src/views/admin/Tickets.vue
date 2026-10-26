@@ -8,7 +8,9 @@ const tickets = ref<AdminTicket[]>([])
 const loading = ref(false)
 const statusFilter = ref<'' | 'open' | 'processing' | 'resolved' | 'closed'>('')
 
-const filtered = computed(() => (statusFilter.value ? tickets.value.filter((t) => t.status === statusFilter.value) : tickets.value))
+const filtered = computed(() =>
+  statusFilter.value ? tickets.value.filter((t) => t.status === statusFilter.value) : tickets.value,
+)
 const openCount = computed(() => tickets.value.filter((t) => t.status === 'open').length)
 const processingCount = computed(() => tickets.value.filter((t) => t.status === 'processing').length)
 
@@ -47,7 +49,9 @@ async function saveReply() {
   }
   saving.value = true
   try {
-    const updated = await updateTicket(current.value.household_id, current.value.id, { admin_reply: replyText.value.trim() })
+    const updated = await updateTicket(current.value.household_id, current.value.id, {
+      admin_reply: replyText.value.trim(),
+    })
     patchCurrent(updated)
     ElMessage.success('回复已保存')
   } catch {
@@ -73,8 +77,7 @@ async function changePriority(ticket: AdminTicket, priority: AdminTicket['priori
     const updated = await updateTicket(ticket.household_id, ticket.id, { priority })
     patchCurrent(updated)
     ElMessage.success('优先级已更新')
-  } catch {
-  }
+  } catch {}
 }
 
 onMounted(load)
@@ -101,7 +104,11 @@ onMounted(load)
       <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
       <el-table-column label="情绪" width="90" align="center">
         <template #default="{ row }">
-          <el-tag v-if="(row as AdminTicket).emotion" size="small" :type="sentimentTag((row as AdminTicket).emotion).type">
+          <el-tag
+            v-if="(row as AdminTicket).emotion"
+            size="small"
+            :type="sentimentTag((row as AdminTicket).emotion).type"
+          >
             {{ sentimentTag((row as AdminTicket).emotion).label }}
           </el-tag>
           <span v-else class="dim">-</span>
@@ -109,8 +116,12 @@ onMounted(load)
       </el-table-column>
       <el-table-column label="优先级" width="110" align="center">
         <template #default="{ row }">
-          <el-select :model-value="(row as AdminTicket).priority" size="small" style="width: 84px"
-            @change="(value: string) => changePriority(row as AdminTicket, value as AdminTicket['priority'])">
+          <el-select
+            :model-value="(row as AdminTicket).priority"
+            size="small"
+            style="width: 84px"
+            @change="(value: string) => changePriority(row as AdminTicket, value as AdminTicket['priority'])"
+          >
             <el-option label="低" value="low" />
             <el-option label="普通" value="normal" />
             <el-option label="高" value="high" />
@@ -119,12 +130,16 @@ onMounted(load)
       </el-table-column>
       <el-table-column label="状态" width="100" align="center">
         <template #default="{ row }">
-          <el-tag :type="ticketStatusTag((row as AdminTicket).status).type">{{ ticketStatusTag((row as AdminTicket).status).label }}</el-tag>
+          <el-tag :type="ticketStatusTag((row as AdminTicket).status).type">{{
+            ticketStatusTag((row as AdminTicket).status).label
+          }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="客服回复" min-width="160">
         <template #default="{ row }">
-          <span :class="(row as AdminTicket).admin_reply ? '' : 'dim'">{{ (row as AdminTicket).admin_reply || '暂无回复' }}</span>
+          <span :class="(row as AdminTicket).admin_reply ? '' : 'dim'">{{
+            (row as AdminTicket).admin_reply || '暂无回复'
+          }}</span>
         </template>
       </el-table-column>
       <el-table-column label="创建时间" width="170">
@@ -146,36 +161,68 @@ onMounted(load)
             <el-tag :type="ticketStatusTag(current.status).type">{{ ticketStatusTag(current.status).label }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="优先级">
-            <el-tag :type="ticketPriorityTag(current.priority).type">{{ ticketPriorityTag(current.priority).label }}</el-tag>
+            <el-tag :type="ticketPriorityTag(current.priority).type">{{
+              ticketPriorityTag(current.priority).label
+            }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="情绪">
-            <el-tag v-if="current.emotion" size="small" :type="sentimentTag(current.emotion).type">{{ sentimentTag(current.emotion).label }}</el-tag>
+            <el-tag v-if="current.emotion" size="small" :type="sentimentTag(current.emotion).type">{{
+              sentimentTag(current.emotion).label
+            }}</el-tag>
             <span v-else>-</span>
           </el-descriptions-item>
           <el-descriptions-item label="标题" :span="2">{{ current.title }}</el-descriptions-item>
           <el-descriptions-item label="问题摘要" :span="2">{{ current.summary || '-' }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDateTime(current.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="解决时间">{{ formatDateTime(current.resolved_at) }}</el-descriptions-item>
-          <el-descriptions-item v-if="current.session_id" label="关联会话" :span="2">{{ current.session_id }}</el-descriptions-item>
+          <el-descriptions-item v-if="current.session_id" label="关联会话" :span="2">{{
+            current.session_id
+          }}</el-descriptions-item>
         </el-descriptions>
 
         <div class="drawer-section">
           <h4>状态流转</h4>
           <div class="flow-buttons">
-            <el-button size="small" :type="current.status === 'open' ? 'primary' : 'default'" :disabled="current.status === 'open'"
-              @click="changeStatus(current, 'open')">待处理</el-button>
-            <el-button size="small" :type="current.status === 'processing' ? 'warning' : 'default'" :disabled="current.status === 'processing'"
-              @click="changeStatus(current, 'processing')">处理中</el-button>
-            <el-button size="small" :type="current.status === 'resolved' ? 'success' : 'default'" :disabled="current.status === 'resolved'"
-              @click="changeStatus(current, 'resolved')">已解决</el-button>
-            <el-button size="small" :type="current.status === 'closed' ? 'info' : 'default'" :disabled="current.status === 'closed'"
-              @click="changeStatus(current, 'closed')">已关闭</el-button>
+            <el-button
+              size="small"
+              :type="current.status === 'open' ? 'primary' : 'default'"
+              :disabled="current.status === 'open'"
+              @click="changeStatus(current, 'open')"
+              >待处理</el-button
+            >
+            <el-button
+              size="small"
+              :type="current.status === 'processing' ? 'warning' : 'default'"
+              :disabled="current.status === 'processing'"
+              @click="changeStatus(current, 'processing')"
+              >处理中</el-button
+            >
+            <el-button
+              size="small"
+              :type="current.status === 'resolved' ? 'success' : 'default'"
+              :disabled="current.status === 'resolved'"
+              @click="changeStatus(current, 'resolved')"
+              >已解决</el-button
+            >
+            <el-button
+              size="small"
+              :type="current.status === 'closed' ? 'info' : 'default'"
+              :disabled="current.status === 'closed'"
+              @click="changeStatus(current, 'closed')"
+              >已关闭</el-button
+            >
           </div>
         </div>
 
         <div class="drawer-section">
           <h4>客服回复</h4>
-          <el-input v-model="replyText" type="textarea" :rows="5" placeholder="输入回复内容" aria-label="客服回复内容" />
+          <el-input
+            v-model="replyText"
+            type="textarea"
+            :rows="5"
+            placeholder="输入回复内容"
+            aria-label="客服回复内容"
+          />
           <el-button class="reply-save" type="primary" :loading="saving" @click="saveReply()">保存回复</el-button>
         </div>
       </template>
@@ -192,7 +239,9 @@ onMounted(load)
 }
 
 /* 这三个页面比全局 .page-title（18px）小一档 */
-.page-title { font-size: 16px; }
+.page-title {
+  font-size: 16px;
+}
 
 .drawer-section {
   margin-top: 20px;

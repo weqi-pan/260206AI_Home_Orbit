@@ -80,7 +80,9 @@ async function handleUpload(options: UploadRequestOptions) {
 
 async function handleDelete(row: KnowledgeFileInfo) {
   try {
-    await ElMessageBox.confirm(`删除文件「${row.filename}」将同时从向量库移除并拒绝其关联FAQ，确认删除？`, '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(`删除文件「${row.filename}」将同时从向量库移除并拒绝其关联FAQ，确认删除？`, '删除确认', {
+      type: 'warning',
+    })
   } catch {
     return
   }
@@ -88,13 +90,14 @@ async function handleDelete(row: KnowledgeFileInfo) {
     await deleteKnowledgeFile(row.id)
     ElMessage.success('文件已删除')
     await loadFiles()
-  } catch {
-  }
+  } catch {}
 }
 
 async function handleRebuild() {
   try {
-    await ElMessageBox.confirm('将根据全部有效文件与已审FAQ重建向量库，耗时可能较长，确认执行？', '重建向量库', { type: 'warning' })
+    await ElMessageBox.confirm('将根据全部有效文件与已审FAQ重建向量库，耗时可能较长，确认执行？', '重建向量库', {
+      type: 'warning',
+    })
   } catch {
     return
   }
@@ -126,8 +129,7 @@ async function handleReview(row: FaqPairInfo, status: 'approved' | 'rejected') {
     Object.assign(row, updated)
     ElMessage.success(status === 'approved' ? '已通过并写入向量库' : '已拒绝')
     if (faqFilter.value) await loadFaqs()
-  } catch {
-  }
+  } catch {}
 }
 
 const faqTitle = computed(() => (faqFilter.value === 'pending' ? '待审核FAQ' : 'FAQ列表'))
@@ -155,9 +157,17 @@ onMounted(load)
           </el-table-column>
           <el-table-column label="操作" width="240" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" text type="primary" :loading="generating === (row as KnowledgeFileInfo).id"
-                @click="handleGenerate(row as KnowledgeFileInfo)">生成FAQ</el-button>
-              <el-button size="small" text type="danger" :icon="Delete" @click="handleDelete(row as KnowledgeFileInfo)">删除</el-button>
+              <el-button
+                size="small"
+                text
+                type="primary"
+                :loading="generating === (row as KnowledgeFileInfo).id"
+                @click="handleGenerate(row as KnowledgeFileInfo)"
+                >生成FAQ</el-button
+              >
+              <el-button size="small" text type="danger" :icon="Delete" @click="handleDelete(row as KnowledgeFileInfo)"
+                >删除</el-button
+              >
             </template>
           </el-table-column>
         </el-table>
@@ -183,8 +193,22 @@ onMounted(load)
           <el-table-column prop="answer" label="答案" min-width="240" show-overflow-tooltip />
           <el-table-column label="状态" width="100" align="center">
             <template #default="{ row }">
-              <el-tag :type="(row as FaqPairInfo).status === 'approved' ? 'success' : (row as FaqPairInfo).status === 'rejected' ? 'danger' : 'warning'">
-                {{ (row as FaqPairInfo).status === 'approved' ? '已通过' : (row as FaqPairInfo).status === 'rejected' ? '已拒绝' : '待审核' }}
+              <el-tag
+                :type="
+                  (row as FaqPairInfo).status === 'approved'
+                    ? 'success'
+                    : (row as FaqPairInfo).status === 'rejected'
+                      ? 'danger'
+                      : 'warning'
+                "
+              >
+                {{
+                  (row as FaqPairInfo).status === 'approved'
+                    ? '已通过'
+                    : (row as FaqPairInfo).status === 'rejected'
+                      ? '已拒绝'
+                      : '待审核'
+                }}
               </el-tag>
             </template>
           </el-table-column>
@@ -193,10 +217,22 @@ onMounted(load)
           </el-table-column>
           <el-table-column v-if="faqFilter" label="操作" width="150" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" text type="success" :disabled="(row as FaqPairInfo).status === 'approved'"
-                @click="handleReview(row as FaqPairInfo, 'approved')">通过</el-button>
-              <el-button size="small" text type="danger" :disabled="(row as FaqPairInfo).status === 'rejected'"
-                @click="handleReview(row as FaqPairInfo, 'rejected')">拒绝</el-button>
+              <el-button
+                size="small"
+                text
+                type="success"
+                :disabled="(row as FaqPairInfo).status === 'approved'"
+                @click="handleReview(row as FaqPairInfo, 'approved')"
+                >通过</el-button
+              >
+              <el-button
+                size="small"
+                text
+                type="danger"
+                :disabled="(row as FaqPairInfo).status === 'rejected'"
+                @click="handleReview(row as FaqPairInfo, 'rejected')"
+                >拒绝</el-button
+              >
             </template>
           </el-table-column>
         </el-table>

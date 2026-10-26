@@ -35,7 +35,8 @@ onMounted(load)
         <h1 id="modelsops-title">模型用量与对账</h1>
       </div>
       <div class="head-actions">
-        <label>窗口
+        <label
+          >窗口
           <select v-model="days" data-testid="usage-window" @change="load">
             <option :value="1">近 1 天</option>
             <option :value="7">近 7 天</option>
@@ -45,19 +46,38 @@ onMounted(load)
         <button type="button" data-testid="release-expired" :disabled="releasing" @click="release">释放过期预留</button>
       </div>
     </header>
-    <p class="lead">预留-完成对账与按档案/用途/日的用量聚合来自真实 ModelUsage 行；配置入口在“初始化设置”，此处为用量、成本与治理视图。</p>
+    <p class="lead">
+      预留-完成对账与按档案/用途/日的用量聚合来自真实 ModelUsage
+      行；配置入口在“初始化设置”，此处为用量、成本与治理视图。
+    </p>
 
     <div v-if="accounting" class="panel-grid">
       <section class="panel" aria-labelledby="reconcile-title">
         <h2 id="reconcile-title">预留 / 完成对账</h2>
         <dl class="facts">
-          <div><dt>窗口内请求</dt><dd>{{ accounting.totals.requests }}</dd></div>
-          <div><dt>窗口内令牌</dt><dd>{{ accounting.totals.tokens }}</dd></div>
-          <div v-for="(count, status) in accounting.by_status" :key="status"><dt>{{ status }}</dt><dd>{{ count }}</dd></div>
+          <div>
+            <dt>窗口内请求</dt>
+            <dd>{{ accounting.totals.requests }}</dd>
+          </div>
+          <div>
+            <dt>窗口内令牌</dt>
+            <dd>{{ accounting.totals.tokens }}</dd>
+          </div>
+          <div v-for="(count, status) in accounting.by_status" :key="status">
+            <dt>{{ status }}</dt>
+            <dd>{{ count }}</dd>
+          </div>
         </dl>
         <h3>未对账预留（超过 {{ accounting.unreconciled.window_minutes }} 分钟）</h3>
         <table>
-          <thead><tr><th>家庭</th><th>档案</th><th>预留令牌</th><th>预留时间</th></tr></thead>
+          <thead>
+            <tr>
+              <th>家庭</th>
+              <th>档案</th>
+              <th>预留令牌</th>
+              <th>预留时间</th>
+            </tr>
+          </thead>
           <tbody>
             <tr v-for="row in accounting.unreconciled.items" :key="row.id">
               <td class="mono clip" :title="row.household_id">{{ row.household_id }}</td>
@@ -65,7 +85,9 @@ onMounted(load)
               <td>{{ row.reserved_tokens }}</td>
               <td class="mono">{{ formatDateTime(row.created_at) }}</td>
             </tr>
-            <tr v-if="!accounting.unreconciled.items.length"><td colspan="4" class="empty">无未对账预留</td></tr>
+            <tr v-if="!accounting.unreconciled.items.length">
+              <td colspan="4" class="empty">无未对账预留</td>
+            </tr>
           </tbody>
         </table>
       </section>
@@ -73,16 +95,38 @@ onMounted(load)
       <section class="panel" aria-labelledby="by-model-title">
         <h2 id="by-model-title">按档案 / 用途</h2>
         <table>
-          <thead><tr><th>档案</th><th>请求</th><th>令牌</th></tr></thead>
+          <thead>
+            <tr>
+              <th>档案</th>
+              <th>请求</th>
+              <th>令牌</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr v-for="row in accounting.by_model" :key="row.model_id"><td>{{ row.model_name }}</td><td>{{ row.requests }}</td><td>{{ row.tokens }}</td></tr>
-            <tr v-if="!accounting.by_model.length"><td colspan="3" class="empty">窗口内无用量</td></tr>
+            <tr v-for="row in accounting.by_model" :key="row.model_id">
+              <td>{{ row.model_name }}</td>
+              <td>{{ row.requests }}</td>
+              <td>{{ row.tokens }}</td>
+            </tr>
+            <tr v-if="!accounting.by_model.length">
+              <td colspan="3" class="empty">窗口内无用量</td>
+            </tr>
           </tbody>
         </table>
         <table>
-          <thead><tr><th>用途</th><th>请求</th><th>令牌</th></tr></thead>
+          <thead>
+            <tr>
+              <th>用途</th>
+              <th>请求</th>
+              <th>令牌</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr v-for="row in accounting.by_purpose" :key="row.purpose"><td class="mono">{{ row.purpose }}</td><td>{{ row.requests }}</td><td>{{ row.tokens }}</td></tr>
+            <tr v-for="row in accounting.by_purpose" :key="row.purpose">
+              <td class="mono">{{ row.purpose }}</td>
+              <td>{{ row.requests }}</td>
+              <td>{{ row.tokens }}</td>
+            </tr>
           </tbody>
         </table>
       </section>
@@ -90,10 +134,22 @@ onMounted(load)
       <section class="panel" aria-labelledby="by-day-title">
         <h2 id="by-day-title">按日趋势</h2>
         <table>
-          <thead><tr><th>日期</th><th>请求</th><th>令牌</th></tr></thead>
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>请求</th>
+              <th>令牌</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr v-for="row in accounting.by_day" :key="row.day"><td class="mono">{{ row.day }}</td><td>{{ row.requests }}</td><td>{{ row.tokens }}</td></tr>
-            <tr v-if="!accounting.by_day.length"><td colspan="3" class="empty">窗口内无用量</td></tr>
+            <tr v-for="row in accounting.by_day" :key="row.day">
+              <td class="mono">{{ row.day }}</td>
+              <td>{{ row.requests }}</td>
+              <td>{{ row.tokens }}</td>
+            </tr>
+            <tr v-if="!accounting.by_day.length">
+              <td colspan="3" class="empty">窗口内无用量</td>
+            </tr>
           </tbody>
         </table>
       </section>
@@ -105,11 +161,38 @@ onMounted(load)
 /* 这一族的骨架（页面网格、页头、.panel 网格、表格、.facts、.empty）
    见 styles/global.css 的 .ops-page 段；这里只留本页差异。 */
 /* 页头横排只有本页与 OpsOverview 需要，不进 .ops-page 共享段 */
-.page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.page-head label { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
-.head-actions { display: flex; gap: 10px; align-items: center; }
-h3 { margin: 8px 0 0; font-size: 13px; }
-.clip { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.panel { align-content: start; }
-.facts dd { font-weight: 700; }
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.page-head label {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+.head-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+h3 {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.clip {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel {
+  align-content: start;
+}
+.facts dd {
+  font-weight: 700;
+}
 </style>

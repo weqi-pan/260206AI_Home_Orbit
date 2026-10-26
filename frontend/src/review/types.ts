@@ -47,8 +47,19 @@ export interface ReviewSubmissionDetail {
     skills_changed: boolean
   } | null
   permissions: MarketPermission[]
-  knowledge: { asset_id: string; filename: string; file_type: string; scan_status: string; scan_reason: string | null; content_hash: string }[]
-  sandbox: { status: string; error_code: string | null; cases: { name: string; input: string; status: string; error_code: string | null; output: string }[] } | null
+  knowledge: {
+    asset_id: string
+    filename: string
+    file_type: string
+    scan_status: string
+    scan_reason: string | null
+    content_hash: string
+  }[]
+  sandbox: {
+    status: string
+    error_code: string | null
+    cases: { name: string; input: string; status: string; error_code: string | null; output: string }[]
+  } | null
   precheck: { passed: boolean; codes: string[]; checks: PrecheckCheck[] } | null
   risk_summary: { status: string; summary?: string; risk_level?: string; code?: string }
   risk_payload: Record<string, unknown>

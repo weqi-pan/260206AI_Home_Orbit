@@ -56,9 +56,7 @@ export function generateFaq(fileId: string) {
 }
 
 export function fetchFaqs(status?: 'pending' | 'approved' | 'rejected') {
-  return http
-    .get<FaqPairInfo[]>('/knowledge/faq', { params: status ? { status } : {} })
-    .then((r) => r.data)
+  return http.get<FaqPairInfo[]>('/knowledge/faq', { params: status ? { status } : {} }).then((r) => r.data)
 }
 
 export function reviewFaq(faqId: number, status: 'approved' | 'rejected') {

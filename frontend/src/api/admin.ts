@@ -96,7 +96,9 @@ export function createDevice(householdId: string, payload: DevicePayload) {
 
 export function updateDevice(householdId: string, modelId: string, payload: DevicePayload) {
   return http
-    .put<AdminDevice>(`/admin/devices/${encodeURIComponent(modelId)}`, payload, { params: { household_id: householdId } })
+    .put<AdminDevice>(`/admin/devices/${encodeURIComponent(modelId)}`, payload, {
+      params: { household_id: householdId },
+    })
     .then((r) => r.data)
 }
 
@@ -113,9 +115,13 @@ export function fetchInventory(householdId?: string, modelId?: string) {
 
 export function upsertInventory(householdId: string, payload: InventoryPayload) {
   return http
-    .put<{ id: number; model_id: string; warehouse: string; stock: number; min_stock: number }>('/admin/inventory', payload, {
-      params: { household_id: householdId },
-    })
+    .put<{ id: number; model_id: string; warehouse: string; stock: number; min_stock: number }>(
+      '/admin/inventory',
+      payload,
+      {
+        params: { household_id: householdId },
+      },
+    )
     .then((r) => r.data)
 }
 

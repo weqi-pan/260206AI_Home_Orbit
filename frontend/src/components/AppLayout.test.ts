@@ -7,10 +7,16 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
   useRoute: () => ({ query: {} }),
 }))
-vi.mock('../stores/auth', () => ({ useAuthStore: () => ({ account: { username: 'user', role: 'user' }, logout: vi.fn() }) }))
+vi.mock('../stores/auth', () => ({
+  useAuthStore: () => ({ account: { username: 'user', role: 'user' }, logout: vi.fn() }),
+}))
 vi.mock('../api/chat', () => ({
   listSessions: () => Promise.resolve([{ id: 's1', title: '第一段会话' }]),
-  listMessages: () => Promise.resolve([]), createSession: vi.fn(), deleteSession: vi.fn(), sendFeedback: vi.fn(), streamChat: vi.fn(),
+  listMessages: () => Promise.resolve([]),
+  createSession: vi.fn(),
+  deleteSession: vi.fn(),
+  sendFeedback: vi.fn(),
+  streamChat: vi.fn(),
 }))
 
 describe('user shell modal isolation', () => {
@@ -22,7 +28,11 @@ describe('user shell modal isolation', () => {
           RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
           RouterView: Chat,
           ElButton: { template: '<button @click="$emit(\'click\')"><slot /></button>' },
-          ElIcon: true, ElEmpty: true, ElInput: true, ElTag: true, MessageItem: true,
+          ElIcon: true,
+          ElEmpty: true,
+          ElInput: true,
+          ElTag: true,
+          MessageItem: true,
         },
         directives: { loading: () => undefined },
       },

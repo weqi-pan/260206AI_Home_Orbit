@@ -4,35 +4,106 @@ import AuditRelease from './AuditRelease.vue'
 
 vi.mock('../../api/audit', () => ({
   fetchAdminActions: vi.fn().mockResolvedValue({
-    total: 2, page: 1, page_size: 20,
+    total: 2,
+    page: 1,
+    page_size: 20,
     items: [
-      { id: 'a-1', principal_id: 'acc-1', actor_username: 'admin', household_id: 'h-1', action: 'review.approve', resource_type: 'review_submission', resource_id: 'sub-1', detail: { reason: '链路完整' }, created_at: '2026-08-28T09:00:00' },
-      { id: 'a-2', principal_id: 'acc-1', actor_username: 'admin', household_id: null, action: 'models.endpoint.create', resource_type: 'llm_endpoint', resource_id: 'e-1', detail: { has_api_key: true, masked_api_key: '****1234' }, created_at: '2026-08-28T08:00:00' },
+      {
+        id: 'a-1',
+        principal_id: 'acc-1',
+        actor_username: 'admin',
+        household_id: 'h-1',
+        action: 'review.approve',
+        resource_type: 'review_submission',
+        resource_id: 'sub-1',
+        detail: { reason: '链路完整' },
+        created_at: '2026-08-28T09:00:00',
+      },
+      {
+        id: 'a-2',
+        principal_id: 'acc-1',
+        actor_username: 'admin',
+        household_id: null,
+        action: 'models.endpoint.create',
+        resource_type: 'llm_endpoint',
+        resource_id: 'e-1',
+        detail: { has_api_key: true, masked_api_key: '****1234' },
+        created_at: '2026-08-28T08:00:00',
+      },
     ],
   }),
   fetchDeploymentPointers: vi.fn().mockResolvedValue({
     market_entries: {
-      total: 7, page: 1, page_size: 20,
+      total: 7,
+      page: 1,
+      page_size: 20,
       items: [
-        { entry_id: 'entry-1', name: '市场采购助手', source_household_id: 'h-1', official: false, status: 'published', current_version_number: 2, current_version_id: 'v-2', history: [
-          { version: 2, version_id: 'v-2', changed_by_account_id: 'acc-1', changed_at: '2026-08-28T10:00:00', submission_id: 'sub-2' },
-          { version: 1, version_id: 'v-1', changed_by_account_id: 'acc-1', changed_at: '2026-08-27T10:00:00', submission_id: 'sub-1' },
-        ] },
+        {
+          entry_id: 'entry-1',
+          name: '市场采购助手',
+          source_household_id: 'h-1',
+          official: false,
+          status: 'published',
+          current_version_number: 2,
+          current_version_id: 'v-2',
+          history: [
+            {
+              version: 2,
+              version_id: 'v-2',
+              changed_by_account_id: 'acc-1',
+              changed_at: '2026-08-28T10:00:00',
+              submission_id: 'sub-2',
+            },
+            {
+              version: 1,
+              version_id: 'v-1',
+              changed_by_account_id: 'acc-1',
+              changed_at: '2026-08-27T10:00:00',
+              submission_id: 'sub-1',
+            },
+          ],
+        },
       ],
     },
     official: {
-      total: 1, page: 1, page_size: 20,
+      total: 1,
+      page: 1,
+      page_size: 20,
       items: [
-        { deployment_id: 'd-1', household_id: 'h-1', revision: 1, agent_version_id: 'v-9', created_by: null, created_at: '2026-08-01T00:00:00', history: [{ version: 1, version_id: 'v-9', published_at: '2026-08-01T00:00:00', changed_by: null }] },
+        {
+          deployment_id: 'd-1',
+          household_id: 'h-1',
+          revision: 1,
+          agent_version_id: 'v-9',
+          created_by: null,
+          created_at: '2026-08-01T00:00:00',
+          history: [{ version: 1, version_id: 'v-9', published_at: '2026-08-01T00:00:00', changed_by: null }],
+        },
       ],
     },
   }),
   fetchModelConfigRevisions: vi.fn().mockResolvedValue({
-    total: 1, page: 1, page_size: 20,
+    total: 1,
+    page: 1,
+    page_size: 20,
     items: [
-      { model_id: 'm-1', model_name: 'chat', model_type: 'chat', enabled: true, revision: 3, latest_health: { status: 'passed', error_code: null, checked_at: '2026-08-28T07:00:00' }, history: [
-        { status: 'passed', error_code: null, endpoint_revision: 2, model_revision: 3, checked_at: '2026-08-28T07:00:00' },
-      ] },
+      {
+        model_id: 'm-1',
+        model_name: 'chat',
+        model_type: 'chat',
+        enabled: true,
+        revision: 3,
+        latest_health: { status: 'passed', error_code: null, checked_at: '2026-08-28T07:00:00' },
+        history: [
+          {
+            status: 'passed',
+            error_code: null,
+            endpoint_revision: 2,
+            model_revision: 3,
+            checked_at: '2026-08-28T07:00:00',
+          },
+        ],
+      },
     ],
   }),
 }))
