@@ -1,5 +1,5 @@
 import json
-from datetime import timezone
+from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.security import get_current_account, get_db
-from backend.app.db.models import Account, AgentRun, ApprovalRequest, HouseholdMember
+from backend.app.db.models import Account, AgentRun, ApprovalRequest, HouseholdMember, ToolDefinition
 from backend.agent.platform.context import RunBudget, RunContext
 from backend.agent.tools.household_gateways import HouseholdToolRepositories
 from backend.agent.platform.approvals import audit_approval
@@ -31,23 +31,72 @@ def _owned(db, approval_id, account_id):
     return row
 
 
+def _effective_window(requested, settings):
+    """把客户端申请的审批窗口夹到服务端上限以内。
+
+    客户端传得更短就尊重它（用户主动想快点过期），传得更长或干脆不传就由服务端定。
+    不夹的话 `expires_at = now + 10 年` 就能把「高风险逐次确认」变成一次永久授权。
+    """
+    now = utcnow()
+    cap = now + timedelta(minutes=settings.approval_max_minutes)
+    if requested is None:
+        return now + timedelta(minutes=min(settings.approval_default_minutes, settings.approval_max_minutes))
+    if requested.tzinfo is not None:
+        requested = requested.astimezone(timezone.utc).replace(tzinfo=None)
+    return min(requested, cap)
+
+
 @router.get("")
 def pending(account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
-    rows = db.scalars(select(ApprovalRequest).join(HouseholdMember, HouseholdMember.household_id == ApprovalRequest.household_id).where(
+    """待处理审批清单。
+
+    列表要么由前端轮询、要么在审批卡里直接渲染，两种用法都需要**工具是什么、风险多高、
+    要做什么** —— 缺了这些，前端只能显示一个裸 id，用户没有任何判断依据。
+    `arguments_json` 写入时已经过 `audit.redact()`（见 agent/platform/policy.py），
+    这里直接解析即可，不会把凭据原文送出去。
+    """
+    rows = db.scalars(select(ApprovalRequest).join(
+        HouseholdMember, HouseholdMember.household_id == ApprovalRequest.household_id).where(
         HouseholdMember.account_id == account.id, ApprovalRequest.status == "pending")).all()
-    return [{"id": row.id, "run_id": row.run_id, "tool_id": row.tool_id, "status": row.status,
-             "expires_at": row.expires_at, "created_at": row.created_at} for row in rows]
+    if not rows:
+        return []
+    tools = {tool.id: tool for tool in db.scalars(
+        select(ToolDefinition).where(ToolDefinition.id.in_({row.tool_id for row in rows})))}
+    runs = {run.id: run for run in db.scalars(
+        select(AgentRun).where(AgentRun.id.in_({row.run_id for row in rows})))}
+    result = []
+    for row in rows:
+        tool = tools.get(row.tool_id)
+        run = runs.get(row.run_id)
+        result.append({
+            "id": row.id, "run_id": row.run_id, "tool_id": row.tool_id, "status": row.status,
+            "expires_at": row.expires_at, "created_at": row.created_at,
+            "tool_key": tool.key if tool else None,
+            "tool_display_name": (tool.display_name or tool.key) if tool else None,
+            "risk_level": tool.risk_level if tool else None,
+            "arguments": _redacted_arguments(row),
+            # approval_requests 自己没有 session_id，会话要从 run 上取
+            "session_id": run.session_id if run else None,
+            "deployment_id": row.deployment_id,
+        })
+    return result
+
+
+def _redacted_arguments(row) -> dict:
+    try:
+        parsed = json.loads(row.arguments_json or "{}")
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 @router.post("/{approval_id}/approve")
-def approve(approval_id: str, payload: ApprovalDecisionRequest, account: Account = Depends(get_current_account),
-            db: Session = Depends(get_db)):
+def approve(approval_id: str, payload: ApprovalDecisionRequest, request: Request,
+            account: Account = Depends(get_current_account), db: Session = Depends(get_db)):
     row = _owned(db, approval_id, account.id)
     if row.status != "pending":
         raise HTTPException(409, detail={"code": "APPROVAL_STATE_CONFLICT"})
-    expires_at = payload.expires_at
-    if expires_at.tzinfo is not None:
-        expires_at = expires_at.astimezone(timezone.utc).replace(tzinfo=None)
+    expires_at = _effective_window(payload.expires_at, request.app.state.settings)
     if expires_at <= utcnow():
         raise HTTPException(422, detail={"code": "APPROVAL_EXPIRED"})
     row.status = "approved"; row.approved_by_account_id = account.id; row.expires_at = expires_at
