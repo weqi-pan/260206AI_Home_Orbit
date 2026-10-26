@@ -67,10 +67,14 @@ def create_database(
     return Database(engine, sessionmaker(engine, expire_on_commit=False))
 
 
-def require_database_revision(engine: Engine) -> None:
+def current_database_revision(engine: Engine) -> str | None:
+    """只读地取当前迁移版本；表不存在（未迁移过）时返回 None。"""
     if "alembic_version" not in inspect(engine).get_table_names():
-        raise RuntimeError(f"database migrations are not at required revision {REQUIRED_DATABASE_REVISION}")
+        return None
     with engine.connect() as connection:
-        revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
-    if revision != REQUIRED_DATABASE_REVISION:
+        return connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
+
+
+def require_database_revision(engine: Engine) -> None:
+    if current_database_revision(engine) != REQUIRED_DATABASE_REVISION:
         raise RuntimeError(f"database migrations are not at required revision {REQUIRED_DATABASE_REVISION}")

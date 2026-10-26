@@ -58,22 +58,30 @@
 
 无 `logging.basicConfig`/`dictConfig`、无 request id、无 `/metrics`、无耗时；`/health` 不探 DB、不探迁移版本，而 [docker-compose.yml](docker-compose.yml) 每 10s 拿它当健康检查 → 静态探针恒绿。
 
-1. 新建 `backend/app/core/logging.py`：`configure_logging(settings)` 用 `dictConfig` 输出单行 JSON（`ts`/`level`/`logger`/`msg`/`request_id`）；`app_mode == "test"` 时降到 WARNING 且用人类可读格式，避免污染 pytest 输出。在 `create_app` 最开始调用。
+1. 新建 `backend/app/core/logging.py`：`configure_logging(settings)` 用 `dictConfig` 输出单行 JSON（`ts`/`level`/`logger`/`msg` + 所有 `extra` 字段，异常走 `exc`）；`app_mode == "test"` 时**整体不做配置**（见下方偏差 3）。在 `create_app` 最开始调用。
 2. 新建 `backend/app/core/middleware.py`：
    - `RequestContextMiddleware`：生成/透传 `X-Request-ID`、写 `contextvars.ContextVar`、回写响应头、结束打一条 access 日志（method/path/status/duration_ms/request_id）。
-   - **SSE 安全**：`BaseHTTPMiddleware` 对 `EventSourceResponse` 有已知的流中断风险，因此对 `Accept: text/event-stream` 或响应 `Content-Type` 为 `text/event-stream` 的请求**不包计时逻辑**，只记 request_id。[test_agent_platform_chat_integration.py](backend/tests/test_agent_platform_chat_integration.py)、[test_chat_business.py](backend/tests/test_chat_business.py) 的流式断言是回归闸门。
+   - **SSE 安全**：见下方偏差 1 —— 改用**纯 ASGI 中间件**，只包装 `send`，不做响应缓冲，流式响应天然不受影响。[test_agent_platform_chat_integration.py](backend/tests/test_agent_platform_chat_integration.py)、[test_chat_business.py](backend/tests/test_chat_business.py) 的流式断言是回归闸门。
 3. `/health` 带探针但**保留 `status` 键**（[test_auth.py:190](backend/tests/test_auth.py#L190)、[test_knowledge_bootstrap.py:118](backend/tests/test_knowledge_bootstrap.py#L118) 断言 `["status"] == "ok"`）：
    - `status`: `ok` / `degraded`；`checks`: `database`（`SELECT 1`）、`revision`（测试模式 `null`）、`redis`（**仅 production** 才 `PING`，失败记 degraded 而非 500）。
    - 从 [session.py](backend/app/db/session.py) 的 `require_database_revision` 抽出只读的 `current_database_revision(engine)` 复用。
-4. `/metrics`（Prometheus 文本）：`backend/requirements.txt` 加 `prometheus-client>=0.21,<1`。三个指标：`http_requests_total{method,path,status}`、`http_request_duration_seconds{method,path}`（histogram）、`app_info{revision}`；`path` 用路由模板 `request.scope["route"].path` 避免高基数。
-   - 若不接受新依赖，退化方案是 `GET /api/ops/metrics`（admin）返回 JSON 快照；但 Prometheus 文本对后续接监控更有价值，**建议引入**。
+4. `/metrics`（Prometheus 文本）：`backend/requirements.txt` 加 `prometheus-client>=0.21,<1`。两个指标：`http_requests_total{method,path,status}`、`http_request_duration_seconds{method,path}`（histogram）；`path` 用路由模板 `request.scope["route"].path` 避免高基数，未匹配路由记 `__unmatched__`。见下方偏差 4（没有 `app_info`）。
+
+**实现偏差**（已按实际实现回填）
+
+1. **中间件用纯 ASGI，不是 `BaseHTTPMiddleware`。** 后者会额外包一层任务组并缓冲响应体，对 `EventSourceResponse` 有已知断流风险。纯 ASGI 只包装 `send`，流式响应完全不受影响 —— 于是原计划里「对 SSE 关掉计时」这个特例**不需要存在**，也就没有「部分请求不记账」的盲区。
+2. **`/health` 与 `/metrics` 落在新文件 [observability.py](backend/app/api/observability.py) 的 router 里，不塞进 `main.py`。** `main.py` 已经在 `create_app` 里堆了 20 个 `include_router`，探针逻辑（含 Redis 探活、降级判定）混进去会把工厂函数撑成杂物间；独立 router 也让 `test_observability.py` 能单独覆盖。
+3. **测试模式刻意不做任何 logging 配置。** 原计划是「降到 WARNING + 人类可读格式」，但 pytest 自己接管 root logger，`caplog` 又依赖 propagate：在这里改 handler 会把既有断言弄坏（[test_knowledge_bootstrap.py:101-103](backend/tests/test_knowledge_bootstrap.py#L101-L103) 就在 `caplog.at_level("WARNING")` 里读 `caplog.records`）。所以 `app_mode == "test"` 直接 `return`，全新用例断言「root handler 列表未变」。
+4. **没有 `app_info{revision}` 指标。** 迁移版本已经在 `/health` 的 `checks.revision` 里，Prometheus 侧再由 exporter 采集属于重复投射；而 revision 在进程生命周期内不变，做成 Gauge 只会多一个需要主动维护的常量。留待真接监控时按需再加。
+5. **`X-Request-ID` 只回写响应头，不进错误 body。** 错误体已是 `{code, message, fields}` 契约，body 里多一个字段会让前端和既有断言都得跟着改；HTTP 客户端读头即可完成关联。
+6. **`Settings.log_level` 与 [.env.example](.env.example) 的 `LOG_LEVEL` 注释同步加入**（只写注释与默认值，不含任何真实凭据）。
 
 **验收**
 
 - `docker compose up -d --build` → `curl localhost:8000/health` 有 `status` + `checks`
-- `curl localhost:8000/metrics | head` 有指标
-- 一次 `POST /api/auth/login` 的 access 日志与异常日志能按 `request_id` 串起来
-- `pytest -q` 全绿（流式用例是回归闸门）
+- `curl localhost:8000/metrics | head` 有指标；`/api/devices/{model_id}` 的标签是路由模板，不是真实 id
+- 一次 `POST /api/auth/login` 的 access 日志与异常日志能按 `request_id` 串起来；请求头带 `X-Request-ID` 时原样回显
+- `pytest -q` 全绿（528 项：基线 511 + 错误契约 6 + 可观测性 11）；流式用例是回归闸门
 
 ---
 
@@ -259,7 +267,7 @@
 | SQLite batch 重建 FK 时丢数据 | 迁移前先清理孤儿 `agent_runs.member_id`；`test_household_lifecycle_migration.py` 在 tmp SQLite 上跑 upgrade→downgrade→upgrade 三遍 |
 | PR 3 的 refresh 轮换未同步前端 → 强制登出循环 | 前端改动**必须同 PR**；手工走「锁屏 2 小时 → 回来继续操作」，确认只静默刷新一次 |
 | 限流误伤正常用户 | 阈值（用户名 10/5min、IP 30/5min）远高于测试的最大失败次数（单文件用例最多 2 次）；`auth_rate_limit_enabled` 可一键关 |
-| `BaseHTTPMiddleware` 破坏 SSE | 中间件对 `text/event-stream` 跳过计时包装；两条流式测试是回归闸门 |
+| 中间件破坏 SSE 长连接 | 用纯 ASGI 中间件（只包 `send`，不缓冲响应体），不用 `BaseHTTPMiddleware`；两条流式测试是回归闸门 |
 | 成员离开后账号卡在「零家庭」 | `leave_household()` 必须补建独居家庭；验收里专门有一条用例覆盖 |
 | 删 membership 误删工单历史 | `tickets` 改为只挂 household 与 account，不再挂 household_members；已写进迁移与模型 |
 | 错误契约改动让前端显示 code 而非中文 | `detail` 同时保留 `message`，并让 `extractErrorMessage` 优先取 `message` |
@@ -270,7 +278,7 @@
 
 | 文件 | 改动 |
 |---|---|
-| `backend/app/core/{errors,logging,middleware,rate_limit,household_access,pagination}.py` | 新增 |
+| [core/{errors,logging,middleware,rate_limit,household_access,pagination}.py](backend/app/core/) · [api/observability.py](backend/app/api/observability.py) | 新增 |
 | `backend/app/db/auth_models.py` · `backend/app/services/auth_sessions.py` | 新增：`RefreshSession`、`LoginAttempt`、签发/轮换/吊销 |
 | [auth.py](backend/app/api/auth.py) · [security.py](backend/app/core/security.py) · [schemas/auth.py](backend/app/schemas/auth.py) · [admin/accounts.py](backend/app/api/admin/accounts.py) | token_version、轮换、登出、限流、枚举、假哈希 |
 | [approvals.py](backend/app/api/approvals.py) · [agent_platform.py](backend/app/schemas/agent_platform.py) | 有效期夹取、列表补字段 |

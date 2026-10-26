@@ -6,10 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from backend.app.api import (admin, agents, approvals, auth, chat, creator, devices, home, households, installations,
-                             knowledge, llm_profiles, market, reviews, setup, skills, tickets, tools)
+                             knowledge, llm_profiles, market, observability, reviews, setup, skills, tickets, tools)
 from backend.app.audit import api as audit_api
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import install_exception_handlers
+from backend.app.core.logging import configure_logging
+from backend.app.core.middleware import RequestContextMiddleware
 from backend.app.db.seed import seed_database
 from backend.app.db.session import create_database, require_database_revision
 from backend.app.ops import api as ops_api
@@ -52,6 +54,7 @@ def sync_knowledge_vectors(database, vector_service, settings):
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
+    configure_logging(app_settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -75,6 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title=app_settings.app_name, lifespan=lifespan)
     install_exception_handlers(app)
+    app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.allowed_origins,
@@ -102,10 +106,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(reviews.router, prefix="/api")
     app.include_router(audit_api.router, prefix="/api")
     app.include_router(ops_api.router, prefix="/api")
-
-    @app.get("/health")
-    def health():
-        return {"status": "ok"}
+    app.include_router(observability.router)
 
     return app
 
