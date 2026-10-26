@@ -65,7 +65,11 @@ def test_required_revision_matches_auth_hardening_head(settings):
 
 
 def test_create_all_matches_migration_shape(settings):
-    """模型与迁移不能分叉：create_all 建出来的表要能通过同一批断言。"""
+    """模型与迁移不能分叉：create_all 建出来的表要能通过同一批断言。
+
+    测试套件走 `create_all()`、生产走 Alembic，两条路建出的结构必须一致 ——
+    否则单测全绿而迁移上线后列缺失（或反之）。
+    """
     from sqlalchemy import create_engine
 
     from backend.app.db.models import Base
@@ -74,6 +78,8 @@ def test_create_all_matches_migration_shape(settings):
     Base.metadata.create_all(engine)
     try:
         assert "token_version" in _columns(engine, "accounts")
-        assert "token_version" in {column["name"] for column in __import__("sqlalchemy").inspect(engine).get_columns("accounts")}
+        assert {"token_id", "family_id", "account_id", "expires_at", "used_at", "revoked_at",
+                "replaced_by_token_id", "client_ip", "user_agent", "created_at"} <= _columns(engine, "refresh_sessions")
+        assert {"scope", "key_hash", "succeeded", "created_at"} <= _columns(engine, "login_attempts")
     finally:
         engine.dispose()
