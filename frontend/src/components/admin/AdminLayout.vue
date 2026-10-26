@@ -30,7 +30,12 @@ async function goUser() {
   await router.push('/home')
 }
 async function logout() {
+  const refreshToken = auth.refreshToken
   auth.logout()
+  // best-effort 吊销服务端会话：网络失败也不该把用户困在页面上
+  if (refreshToken) {
+    void import('../../api/auth').then(({ logout: revoke }) => revoke(refreshToken)).catch(() => {})
+  }
   await router.push('/login')
 }
 </script>

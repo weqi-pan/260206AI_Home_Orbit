@@ -1,5 +1,23 @@
-import { describe, expect, it } from 'vitest'
-import { extractErrorMessage } from './http'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const postMock = vi.fn()
+vi.mock('axios', () => {
+  const instance = {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    interceptors: { request: { use: vi.fn() }, response: { use: vi.fn() } },
+  }
+  const axios = {
+    create: () => instance,
+    post: (...args: unknown[]) => postMock(...args),
+  }
+  return { default: axios }
+})
+
+const { extractErrorMessage, refreshAccessToken } = await import('./http')
+const { useAuthStore } = await import('../stores/auth')
 
 describe('extractErrorMessage', () => {
   it('优先展示后端给用户看的中文 message', () => {
@@ -39,5 +57,37 @@ describe('extractErrorMessage', () => {
   it('无法识别的响应体回退到默认文案', () => {
     expect(extractErrorMessage({ error: { reason: 'unknown' } }, '请求失败')).toBe('请求失败')
     expect(extractErrorMessage(undefined, '请求失败')).toBe('请求失败')
+  })
+})
+
+describe('refreshAccessToken 的令牌轮换', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    postMock.mockReset()
+  })
+
+  it('把轮换后的 refresh 一并写回，而不是只更新 access', async () => {
+    const auth = useAuthStore()
+    auth.setTokens('access-old', 'refresh-old')
+    postMock.mockResolvedValue({ data: { access_token: 'access-new', refresh_token: 'refresh-new' } })
+
+    await expect(refreshAccessToken()).resolves.toBe('access-new')
+
+    // 不写回 refresh 的话，下一次静默刷新会重放已用令牌 → 后端断族 → 强制登出
+    expect(auth.accessToken).toBe('access-new')
+    expect(auth.refreshToken).toBe('refresh-new')
+    expect(JSON.parse(localStorage.getItem('cs.auth')!).refreshToken).toBe('refresh-new')
+  })
+
+  it('后端没有返回新 refresh 时退回只更新 access', async () => {
+    const auth = useAuthStore()
+    auth.setTokens('access-old', 'refresh-old')
+    postMock.mockResolvedValue({ data: { access_token: 'access-new' } })
+
+    await refreshAccessToken()
+
+    expect(auth.accessToken).toBe('access-new')
+    expect(auth.refreshToken).toBe('refresh-old')
   })
 })

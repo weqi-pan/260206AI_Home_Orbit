@@ -30,3 +30,13 @@ export function fetchMe() {
 export function changePassword(currentPassword: string, newPassword: string) {
   return http.put<void>('/auth/password', { current_password: currentPassword, new_password: newPassword })
 }
+
+/** 吊销当前 refresh 令牌。失败也要继续本地登出，所以调用方用 best-effort 包一层。 */
+export function logout(refreshToken: string) {
+  return http.post<void>('/auth/logout', { refresh_token: refreshToken })
+}
+
+/** 吊销该账号全部会话（所有设备）。 */
+export function logoutAll() {
+  return http.post<void>('/auth/logout-all')
+}

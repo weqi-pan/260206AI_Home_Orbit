@@ -47,7 +47,11 @@ export async function refreshAccessToken(): Promise<string> {
       .post('/api/auth/refresh', { refresh_token: auth.refreshToken })
       .then((response) => {
         const token = response.data.access_token as string
-        auth.setAccessToken(token)
+        // 后端每次刷新都会轮换 refresh 令牌；只写回 access 的话，下一次刷新
+        // 就会拿已用过的 refresh 去换，被判为重放并整族吊销 → 强制登出。
+        const rotated = response.data.refresh_token as string | undefined
+        if (rotated) auth.setTokens(token, rotated)
+        else auth.setAccessToken(token)
         return token
       })
       .finally(() => {
