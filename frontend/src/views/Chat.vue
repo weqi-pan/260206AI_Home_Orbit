@@ -5,20 +5,28 @@ import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { Delete, Plus, Promotion, Tickets } from '@element-plus/icons-vue'
 import {
+  approveApproval,
   createSession,
   deleteSession,
   listMessages,
+  listPendingApprovals,
   listSessions,
+  rejectApproval,
+  resumeApproval,
   sendFeedback,
   streamChat,
+  type ApprovalEventData,
   type ChatMessageInfo,
   type ChatSessionInfo,
+  type ChatStreamCallbacks,
   type ToolEventData,
 } from '../api/chat'
+import ApprovalCard from '../components/ApprovalCard.vue'
 import MessageItem from '../components/MessageItem.vue'
 import { useModalFocus } from '../composables/useModalFocus'
 import { shellModalOpenKey } from '../composables/shellModal'
-import type { ChatUiMessage } from '../types'
+import type { ChatApproval, ChatUiMessage } from '../types'
+import { parseServerTime } from '../utils/format'
 
 const router = useRouter()
 const route = useRoute()
@@ -271,46 +279,7 @@ async function sendMessage(preset?: string) {
   pendingParagraph = ''
   await scrollBottom(true)
   try {
-    await streamChat(
-      activeId.value,
-      content,
-      {
-        onToken: (token) => {
-          // 只入缓冲，由 rAF 合并成一次赋值（见 flushTokens）
-          pendingTokens += token
-          pendingParagraph += token
-          announceCompletedParagraph()
-          scheduleTokenFlush()
-          // 直接排帧即可：rAF 回调一定在 Vue 的 nextTick 微任务之后，DOM 已更新
-          scheduleScroll()
-        },
-        onTool: (data) => {
-          toolEvents.value.push(data)
-        },
-        onSentiment: (data) => {
-          userMessage.sentiment = data.label
-          userMessage.sentimentScore = data.score
-        },
-        onFollowup: (questions) => {
-          followups.value = questions.slice(0, 3)
-        },
-        onDone: (data) => {
-          flushTokens()
-          assistantMessage.id = data.message_id
-          const remainder = pendingParagraph.trim()
-          streamAnnouncement.value = remainder ? `${remainder}\n回复完成` : '回复完成'
-          pendingParagraph = ''
-          refreshSessions().catch(() => undefined)
-        },
-        onError: (message) => {
-          flushTokens()
-          assistantMessage.failed = true
-          streamAnnouncement.value = '回复失败'
-          ElMessage.error(message)
-        },
-      },
-      signal,
-    )
+    await streamChat(activeId.value, content, streamHandlers(assistantMessage, userMessage), signal)
   } catch (error) {
     flushTokens()
     if ((error as Error).name !== 'AbortError') {
@@ -341,6 +310,147 @@ async function handleFeedback(message: ChatUiMessage, value: 'like' | 'dislike')
 function goCreateTicket() {
   const emotion = [...messages.value].reverse().find((item) => item.role === 'user' && item.sentiment)?.sentiment
   void router.push({ path: '/tickets', query: { session_id: activeId.value, ...(emotion ? { emotion } : {}) } })
+}
+
+/**
+ * 审批事件只带 approval_id，工具名/风险/参数要回查一次列表。
+ *
+ * 查不到时退回一个只有 id 的占位条目 —— 卡片上至少还有「批准/拒绝」可用，
+ * 比直接不显示、让用户以为卡死了要好。
+ */
+async function resolveApproval(message: ChatUiMessage, event: ApprovalEventData): Promise<ChatApproval> {
+  const placeholder: ChatApproval = {
+    state: 'pending',
+    expiresAt: null,
+    info: {
+      id: event.approval_id,
+      run_id: '',
+      tool_id: '',
+      status: 'pending',
+      expires_at: null,
+      created_at: null,
+      tool_key: null,
+      tool_display_name: null,
+      risk_level: 'high',
+      arguments: {},
+      session_id: activeId.value,
+      deployment_id: null,
+    },
+  }
+  try {
+    const pendingList = await listPendingApprovals()
+    const found = pendingList.find((item) => item.id === event.approval_id)
+    if (found) placeholder.info = found
+  } catch {
+    // 列表拉不到不影响决策：approve/reject 端点只需要 id
+  }
+  if (!message.approvals) message.approvals = []
+  message.approvals.push(placeholder)
+  return placeholder
+}
+
+async function handleApprove(message: ChatUiMessage, card: ChatApproval) {
+  if (card.state !== 'pending' && card.state !== 'failed') return
+  card.state = 'busy'
+  const created = new AbortController()
+  abortController = created
+  sending.value = true
+  // 后续 token 要落回这个气泡：flushTokens 只往 streamingMessage 里写，
+  // 不重新挂上的话审批之后的回复会被整段丢掉
+  streamingMessage = message
+  try {
+    const decision = await approveApproval(card.info.id)
+    // 服务端会把窗口夹到 approval_max_minutes 以内，倒计时以返回值算，而不是本地猜。
+    // 必须走 parseServerTime：后端时间戳不带时区，直接 Date.parse 会按本地时间解释。
+    card.expiresAt = parseServerTime(decision.expires_at)
+    card.state = 'approved'
+    streamAnnouncement.value = '已批准，继续执行'
+    // 批准后接着把同一轮运行跑完，后续输出追加到**同一个气泡**
+    await resumeApproval(card.info.id, streamHandlers(message, null), created.signal)
+  } catch (error) {
+    if ((error as Error).name === 'AbortError') return
+    card.state = 'failed'
+    ElMessage.error(error instanceof Error ? error.message : '审批失败')
+  } finally {
+    flushTokens()
+    streamingMessage = null
+    abortController = null
+    sending.value = false
+    await scrollBottom()
+  }
+}
+
+async function handleReject(card: ChatApproval) {
+  if (card.state !== 'pending' && card.state !== 'failed') return
+  card.state = 'busy'
+  try {
+    await rejectApproval(card.info.id)
+    card.state = 'rejected'
+    streamAnnouncement.value = '已拒绝此次操作'
+  } catch (error) {
+    card.state = 'failed'
+    ElMessage.error(error instanceof Error ? error.message : '拒绝失败')
+  }
+}
+
+function dismissApproval(message: ChatUiMessage, card: ChatApproval) {
+  // 只收卡片，不动消息内容：运行可能还在等这个决定，历史也在服务端
+  message.approvals = message.approvals?.filter((item) => item !== card)
+}
+
+/** 一次运行的回调集合。发送与「审批后继续」共用，保证后续 token 落进同一个气泡。 */
+function streamHandlers(message: ChatUiMessage, userMessage: ChatUiMessage | null): ChatStreamCallbacks {
+  return {
+    onToken: (token) => {
+      // 只入缓冲，由 rAF 合并成一次赋值（见 flushTokens）
+      pendingTokens += token
+      pendingParagraph += token
+      announceCompletedParagraph()
+      scheduleTokenFlush()
+      // 直接排帧即可：rAF 回调一定在 Vue 的 nextTick 微任务之后，DOM 已更新
+      scheduleScroll()
+    },
+    onTool: (data) => {
+      toolEvents.value.push(data)
+    },
+    onSentiment: (data) => {
+      if (!userMessage) return
+      userMessage.sentiment = data.label
+      userMessage.sentimentScore = data.score
+    },
+    onFollowup: (questions) => {
+      followups.value = questions.slice(0, 3)
+    },
+    onApprovalRequired: (data) => {
+      flushTokens()
+      void resolveApproval(message, data).then(() => scrollBottom())
+    },
+    onApprovalResumed: () => {
+      streamAnnouncement.value = '继续执行'
+    },
+    onRun: (data) => {
+      // 审批后继续的流以 run 帧收尾（没有 done）：这里也要把剩余段落播报出去
+      if (data.status !== 'completed') return
+      flushTokens()
+      const remainder = pendingParagraph.trim()
+      streamAnnouncement.value = remainder ? `${remainder}\n回复完成` : '回复完成'
+      pendingParagraph = ''
+    },
+    onDone: (data) => {
+      flushTokens()
+      message.id = data.message_id
+      const remainder = pendingParagraph.trim()
+      streamAnnouncement.value = remainder ? `${remainder}\n回复完成` : '回复完成'
+      pendingParagraph = ''
+      refreshSessions().catch(() => undefined)
+    },
+    onError: (errorMessage) => {
+      flushTokens()
+      message.failed = true
+      streamAnnouncement.value = '回复失败'
+      ElMessage.error(errorMessage)
+    },
+  }
 }
 
 onMounted(() => {
@@ -420,7 +530,18 @@ onMounted(() => {
           :key="message.uid"
           :message="message"
           @feedback="(value) => handleFeedback(message, value)"
-        />
+        >
+          <template v-if="message.approvals?.length" #approvals>
+            <ApprovalCard
+              v-for="card in message.approvals"
+              :key="card.info.id"
+              :approval="card"
+              @approve="handleApprove(message, card)"
+              @reject="handleReject(card)"
+              @dismiss="dismissApproval(message, card)"
+            />
+          </template>
+        </MessageItem>
         <div v-if="toolEvents.length" class="tool-events">
           <el-tag
             v-for="(event, index) in toolEvents.slice(-4)"

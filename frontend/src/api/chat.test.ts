@@ -2,6 +2,65 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { streamChat } from './chat'
 
+function sseResponse(frames: string[]) {
+  return new Response(frames.join('\n\n'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  })
+}
+
+describe('approval frames', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('surfaces approval_required instead of dropping it on the default branch', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      sseResponse([
+        'event: approval_required\ndata: {"approval_id":"ap-1","code":"APPROVAL_REQUIRED"}',
+        'event: run\ndata: {"run_id":"run-1","status":"waiting_approval"}',
+      ]),
+    )
+    const required = vi.fn()
+    const runs = vi.fn()
+
+    await streamChat('session-1', 'hi', { onApprovalRequired: required, onRun: runs })
+
+    expect(required).toHaveBeenCalledWith({
+      approval_id: 'ap-1',
+      code: 'APPROVAL_REQUIRED',
+      kind: undefined,
+      message: undefined,
+    })
+    expect(runs).toHaveBeenCalledWith({ run_id: 'run-1', status: 'waiting_approval', error_code: undefined })
+  })
+
+  it('ignores approval frames without an id', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      sseResponse(['event: approval_required\ndata: {"code":"APPROVAL_REQUIRED"}']),
+    )
+    const required = vi.fn()
+
+    await streamChat('session-1', 'hi', { onApprovalRequired: required })
+
+    // 没有 id 就点不了批准，渲染一张死卡只会误导用户
+    expect(required).not.toHaveBeenCalled()
+  })
+
+  it('reports approval_resumed so the UI can announce it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      sseResponse(['event: approval_resumed\ndata: {"approval_id":"ap-1","run_id":"run-1"}']),
+    )
+    const resumed = vi.fn()
+
+    await streamChat('session-1', 'hi', { onApprovalResumed: resumed })
+
+    expect(resumed).toHaveBeenCalledWith({ approval_id: 'ap-1' })
+  })
+})
+
 describe('streamChat error responses', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

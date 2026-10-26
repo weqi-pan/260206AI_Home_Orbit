@@ -32,6 +32,8 @@ const rendered = computed(() => renderMarkdown(props.message.content, { highligh
         </template>
         <template v-else>{{ message.content }}</template>
       </div>
+      <!-- 审批卡挂在气泡正下方：它是这一轮回复的一部分，脱离气泡会看不出属于哪句话 -->
+      <slot name="approvals"></slot>
       <div v-if="message.role === 'user' || message.id" class="meta">
         <el-tag v-if="message.role === 'user' && message.sentiment" size="small" :type="sentiment.type">
           {{ sentiment.label }}

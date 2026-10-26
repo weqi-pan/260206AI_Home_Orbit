@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { defineComponent, h, watch, type Component, type PropType } from 'vue'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Chat from './Chat.vue'
 import type { ChatUiMessage } from '../types'
 
@@ -17,11 +17,19 @@ let streamCallbacks:
       onToken: (token: string) => void
       onDone: (data: { message_id: number }) => void
       onError: (message: string) => void
+      onApprovalRequired: (data: { approval_id: string; code?: string }) => void
+      onRun: (data: { status?: string }) => void
     }
   | undefined
 let streamSignal: AbortSignal | undefined
 // 由用例决定流何时结束，便于在“流式中”这一状态上做断言
 let finishStream: (() => void) | undefined
+let finishResume: (() => void) | undefined
+let resumeCallbacks: typeof streamCallbacks
+let resumeCalls: string[] = []
+let approveCalls: string[] = []
+let rejectCalls: string[] = []
+let pendingApprovals: unknown[] = []
 
 vi.mock('../api/chat', () => ({
   listSessions: () => Promise.resolve([{ id: 's1', title: '第一段会话' }]),
@@ -36,7 +44,57 @@ vi.mock('../api/chat', () => ({
       finishStream = resolve
     })
   },
+  resumeApproval: (approvalId: string, callbacks: typeof streamCallbacks) => {
+    resumeCalls.push(approvalId)
+    resumeCallbacks = callbacks
+    // 和 streamChat 一样挂住：审批后的这一轮也是流式的，
+    // 立刻 resolve 会让 finally 先把 streamingMessage 清掉，测不到后续 token 落在哪
+    return new Promise<void>((resolve) => {
+      finishResume = resolve
+    })
+  },
+  listPendingApprovals: () => Promise.resolve(pendingApprovals),
+  approveApproval: (approvalId: string) => {
+    approveCalls.push(approvalId)
+    return Promise.resolve({
+      id: approvalId,
+      status: 'approved',
+      expires_at: new Date(Date.now() + 600000).toISOString(),
+    })
+  },
+  rejectApproval: (approvalId: string) => {
+    rejectCalls.push(approvalId)
+    return Promise.resolve({ id: approvalId, status: 'rejected' })
+  },
 }))
+
+function pendingApproval(id = 'ap-1') {
+  return {
+    id,
+    run_id: 'run-1',
+    tool_id: 'tool-1',
+    status: 'pending',
+    expires_at: null,
+    created_at: null,
+    tool_key: 'platform.test_high_risk',
+    tool_display_name: '高风险测试工具',
+    risk_level: 'high',
+    arguments: { value: '清洗油烟机' },
+    session_id: 's1',
+    deployment_id: 'dep-1',
+  }
+}
+
+beforeEach(() => {
+  streamCallbacks = undefined
+  resumeCallbacks = undefined
+  finishStream = undefined
+  finishResume = undefined
+  resumeCalls = []
+  approveCalls = []
+  rejectCalls = []
+  pendingApprovals = []
+})
 
 // 记录 MessageItem 收到的每一次 content，用来确认 token 是按帧合并的
 function mountChat(messageItem: Component | boolean = true) {
@@ -280,6 +338,95 @@ describe('mobile chat drawer', () => {
     close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     await waitFor(() => expect(document.body.querySelector('[role="dialog"]')).toBeNull())
     expect(document.activeElement).toBe(trigger.element)
+    wrapper.unmount()
+  })
+})
+
+describe('高风险管理审批卡', () => {
+  // 不 stub MessageItem：审批卡是通过它的 approvals 插槽渲染的，
+  // stub 掉插槽内容就整段消失，用例会测不到任何东西
+  function mountWithApprovals() {
+    return mount(Chat, {
+      attachTo: document.body,
+      global: {
+        stubs: {
+          ElButton: { template: '<button @click="$emit(\'click\')"><slot /></button>' },
+          ElInput: {
+            props: ['modelValue'],
+            template:
+              '<textarea v-bind="$attrs" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+          ElIcon: true,
+          ElEmpty: true,
+          ElTag: true,
+        },
+        directives: { loading: () => undefined },
+      },
+    })
+  }
+
+  it('renders a card when the stream asks for approval, then resumes into the same bubble', async () => {
+    pendingApprovals = [pendingApproval()]
+    const wrapper = mountWithApprovals()
+    await sendFirstMessage(wrapper)
+    const state = wrapper.vm as unknown as { messages: ChatUiMessage[] }
+
+    streamCallbacks!.onApprovalRequired({ approval_id: 'ap-1', code: 'APPROVAL_REQUIRED' })
+
+    await waitFor(() => expect(wrapper.find('.approval-card').exists()).toBe(true))
+    // 卡片要能让人判断：工具名、风险等级、脱敏后的参数
+    expect(wrapper.text()).toContain('高风险测试工具')
+    expect(wrapper.text()).toContain('高风险副作用')
+    expect(wrapper.text()).toContain('清洗油烟机')
+
+    const approveButton = wrapper.findAll('button').find((item) => item.text().includes('批准这一次'))!
+    await approveButton.trigger('click')
+
+    await waitFor(() => expect(resumeCalls).toEqual(['ap-1']))
+    // 后续 token 必须落回**同一个**助手气泡，而不是新开一条
+    resumeCallbacks!.onToken('执行结果')
+    await waitFor(() => expect(state.messages[1].content).toContain('执行结果'))
+    expect(state.messages.length).toBe(2)
+
+    // 审批后的流以 run 帧收尾（没有 done），剩余段落也要播报出去
+    resumeCallbacks!.onRun({ status: 'completed' })
+    await waitFor(() => expect(wrapper.find('[data-testid="stream-live"]').text()).toContain('回复完成'))
+    finishResume!()
+    wrapper.unmount()
+  })
+
+  it('shows the server-decided window instead of trusting the client', async () => {
+    pendingApprovals = [pendingApproval()]
+    const wrapper = mountWithApprovals()
+    await sendFirstMessage(wrapper)
+
+    streamCallbacks!.onApprovalRequired({ approval_id: 'ap-1' })
+    await waitFor(() => expect(wrapper.find('.approval-card').exists()).toBe(true))
+    await wrapper
+      .findAll('button')
+      .find((item) => item.text().includes('批准这一次'))!
+      .trigger('click')
+
+    // 倒计时用的是 approve 响应里的 expires_at（已由服务端夹过），不是前端自己算的
+    await waitFor(() => expect(wrapper.text()).toContain('已授权，剩余'))
+    wrapper.unmount()
+  })
+
+  it('rejects without resuming the run', async () => {
+    pendingApprovals = [pendingApproval()]
+    const wrapper = mountWithApprovals()
+    await sendFirstMessage(wrapper)
+
+    streamCallbacks!.onApprovalRequired({ approval_id: 'ap-1' })
+    await waitFor(() => expect(wrapper.find('.approval-card').exists()).toBe(true))
+    await wrapper
+      .findAll('button')
+      .find((item) => item.text() === '拒绝')!
+      .trigger('click')
+
+    await waitFor(() => expect(rejectCalls).toEqual(['ap-1']))
+    expect(resumeCalls).toEqual([])
+    await waitFor(() => expect(wrapper.text()).toContain('已拒绝'))
     wrapper.unmount()
   })
 })
