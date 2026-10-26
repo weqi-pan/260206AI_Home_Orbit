@@ -18,7 +18,8 @@ def _membership(session: Session, account_id: str, household_id: str | None = No
         query = query.where(HouseholdMember.household_id == household_id)
     membership = session.scalar(query)
     if not membership:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="家庭不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"code": "HOUSEHOLD_NOT_FOUND", "message": "家庭不存在"})
     return membership
 
 
@@ -50,12 +51,15 @@ def get_household(household_id: str, account: Account = Depends(get_current_acco
 def create_invitation(payload: InvitationCreate, household_id: str, account: Account = Depends(get_current_account), session: Session = Depends(get_db)):
     membership = _membership(session, account.id, household_id)
     if membership.role not in {"owner", "admin"}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要家庭所有者或管理员权限")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail={"code": "HOUSEHOLD_ADMIN_REQUIRED", "message": "需要家庭所有者或管理员权限"})
     invited = session.scalar(select(Account).where(Account.username == payload.username, Account.status == "active"))
     if not invited:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="受邀账号不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"code": "INVITEE_NOT_FOUND", "message": "受邀账号不存在"})
     if invited.id == account.id:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="不能邀请自己")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail={"code": "INVITE_SELF_FORBIDDEN", "message": "不能邀请自己"})
     invitation = Invitation(
         household_id=household_id,
         invited_account_id=invited.id,
@@ -76,7 +80,8 @@ def accept_invitation(invitation_id: str, account: Account = Depends(get_current
         Invitation.status == "pending",
     ))
     if not invitation:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="邀请不存在")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"code": "INVITATION_NOT_FOUND", "message": "邀请不存在"})
     existing = _membership(session, account.id)
     if existing.role == "owner":
         other_members = session.scalar(select(HouseholdMember).where(
@@ -84,7 +89,8 @@ def accept_invitation(invitation_id: str, account: Account = Depends(get_current
             HouseholdMember.account_id != account.id,
         ))
         if other_members:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="请先转移原家庭所有权")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                detail={"code": "HOUSEHOLD_OWNERSHIP_REQUIRED", "message": "请先转移原家庭所有权"})
     old_household = session.get(Household, existing.household_id)
     session.delete(existing)
     session.flush()

@@ -83,10 +83,12 @@ def files(admin: Account = Depends(require_admin), db: Session = Depends(get_db)
 async def upload(request: Request, file: UploadFile = File(...), admin: Account = Depends(require_admin), db: Session = Depends(get_db)):
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in {".pdf", ".txt"}:
-        raise HTTPException(status_code=422, detail="仅支持 PDF/TXT 文件")
+        raise HTTPException(status_code=422,
+                            detail={"code": "KNOWLEDGE_TYPE_UNSUPPORTED", "message": "仅支持 PDF/TXT 文件"})
     content = await file.read(MAX_UPLOAD_SIZE + 1)
     if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail="文件不能超过20MB")
+        raise HTTPException(status_code=413,
+                            detail={"code": "KNOWLEDGE_TOO_LARGE", "message": "文件不能超过20MB"})
     require_embedding(db)
     digest = hashlib.md5(content).hexdigest()
     household_id = admin_household(db, admin)
@@ -94,7 +96,8 @@ async def upload(request: Request, file: UploadFile = File(...), admin: Account 
     existing = db.scalar(select(KnowledgeFile).where(KnowledgeFile.household_id == household_id,
                                                       KnowledgeFile.file_md5 == digest))
     if existing and existing.status == "active":
-        raise HTTPException(status_code=409, detail="文件内容重复")
+        raise HTTPException(status_code=409,
+                            detail={"code": "KNOWLEDGE_DUPLICATE", "message": "文件内容重复"})
     directory = Path(request.app.state.settings.knowledge_upload_path)
     directory.mkdir(parents=True, exist_ok=True)
     item = existing or KnowledgeFile(household_id=household_id, file_md5=digest)
@@ -108,7 +111,8 @@ async def upload(request: Request, file: UploadFile = File(...), admin: Account 
             db.flush()
         except IntegrityError as exc:
             db.rollback()
-            raise HTTPException(status_code=409, detail="文件内容重复") from exc
+            raise HTTPException(status_code=409,
+                                detail={"code": "KNOWLEDGE_DUPLICATE", "message": "文件内容重复"}) from exc
     path = directory / f"{item.id}{suffix}"
     path.write_bytes(content)
     try:
@@ -129,7 +133,8 @@ def delete_file(file_id: str, request: Request, response: Response, admin: Accou
     item = db.scalar(select(KnowledgeFile).where(KnowledgeFile.id == file_id,
                                                  KnowledgeFile.household_id == household_id))
     if not item or item.status != "active":
-        raise HTTPException(status_code=404, detail="知识文件不存在")
+        raise HTTPException(status_code=404,
+                            detail={"code": "KNOWLEDGE_FILE_NOT_FOUND", "message": "知识文件不存在"})
     require_embedding(db)
     try:
         vector_service(request).delete_file(file_id)
@@ -176,13 +181,15 @@ def generate_faq(file_id: str, request: Request, admin: Account = Depends(requir
     item = db.scalar(select(KnowledgeFile).where(KnowledgeFile.id == file_id,
                                                  KnowledgeFile.household_id == household_id))
     if not item or item.status != "active":
-        raise HTTPException(status_code=404, detail="知识文件不存在")
+        raise HTTPException(status_code=404,
+                            detail={"code": "KNOWLEDGE_FILE_NOT_FOUND", "message": "知识文件不存在"})
     service = getattr(request.app.state, "faq_generator", None)
     if not service:
         service = FaqGenerator(model_resolver=purpose_model_resolver(request.app.state.database.session_factory, household_id))
     path = _knowledge_file_path(request.app.state.settings, item)
     if not path:
-        raise HTTPException(status_code=409, detail="知识文件源文件不存在，请重新上传或重建")
+        raise HTTPException(status_code=409,
+                            detail={"code": "KNOWLEDGE_SOURCE_MISSING", "message": "知识文件源文件不存在，请重新上传或重建"})
     try:
         pairs = service.generate(path)
     except FaqGenerationError as exc:
@@ -213,7 +220,7 @@ def review(faq_id: int, payload: ReviewRequest, request: Request, admin: Account
     skill_version_id = official_knowledge_skill_version(db, household_id)
     item = db.scalar(select(FaqPair).where(FaqPair.id == faq_id, FaqPair.household_id == household_id))
     if not item:
-        raise HTTPException(status_code=404, detail="FAQ不存在")
+        raise HTTPException(status_code=404, detail={"code": "FAQ_NOT_FOUND", "message": "FAQ不存在"})
     require_embedding(db)
     try:
         if payload.status == item.status:

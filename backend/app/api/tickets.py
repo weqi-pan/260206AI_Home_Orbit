@@ -40,7 +40,7 @@ def create(payload: TicketCreate, request: Request, account: Account = Depends(g
     if payload.session_id and not db.scalar(select(ChatSession).where(ChatSession.id == payload.session_id,
                                                                        ChatSession.household_id == household_id,
                                                                        ChatSession.account_id == account.id)):
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise HTTPException(status_code=404, detail={"code": "SESSION_NOT_FOUND", "message": "会话不存在"})
     existing = db.scalar(select(Ticket).where(
         Ticket.household_id == household_id, Ticket.account_id == account.id,
         Ticket.session_id == payload.session_id,
@@ -68,5 +68,5 @@ def detail(ticket_id: int, account: Account = Depends(get_current_account), db: 
     item = db.scalar(select(Ticket).where(Ticket.id == ticket_id, Ticket.household_id == household_id,
                                           Ticket.account_id == account.id))
     if not item:
-        raise HTTPException(status_code=404, detail="工单不存在")
+        raise HTTPException(status_code=404, detail={"code": "TICKET_NOT_FOUND", "message": "工单不存在"})
     return ticket_dict(item)

@@ -33,7 +33,8 @@ def _next_user_id(session: Session) -> str:
 @router.post("/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, request: Request, session: Session = Depends(get_db)):
     if session.scalar(select(Account).where(Account.username == payload.username)):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名已存在")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail={"code": "USERNAME_UNAVAILABLE", "message": "用户名已存在"})
     password_hash = hash_password(payload.password, request.app.state.settings.bcrypt_rounds)
     for attempt in range(REGISTER_ID_RETRIES):
         user_id = _next_user_id(session)
@@ -54,9 +55,11 @@ def register(payload: RegisterRequest, request: Request, session: Session = Depe
         except IntegrityError as exc:
             session.rollback()
             if session.scalar(select(Account).where(Account.username == payload.username)):
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名已存在") from exc
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                    detail={"code": "USERNAME_UNAVAILABLE", "message": "用户名已存在"}) from exc
             if attempt == REGISTER_ID_RETRIES - 1:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户编号分配冲突，请重试") from exc
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                    detail={"code": "USER_ID_CONFLICT", "message": "用户编号分配冲突，请重试"}) from exc
             continue
         session.refresh(account)
         return _tokens(account, request)
@@ -66,13 +69,15 @@ def register(payload: RegisterRequest, request: Request, session: Session = Depe
 def login(payload: LoginRequest, request: Request, session: Session = Depends(get_db)):
     account = session.scalar(select(Account).where(Account.username == payload.username))
     if not account or account.status != "active" or not verify_password(payload.password, account.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail={"code": "AUTH_INVALID_CREDENTIALS", "message": "用户名或密码错误"})
     return _tokens(account, request)
 
 
 @router.post("/refresh", response_model=AccessToken)
 def refresh(payload: RefreshRequest, request: Request, session: Session = Depends(get_db)):
-    unauthorized = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效或已过期的刷新令牌")
+    unauthorized = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                 detail={"code": "REFRESH_TOKEN_INVALID", "message": "无效或已过期的刷新令牌"})
     try:
         claims = jwt.decode(payload.refresh_token, request.app.state.settings.jwt_secret, algorithms=["HS256"])
     except jwt.PyJWTError as exc:
@@ -102,7 +107,8 @@ def change_password(
     session: Session = Depends(get_db),
 ):
     if not verify_password(payload.current_password, account.password_hash):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码错误")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"code": "PASSWORD_MISMATCH", "message": "当前密码错误"})
     account.password_hash = hash_password(payload.new_password, request.app.state.settings.bcrypt_rounds)
     account.must_change_password = False
     session.add(account)

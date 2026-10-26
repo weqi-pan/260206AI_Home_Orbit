@@ -94,7 +94,7 @@ def official_device_deployment(db, household_id):
 def owned_session(db, session_id, account_id):
     item = db.scalar(select(ChatSession).where(ChatSession.id == session_id, ChatSession.account_id == account_id))
     if not item:
-        raise HTTPException(status_code=404, detail="会话不存在")
+        raise HTTPException(status_code=404, detail={"code": "SESSION_NOT_FOUND", "message": "会话不存在"})
     return item
 
 

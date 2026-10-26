@@ -9,6 +9,7 @@ from backend.app.api import (admin, agents, approvals, auth, chat, creator, devi
                              knowledge, llm_profiles, market, reviews, setup, skills, tickets, tools)
 from backend.app.audit import api as audit_api
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.errors import install_exception_handlers
 from backend.app.db.seed import seed_database
 from backend.app.db.session import create_database, require_database_revision
 from backend.app.ops import api as ops_api
@@ -73,6 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         database.engine.dispose()
 
     app = FastAPI(title=app_settings.app_name, lifespan=lifespan)
+    install_exception_handlers(app)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.allowed_origins,
