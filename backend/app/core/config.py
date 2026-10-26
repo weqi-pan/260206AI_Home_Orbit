@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     celery_retry_backoff_seconds: int = 30
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
-    # 认证限流：只对**失败**计数，正常登录/注册不受影响
+    # 认证限流：登录只对**失败**计数；注册按每次请求计数（要挡的就是批量注册）
     auth_rate_limit_enabled: bool = True
     auth_rate_limit_backend: Literal["database", "memory"] = "database"
     auth_rate_limit_window_seconds: int = 300
